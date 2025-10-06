@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // getTitleByID fetches a title document by its _id
@@ -38,4 +39,14 @@ func DeleteTitleByID(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	return res.DeletedCount > 0, nil
+}
+
+// GetAllTitles fetches all title documents from the collection
+func GetAllTitles(ctx context.Context) (*mongo.Cursor, error) {
+	coll := getTitlesCollection(ctx)
+	cursor, err := coll.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	return cursor, nil
 }

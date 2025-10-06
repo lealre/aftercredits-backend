@@ -2,54 +2,105 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"crypto/rand"
+	"encoding/hex"
+	"log"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/lealre/movies-backend/internal/imdb"
-	"github.com/lealre/movies-backend/internal/mongodb"
-	"go.mongodb.org/mongo-driver/mongo"
+	"github.com/lealre/movies-backend/internal/api"
 )
 
 func main() {
 	godotenv.Load()
 
-	titleID := "tt0137523"
-	body, err := imdb.FetchMovie(titleID)
+	err := ListenAndServe()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "get movie error: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+func ListenAndServe() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", api.RootHandler)
+	mux.HandleFunc("GET /movies", api.GetMoviesHandler)
+	mux.HandleFunc("POST /movies", api.AddMovieHandler)
+	wrappedMux := RequestIDMiddleware(mux)
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: wrappedMux,
 	}
 
-	// Decode JSON into a generic map so we can preserve structure
-	var doc map[string]any
-	if err := json.Unmarshal(body, &doc); err != nil {
-		fmt.Fprintf(os.Stderr, "json decode error: %v\n", err)
-		os.Exit(1)
-	}
+	log.Println("Server is running on port 8080")
+	return server.ListenAndServe()
+}
 
-	// Copy id into _id to use as the MongoDB primary key
-	if idVal, ok := doc["id"].(string); ok && idVal != "" {
-		doc["_id"] = idVal
-	} else {
-		fmt.Fprintln(os.Stderr, "missing id in payload; cannot set _id")
-		os.Exit(1)
-	}
+// Define a custom type for context keys
+type contextKey string
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+const (
+	requestIDKey contextKey = "requestID"
+)
 
-	// Use reusable helpers
-	if err := mongodb.AddTitle(ctx, doc); err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			fmt.Println("document already exists; skipping:", doc["_id"])
-			return
+// generateRequestID creates a unique 5-character identifier
+func generateRequestID() string {
+	bytes := make([]byte, 3) // 3 bytes = 6 hex chars, we'll take first 5
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)[:5]
+}
+
+// responseRecorder wraps http.ResponseWriter to capture status code
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rr *responseRecorder) WriteHeader(statusCode int) {
+	rr.statusCode = statusCode
+	rr.ResponseWriter.WriteHeader(statusCode)
+}
+
+func RequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := generateRequestID()
+		startTime := time.Now()
+
+		// Override the global logger for this request
+		originalLogger := log.Default()
+		defer func() {
+			log.SetOutput(originalLogger.Writer()) // Restore original logger
+		}()
+
+		// Create a request-specific logger
+		log.SetOutput(os.Stdout)
+		log.SetPrefix("[" + requestID + "] - ")
+		log.SetFlags(log.LstdFlags)
+
+		// Log request start
+		log.Printf("Started %s %s", r.Method, r.URL.Path)
+
+		// Store requestID in context
+		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		r = r.WithContext(ctx)
+
+		// Wrap the response writer to capture status code
+		recorder := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+
+		// Call next handler
+		next.ServeHTTP(recorder, r)
+
+		// Calculate duration
+		duration := time.Since(startTime)
+
+		// Log completion with status and duration
+		if duration > time.Second {
+			log.Printf("Completed %s %s in %.2fs (status %d)",
+				r.Method, r.URL.Path, duration.Seconds(), recorder.statusCode)
+		} else {
+			log.Printf("Completed %s %s in %dms (status %d)",
+				r.Method, r.URL.Path, duration.Milliseconds(), recorder.statusCode)
 		}
-		fmt.Fprintf(os.Stderr, "add title error: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("stored document with _id:", doc["_id"])
+	})
 }
