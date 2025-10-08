@@ -25,8 +25,11 @@ func main() {
 func ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", api.RootHandler)
-	mux.HandleFunc("GET /movies", api.GetMoviesHandler)
-	mux.HandleFunc("POST /movies", api.AddMovieHandler)
+	mux.HandleFunc("GET /titles", api.GetTitlessHandler)
+	mux.HandleFunc("POST /titles", api.AddTitleHandler)
+	mux.HandleFunc("GET /ratings", api.GetAllRatings)
+	mux.HandleFunc("GET /ratings/{id}", api.GetRatingById)
+	mux.HandleFunc("POST /ratings", api.AddRating)
 	wrappedMux := RequestIDMiddleware(mux)
 	server := &http.Server{
 		Addr:    ":8080",

@@ -1,4 +1,4 @@
-package movies
+package titles
 
 import "github.com/lealre/movies-backend/internal/imdb"
 

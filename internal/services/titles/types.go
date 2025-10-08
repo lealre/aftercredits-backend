@@ -1,5 +1,5 @@
 // The structs defined here abstract some of the fields from the types in the imdb package
-package movies
+package titles
 
 // Movie represents a movie with all its details
 type Movie struct {

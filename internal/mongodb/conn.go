@@ -51,12 +51,17 @@ func getMongoClient(ctx context.Context) *mongo.Client {
 func getDatabaseName() string {
 	name := os.Getenv("MONGODB_DB")
 	if name == "" {
-		name = "movies"
+		name = "brunan"
 	}
 	return name
 }
 
-func getTitlesCollection(ctx context.Context) *mongo.Collection {
+func GetTitlesCollection(ctx context.Context) *mongo.Collection {
 	client := getMongoClient(ctx)
 	return client.Database(getDatabaseName()).Collection("titles")
+}
+
+func GetUsersCollection(ctx context.Context) *mongo.Collection {
+	client := getMongoClient(ctx)
+	return client.Database(getDatabaseName()).Collection("users")
 }
