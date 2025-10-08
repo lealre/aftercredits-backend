@@ -1,6 +1,10 @@
 package users
 
-import "context"
+import (
+	"context"
+
+	"github.com/lealre/movies-backend/internal/mongodb"
+)
 
 // CheckIfUserExist returns true when a user with the provided id exists.
 // It returns false and nil error when the user does not exist.
@@ -10,7 +14,7 @@ func CheckIfUserExist(ctx context.Context, id string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if err == ErrUserNotFound {
+	if err == mongodb.ErrRecordNotFound {
 		return false, nil
 	}
 	return false, err

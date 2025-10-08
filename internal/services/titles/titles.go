@@ -1,9 +1,14 @@
 package titles
 
-import "github.com/lealre/movies-backend/internal/imdb"
+import (
+	"context"
+
+	"github.com/lealre/movies-backend/internal/imdb"
+	"github.com/lealre/movies-backend/internal/mongodb"
+)
 
 // mapTitleToMovie converts an imdb.Title to api.Movie
-func MapTitleToMovie(title imdb.Title) Movie {
+func MapImdbTitleToDbTitle(title imdb.Title) Title {
 	// Extract director names
 	directorNames := make([]string, len(title.Directors))
 	for i, director := range title.Directors {
@@ -28,7 +33,7 @@ func MapTitleToMovie(title imdb.Title) Movie {
 		originCountries[i] = country.Name
 	}
 
-	return Movie{
+	return Title{
 		ID:           title.ID,
 		PrimaryTitle: title.PrimaryTitle,
 		PrimaryImage: Image{
@@ -50,3 +55,23 @@ func MapTitleToMovie(title imdb.Title) Movie {
 		OriginCountries: originCountries,
 	}
 }
+
+func ChecKIfTitleExist(ctx context.Context, id string) (bool, error) {
+	_, err := GetTitleByID(ctx, id)
+	if err == nil {
+		return true, nil
+	}
+	if err == mongodb.ErrRecordNotFound {
+		return false, nil
+	}
+	return false, err
+}
+
+// func GetTitleRatings(ctx context.Context, id string) ([]ratings.Rating, error) {
+// 	coll := mongodb.GetRatingsCollection(ctx)
+// 	cursor, err := coll.Find(ctx, bson.M{"titleId": id})
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return cursor, nil
+// }

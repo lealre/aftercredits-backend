@@ -2,7 +2,7 @@
 package titles
 
 // Movie represents a movie with all its details
-type Movie struct {
+type Title struct {
 	ID              string   `json:"id"`
 	PrimaryTitle    string   `json:"primaryTitle"`
 	PrimaryImage    Image    `json:"primaryImage"`
@@ -33,5 +33,5 @@ type AddMovieRequest struct {
 }
 
 type AllMoviesResponse struct {
-	Movies []Movie `json:"movies"`
+	Movies []Title `json:"movies"`
 }

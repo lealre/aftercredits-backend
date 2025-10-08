@@ -9,14 +9,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var ErrUserNotFound = errors.New("user not found")
-
 func getUserByID(ctx context.Context, id string) (bson.M, error) {
 	coll := mongodb.GetUsersCollection(ctx)
 	var out bson.M
 	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&out); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrUserNotFound
+			return nil, mongodb.ErrRecordNotFound
 		}
 		return nil, err
 	}

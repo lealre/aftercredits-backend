@@ -2,6 +2,7 @@ package titles
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -14,6 +15,9 @@ func GetTitleByID(ctx context.Context, id string) (bson.M, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 	var out bson.M
 	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&out); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, mongodb.ErrRecordNotFound
+		}
 		return nil, err
 	}
 	return out, nil

@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 
 	"github.com/lealre/movies-backend/internal/imdb"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
@@ -30,7 +32,7 @@ func GetTitlessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cursor.Close(ctx)
 
-	var allMovies []titles.Movie
+	var allMovies []titles.Title
 
 	// Iterate through the cursor and map each title to a movie
 	for cursor.Next(ctx) {
@@ -40,7 +42,7 @@ func GetTitlessHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		movie := titles.MapTitleToMovie(title)
+		movie := titles.MapImdbTitleToDbTitle(title)
 		allMovies = append(allMovies, movie)
 	}
 
@@ -128,7 +130,7 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map to API movie type and respond
-	movie := titles.MapTitleToMovie(title)
+	movie := titles.MapImdbTitleToDbTitle(title)
 	respondWithJSON(w, http.StatusCreated, movie)
 }
 
@@ -137,7 +139,25 @@ func GetAllRatings(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetRatingById(w http.ResponseWriter, r *http.Request) {
-	respondWithJSON(w, http.StatusAccepted, "Not Implemented")
+	ratingId := r.PathValue("id")
+	if ratingId == "" {
+		respondWithError(w, http.StatusBadRequest, "rating id is required")
+		return
+	}
+
+	// Get rating by ID
+	ctx := context.Background()
+	rating, err := ratings.GetRatingById(ctx, ratingId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "database error while getting rating")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, rating)
 }
 
 func AddRating(w http.ResponseWriter, r *http.Request) {
@@ -147,16 +167,54 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user exists in Database
 	ctx := context.Background()
 	if ok, err := users.CheckIfUserExist(ctx, req.UserId); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "database error while checking user")
 		return
 	} else if !ok {
-		respondWithError(w, http.StatusNotFound, "user not found")
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.UserId))
 		return
 	}
-	// Check if movie exists in database
-	// req.
-	respondWithJSON(w, http.StatusAccepted, "Not Implemented")
+
+	if ok, err := titles.ChecKIfTitleExist(ctx, req.TitleId); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("title with id %s not found", req.TitleId))
+		return
+	}
+
+	// Add the rating to the database
+	if err := ratings.AddRating(ctx, req); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to add rating")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, req)
+}
+
+func GetTitleRatingsHandler(w http.ResponseWriter, r *http.Request) {
+	titleId := r.PathValue("id")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	ctx := context.Background()
+	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
+		return
+	}
+
+	// Get all ratings for this title
+	titleRatings, err := ratings.GetRatingsByTitleId(ctx, titleId)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "database error while getting ratings")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, titleRatings)
 }

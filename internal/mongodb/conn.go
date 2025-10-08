@@ -65,3 +65,8 @@ func GetUsersCollection(ctx context.Context) *mongo.Collection {
 	client := getMongoClient(ctx)
 	return client.Database(getDatabaseName()).Collection("users")
 }
+
+func GetRatingsCollection(ctx context.Context) *mongo.Collection {
+	client := getMongoClient(ctx)
+	return client.Database(getDatabaseName()).Collection("ratings")
+}
