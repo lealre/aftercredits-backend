@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 
@@ -134,11 +135,11 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, movie)
 }
 
-func GetAllRatings(w http.ResponseWriter, r *http.Request) {
+func GetAllRatingsHandler(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusAccepted, "Not Implemented")
 }
 
-func GetRatingById(w http.ResponseWriter, r *http.Request) {
+func GetRatingByIdHandler(w http.ResponseWriter, r *http.Request) {
 	ratingId := r.PathValue("id")
 	if ratingId == "" {
 		respondWithError(w, http.StatusBadRequest, "rating id is required")
@@ -169,7 +170,8 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	if ok, err := users.CheckIfUserExist(ctx, req.UserId); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while checking user")
+		log.Println("Error checking user in database:", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
 		return
 	} else if !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.UserId))
@@ -177,16 +179,20 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ok, err := titles.ChecKIfTitleExist(ctx, req.TitleId); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		log.Println("Error checking title in database:", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
 		return
 	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("title with id %s not found", req.TitleId))
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", req.TitleId))
 		return
 	}
 
-	// Add the rating to the database
 	if err := ratings.AddRating(ctx, req); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to add rating")
+		if mongo.IsDuplicateKeyError(err) {
+			respondWithError(w, http.StatusBadRequest, "Rating already exists for this user and title")
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while adding rating")
 		return
 	}
 

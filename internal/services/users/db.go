@@ -9,15 +9,15 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func getUserByID(ctx context.Context, id string) (bson.M, error) {
+func getUserByID(ctx context.Context, id string) (User, error) {
 	coll := mongodb.GetUsersCollection(ctx)
-	var out bson.M
-	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&out); err != nil {
+	var user User
+	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&user); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, mongodb.ErrRecordNotFound
+			return User{}, mongodb.ErrRecordNotFound
 		}
-		return nil, err
+		return User{}, err
 	}
 
-	return out, nil
+	return user, nil
 }
