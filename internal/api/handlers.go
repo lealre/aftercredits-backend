@@ -88,7 +88,8 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := titles.GetTitleByID(ctx, titleID); err == nil {
 		respondWithError(w, http.StatusBadRequest, "title already added")
 		return
-	} else if err != mongo.ErrNoDocuments {
+	} else if err != mongodb.ErrRecordNotFound {
+		log.Printf("Error getting title by ID: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
 		return
 	}
@@ -222,5 +223,11 @@ func GetTitleRatingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, titleRatings)
+	if len(titleRatings) == 0 {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("No ratings found for title with id %s", titleId))
+		return
+	}
+
+	allRatings := ratings.AllRatingsFromMovie{Ratings: titleRatings}
+	respondWithJSON(w, http.StatusOK, allRatings)
 }

@@ -7,3 +7,7 @@ type Rating struct {
 	Note     int    `json:"note" bson:"note"`
 	Comments string `json:"comments" bson:"comments"`
 }
+
+type AllRatingsFromMovie struct {
+	Ratings []Rating `json:"ratings"`
+}
