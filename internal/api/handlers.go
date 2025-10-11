@@ -231,3 +231,29 @@ func GetTitleRatingsHandler(w http.ResponseWriter, r *http.Request) {
 	allRatings := ratings.AllRatingsFromMovie{Ratings: titleRatings}
 	respondWithJSON(w, http.StatusOK, allRatings)
 }
+
+func GetUsers(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+
+	cursor, err := users.GetAllUsers(ctx)
+	if err != nil {
+		log.Printf("Error getting all users: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var allUsers []users.User
+	if err := cursor.All(ctx, &allUsers); err != nil {
+		log.Printf("Error decoding users: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "failed to decode users")
+		return
+	}
+
+	if len(allUsers) == 0 {
+		respondWithError(w, http.StatusNotFound, "No users found")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, users.AllUsersResponse{Users: allUsers})
+}
