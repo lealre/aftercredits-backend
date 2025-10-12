@@ -257,3 +257,39 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, users.AllUsersResponse{Users: allUsers})
 }
+
+func UpdateRatingHandler(w http.ResponseWriter, r *http.Request) {
+	ratingId := r.PathValue("id")
+	if ratingId == "" {
+		respondWithError(w, http.StatusBadRequest, "Rating id is required")
+		return
+	}
+
+	// Parse request body
+	var updateReq ratings.UpdateRatingRequest
+	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
+		return
+	}
+
+	// Validate the update request
+	if updateReq.Note < 0 || updateReq.Note > 10 {
+		respondWithError(w, http.StatusBadRequest, "Note must be between 1 and 10")
+		return
+	}
+
+	ctx := context.Background()
+
+	// Update the rating
+	if err := ratings.UpdateRating(ctx, ratingId, updateReq); err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
+			return
+		}
+		log.Printf("Error updating rating: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to update rating")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rating updated successfully"})
+}

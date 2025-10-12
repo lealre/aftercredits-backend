@@ -69,3 +69,32 @@ func getRatingById(ctx context.Context, ratingId string) (*Rating, error) {
 
 	return &rating, nil
 }
+
+// UpdateRating updates only the Note and Comments fields of a rating
+func UpdateRating(ctx context.Context, ratingId string, updateReq UpdateRatingRequest) error {
+	coll := mongodb.GetRatingsCollection(ctx)
+
+	// Create filter to find rating by ID
+	filter := bson.M{"_id": ratingId}
+
+	// Create update document with only Note and Comments
+	update := bson.M{
+		"$set": bson.M{
+			"note":     updateReq.Note,
+			"comments": updateReq.Comments,
+		},
+	}
+
+	// Perform the update
+	result, err := coll.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+
+	// Check if any document was modified
+	if result.MatchedCount == 0 {
+		return mongodb.ErrRecordNotFound
+	}
+
+	return nil
+}
