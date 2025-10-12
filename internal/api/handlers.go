@@ -13,6 +13,7 @@ import (
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -43,7 +44,7 @@ func GetTitlessHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		movie := titles.MapImdbTitleToDbTitle(title)
+		movie := titles.MapDbTitleToApiTitle(title)
 		allMovies = append(allMovies, movie)
 	}
 
@@ -101,25 +102,30 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Keep a concrete copy for response mapping
+	// Parse the IMDB API response into the Title struct
 	var title imdb.Title
 	if err := json.Unmarshal(body, &title); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "failed to parse IMDb API response")
 		return
 	}
 
-	// Store in MongoDB using generic map to preserve structure and _id
-	var doc map[string]any
-	if err := json.Unmarshal(body, &doc); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to parse payload for storage")
+	// Set watched to false for new titles
+	title.Watched = false
+
+	// Convert to BSON document for MongoDB storage
+	doc, err := bson.Marshal(title)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to convert title to BSON")
 		return
 	}
-	// Ensure _id is set for MongoDB primary key
-	if idVal, ok := doc["id"].(string); ok && idVal != "" {
-		doc["_id"] = idVal
+
+	var bsonDoc bson.M
+	if err := bson.Unmarshal(doc, &bsonDoc); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to convert to BSON document")
+		return
 	}
 
-	if err := titles.AddTitle(ctx, doc); err != nil {
+	if err := titles.AddTitle(ctx, bsonDoc); err != nil {
 		if !mongo.IsDuplicateKeyError(err) {
 			respondWithError(w, http.StatusInternalServerError, "failed to store title in database")
 			return
@@ -132,7 +138,7 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map to API movie type and respond
-	movie := titles.MapImdbTitleToDbTitle(title)
+	movie := titles.MapDbTitleToApiTitle(title)
 	respondWithJSON(w, http.StatusCreated, movie)
 }
 
@@ -292,4 +298,36 @@ func UpdateRatingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rating updated successfully"})
+}
+
+func SetWatched(w http.ResponseWriter, r *http.Request) {
+	titleId := r.PathValue("id")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	var req titles.SetWatchedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
+		return
+	}
+
+	ctx := context.Background()
+	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
+		return
+	}
+
+	updatedTitle, err := titles.SetWatched(ctx, titleId, req.Watched)
+	if err != nil {
+		log.Printf("Error setting watched: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "database error while setting watched")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, updatedTitle)
 }

@@ -21,6 +21,7 @@ type Title struct {
 	OriginCountries []CodeName  `json:"originCountries" bson:"originCountries"`
 	SpokenLanguages []CodeName  `json:"spokenLanguages" bson:"spokenLanguages"`
 	Interests       []Interest  `json:"interests" bson:"interests"`
+	Watched         bool        `json:"watched" bson:"watched"`
 }
 
 type Image struct {

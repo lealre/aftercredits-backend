@@ -8,7 +8,7 @@ import (
 )
 
 // mapTitleToMovie converts an imdb.Title to api.Movie
-func MapImdbTitleToDbTitle(title imdb.Title) Title {
+func MapDbTitleToApiTitle(title imdb.Title) Title {
 	// Extract director names
 	directorNames := make([]string, len(title.Directors))
 	for i, director := range title.Directors {
@@ -33,6 +33,12 @@ func MapImdbTitleToDbTitle(title imdb.Title) Title {
 		originCountries[i] = country.Name
 	}
 
+	// Set watched to false if it is not set
+	watched := title.Watched
+	if !watched {
+		watched = false
+	}
+
 	return Title{
 		ID:           title.ID,
 		PrimaryTitle: title.PrimaryTitle,
@@ -53,6 +59,7 @@ func MapImdbTitleToDbTitle(title imdb.Title) Title {
 		WritersNames:    writerNames,
 		StarsNames:      starNames,
 		OriginCountries: originCountries,
+		Watched:         watched,
 	}
 }
 

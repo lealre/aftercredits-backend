@@ -15,6 +15,7 @@ type Title struct {
 	WritersNames    []string `json:"writersNames"`
 	StarsNames      []string `json:"starsNames"`
 	OriginCountries []string `json:"originCountries"`
+	Watched         bool     `json:"watched"`
 }
 
 type Image struct {
@@ -34,4 +35,8 @@ type AddMovieRequest struct {
 
 type AllMoviesResponse struct {
 	Movies []Title `json:"movies"`
+}
+
+type SetWatchedRequest struct {
+	Watched bool `json:"watched"`
 }

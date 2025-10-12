@@ -22,7 +22,6 @@ func getUserByID(ctx context.Context, id string) (User, error) {
 	return user, nil
 }
 
-// GetAllUsers fetches all user documents from the collection
 func GetAllUsers(ctx context.Context) (*mongo.Cursor, error) {
 	coll := mongodb.GetUsersCollection(ctx)
 	cursor, err := coll.Find(ctx, bson.M{})

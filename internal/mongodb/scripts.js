@@ -10,3 +10,25 @@ db("brunan")
 db("brunan")
   .collection("ratings")
   .createIndex({ userId: 1, titleId: 1 }, { unique: true });
+
+// ADD NEW FIELD TO ALL TITLES
+db("brunan")
+  .collection("titles")
+  .updateMany({}, { $set: { watched: false } })
+  .then((result) => {
+    console.log(`${result.modifiedCount} documents updated`);
+  })
+  .catch((err) => {
+    console.error("Error updating titles:", err);
+  });
+
+// DELETE TITLE
+db("brunan")
+  .collection("titles")
+  .deleteOne({ _id: "tt0117060" })
+  .then((result) => {
+    console.log(`${result.deletedCount} document deleted`);
+  })
+  .catch((err) => {
+    console.error("Error deleting title:", err);
+  });

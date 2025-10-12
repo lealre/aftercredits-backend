@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // getTitleByID fetches a title document by its _id
@@ -54,4 +56,30 @@ func GetAllTitles(ctx context.Context) (*mongo.Cursor, error) {
 		return nil, err
 	}
 	return cursor, nil
+}
+
+func SetWatched(ctx context.Context, id string, watched bool) (*Title, error) {
+	coll := mongodb.GetTitlesCollection(ctx)
+
+	// Use FindOneAndUpdate to get the updated document
+	opts := options.FindOneAndUpdate()
+	opts.SetReturnDocument(options.After) // Return the document after update
+
+	var updatedTitle imdb.Title
+	err := coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": id},
+		bson.M{"$set": bson.M{"watched": watched}},
+		opts,
+	).Decode(&updatedTitle)
+
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, mongodb.ErrRecordNotFound
+		}
+		return nil, err
+	}
+	updatedTitleDb := MapDbTitleToApiTitle(updatedTitle)
+
+	return &updatedTitleDb, nil
 }
