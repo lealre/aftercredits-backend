@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/services/ratings"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -38,7 +40,7 @@ func AddTitle(ctx context.Context, doc map[string]any) error {
 	return err
 }
 
-// deleteTitleByID deletes a document by _id and returns whether a doc was removed
+// DeleteTitleByID deletes a document by _id and returns whether a doc was removed
 func DeleteTitleByID(ctx context.Context, id string) (bool, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 	res, err := coll.DeleteOne(ctx, bson.M{"_id": id})
@@ -82,4 +84,23 @@ func SetWatched(ctx context.Context, id string, watched bool) (*Title, error) {
 	updatedTitleDb := MapDbTitleToApiTitle(updatedTitle)
 
 	return &updatedTitleDb, nil
+}
+
+// CascadeDeleteTitle deletes a title and all its related data (ratings)
+func CascadeDeleteTitle(ctx context.Context, titleId string) (int64, error) {
+	// Delete all related ratings first
+	deletedRatingsCount, err := ratings.DeleteRatingsByTitleId(ctx, titleId)
+	if err != nil {
+		log.Printf("Error deleting related ratings: %v", err)
+		return 0, fmt.Errorf("failed to delete related ratings: %w", err)
+	}
+
+	// Delete the title
+	_, err = DeleteTitleByID(ctx, titleId)
+	if err != nil {
+		log.Printf("Error deleting title: %v", err)
+		return 0, fmt.Errorf("failed to delete title: %w", err)
+	}
+
+	return deletedRatingsCount, nil
 }

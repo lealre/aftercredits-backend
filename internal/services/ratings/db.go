@@ -70,6 +70,22 @@ func getRatingById(ctx context.Context, ratingId string) (*Rating, error) {
 	return &rating, nil
 }
 
+// DeleteRatingsByTitleId deletes all ratings for a specific title
+func DeleteRatingsByTitleId(ctx context.Context, titleId string) (int64, error) {
+	coll := mongodb.GetRatingsCollection(ctx)
+
+	// Create filter to find ratings by titleId
+	filter := bson.M{"titleId": titleId}
+
+	// Delete all ratings matching the titleId
+	result, err := coll.DeleteMany(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.DeletedCount, nil
+}
+
 // UpdateRating updates only the Note and Comments fields of a rating
 func UpdateRating(ctx context.Context, ratingId string, updateReq UpdateRatingRequest) error {
 	coll := mongodb.GetRatingsCollection(ctx)

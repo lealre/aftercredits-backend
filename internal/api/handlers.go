@@ -331,3 +331,33 @@ func SetWatched(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, updatedTitle)
 }
+
+func DeleteTitle(w http.ResponseWriter, r *http.Request) {
+	titleId := r.PathValue("id")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	ctx := context.Background()
+	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
+		return
+	}
+
+	// Cascade delete using titles service
+	deletedRatingsCount, err := titles.CascadeDeleteTitle(ctx, titleId)
+	if err != nil {
+		log.Printf("Error in cascade delete: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "database error during cascade delete")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"message":        "Title and related data deleted from database",
+		"deletedRatings": deletedRatingsCount,
+	})
+}
