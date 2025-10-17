@@ -11,15 +11,11 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongo_data:/data/db
-      - mongo_config:/data/configdb
+      - ${MONGO_DATA_DIR}/mongodb:/data/db
+      - ${MONGO_DATA_DIR}/mongodb/config:/data/configdb
     healthcheck:
       test: ["CMD-SHELL", "mongosh -u \"$MONGO_INITDB_ROOT_USERNAME\" -p \"$MONGO_INITDB_ROOT_PASSWORD\" --eval 'db.adminCommand(\"ping\")'"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-volumes:
-  mongo_data:
-  mongo_config:
 
