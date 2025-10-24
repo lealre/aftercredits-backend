@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -24,10 +25,12 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetTitlessHandler(w http.ResponseWriter, r *http.Request) {
+
+	// titles.GetPageOfTitles()
 	ctx := context.Background()
 
 	// Get all titles from MongoDB
-	cursor, err := titles.GetAllTitles(ctx)
+	cursor, err := titles.GetAllTitlesDb(ctx)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch movies from database")
 		return
@@ -109,8 +112,11 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set watched to false for new titles
+	// Set missing fields
 	title.Watched = false
+	now := time.Now()
+	title.AddedAt = &now
+	title.UpdatedAt = &now
 
 	// Convert to BSON document for MongoDB storage
 	doc, err := bson.Marshal(title)

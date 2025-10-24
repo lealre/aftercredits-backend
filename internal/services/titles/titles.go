@@ -3,9 +3,41 @@ package titles
 import (
 	"context"
 
+	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
 )
+
+func GetPageOfTitles(ctx context.Context, size, page int) (generics.Page[Title], error) {
+	cursor, err := GetAllTitlesDb(ctx)
+	if err != nil {
+		return generics.Page[Title]{}, err
+	}
+	defer cursor.Close(ctx)
+
+	var allMovies []Title
+
+	for cursor.Next(ctx) {
+		var title imdb.Title
+		if err := cursor.Decode(&title); err != nil {
+			return generics.Page[Title]{}, nil
+		}
+
+		movie := MapDbTitleToApiTitle(title)
+		allMovies = append(allMovies, movie)
+	}
+
+	if err := cursor.Err(); err != nil {
+		return generics.Page[Title]{}, nil
+	}
+
+	return generics.Page[Title]{
+		TotalResults: len(allMovies),
+		Page:         1,
+		TotalPages:   1,
+		Content:      allMovies,
+	}, nil
+}
 
 // mapTitleToMovie converts an imdb.Title to api.Movie
 func MapDbTitleToApiTitle(title imdb.Title) Title {
@@ -60,6 +92,9 @@ func MapDbTitleToApiTitle(title imdb.Title) Title {
 		StarsNames:      starNames,
 		OriginCountries: originCountries,
 		Watched:         watched,
+		AddedAt:         title.AddedAt,
+		UpdatedAt:       title.UpdatedAt,
+		WatchedAt:       title.WatchedAt,
 	}
 }
 
@@ -73,12 +108,3 @@ func ChecKIfTitleExist(ctx context.Context, id string) (bool, error) {
 	}
 	return false, err
 }
-
-// func GetTitleRatings(ctx context.Context, id string) ([]ratings.Rating, error) {
-// 	coll := mongodb.GetRatingsCollection(ctx)
-// 	cursor, err := coll.Find(ctx, bson.M{"titleId": id})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return cursor, nil
-// }

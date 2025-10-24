@@ -51,7 +51,7 @@ func DeleteTitleByID(ctx context.Context, id string) (bool, error) {
 }
 
 // GetAllTitles fetches all title documents from the collection
-func GetAllTitles(ctx context.Context) (*mongo.Cursor, error) {
+func GetAllTitlesDb(ctx context.Context) (*mongo.Cursor, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 	cursor, err := coll.Find(ctx, bson.M{})
 	if err != nil {

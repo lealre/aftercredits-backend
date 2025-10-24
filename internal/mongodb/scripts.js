@@ -32,3 +32,23 @@ db("brunan")
   .catch((err) => {
     console.error("Error deleting title:", err);
   });
+
+// ADD NEW FILEDS TO TITLES
+db("brunan")
+  .collection("titles")
+  .updateMany(
+    {},
+    {
+      $set: {
+        addedAt: new Date(),
+        updatedAt: new Date(),
+        watchedAt: null,
+      },
+    }
+  )
+  .then((result) => {
+    console.log(`${result.modifiedCount} documents updated with timestamps`);
+  })
+  .catch((err) => {
+    console.error("Error updating titles:", err);
+  });

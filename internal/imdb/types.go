@@ -4,6 +4,8 @@
 // works for JSON (API) and MongoDB (storage).
 package imdb
 
+import "time"
+
 type Title struct {
 	ID              string      `json:"id" bson:"_id"`
 	Type            string      `json:"type" bson:"type"`
@@ -22,6 +24,9 @@ type Title struct {
 	SpokenLanguages []CodeName  `json:"spokenLanguages" bson:"spokenLanguages"`
 	Interests       []Interest  `json:"interests" bson:"interests"`
 	Watched         bool        `json:"watched" bson:"watched"`
+	AddedAt         *time.Time  `json:"addedAt,omitempty" bson:"addedAt,omitempty"`
+	UpdatedAt       *time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
+	WatchedAt       *time.Time  `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
 }
 
 type Image struct {
