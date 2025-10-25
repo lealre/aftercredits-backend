@@ -308,7 +308,7 @@ func SetWatched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedTitle, err := titles.SetWatched(ctx, titleId, req.Watched)
+	updatedTitle, err := titles.SetWatched(ctx, titleId, req.Watched, req.WatchedAt)
 	if err != nil {
 		log.Printf("Error setting watched: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database error while setting watched")

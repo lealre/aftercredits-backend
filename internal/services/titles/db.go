@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -88,18 +89,45 @@ func CountTotalTitlesDb(ctx context.Context, args ...any) (int, error) {
 	return int(totalTitles), nil
 }
 
-func SetWatched(ctx context.Context, id string, watched bool) (*Title, error) {
+func SetWatched(ctx context.Context, id string, watched *bool, watchedAt *FlexibleDate) (*Title, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 
 	// Use FindOneAndUpdate to get the updated document
 	opts := options.FindOneAndUpdate()
 	opts.SetReturnDocument(options.After) // Return the document after update
 
+	updateDoc := bson.M{}
+
+	// Update watched field if provided
+	if watched != nil {
+		updateDoc["watched"] = *watched
+	}
+
+	// Update watchedAt field if provided
+	if watchedAt != nil {
+		if watchedAt.Time != nil {
+			updateDoc["watchedAt"] = *watchedAt.Time
+		} else {
+			// If watchedAt is provided but Time is nil, set it to null in database
+			updateDoc["watchedAt"] = nil
+		}
+	}
+
+	// Always update the updatedAt timestamp if any field is being updated
+	if len(updateDoc) > 0 {
+		now := time.Now()
+		updateDoc["updatedAt"] = now
+	}
+
+	if len(updateDoc) == 0 {
+		return nil, fmt.Errorf("no fields to update")
+	}
+
 	var updatedTitle imdb.Title
 	err := coll.FindOneAndUpdate(
 		ctx,
 		bson.M{"_id": id},
-		bson.M{"$set": bson.M{"watched": watched}},
+		bson.M{"$set": updateDoc},
 		opts,
 	).Decode(&updatedTitle)
 
