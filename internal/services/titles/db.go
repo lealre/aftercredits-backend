@@ -14,7 +14,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// getTitleByID fetches a title document by its _id
 func GetTitleByID(ctx context.Context, id string) (bson.M, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 	var out bson.M
@@ -27,7 +26,6 @@ func GetTitleByID(ctx context.Context, id string) (bson.M, error) {
 	return out, nil
 }
 
-// addTitle inserts a document; returns duplicate key error if it already exists
 func AddTitle(ctx context.Context, doc map[string]any) error {
 	if doc == nil {
 		return fmt.Errorf("doc is nil")
@@ -40,7 +38,6 @@ func AddTitle(ctx context.Context, doc map[string]any) error {
 	return err
 }
 
-// DeleteTitleByID deletes a document by _id and returns whether a doc was removed
 func DeleteTitleByID(ctx context.Context, id string) (bool, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 	res, err := coll.DeleteOne(ctx, bson.M{"_id": id})
@@ -50,14 +47,45 @@ func DeleteTitleByID(ctx context.Context, id string) (bool, error) {
 	return res.DeletedCount > 0, nil
 }
 
-// GetAllTitles fetches all title documents from the collection
-func GetAllTitlesDb(ctx context.Context) (*mongo.Cursor, error) {
+func GetTitlesDb(ctx context.Context, args ...any) ([]Title, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
-	cursor, err := coll.Find(ctx, bson.M{})
+
+	filter, opts := mongodb.ResolveFilterAndOptionsSearch(args...)
+	cursor, err := coll.Find(ctx, filter, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return cursor, nil
+	defer cursor.Close(ctx)
+
+	// Iterate through the cursor and map each title to a API title struct
+	var allMovies []Title
+	for cursor.Next(ctx) {
+		var title imdb.Title
+		if err := cursor.Decode(&title); err != nil {
+			return []Title{}, err
+		}
+
+		movie := MapDbTitleToApiTitle(title)
+		allMovies = append(allMovies, movie)
+	}
+
+	if err := cursor.Err(); err != nil {
+		return []Title{}, err
+	}
+
+	return allMovies, nil
+}
+
+func CountTotalTitlesDb(ctx context.Context, args ...any) (int, error) {
+	coll := mongodb.GetTitlesCollection(ctx)
+
+	filter, _ := mongodb.ResolveFilterAndOptionsSearch(args)
+	totalTitles, err := coll.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(totalTitles), nil
 }
 
 func SetWatched(ctx context.Context, id string, watched bool) (*Title, error) {

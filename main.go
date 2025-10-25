@@ -25,7 +25,7 @@ func main() {
 func ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", api.RootHandler)
-	mux.HandleFunc("GET /titles", api.GetTitlessHandler)
+	mux.HandleFunc("GET /titles", api.GetTitlesHandler)
 	mux.HandleFunc("POST /titles", api.AddTitleHandler)
 	mux.HandleFunc("PATCH /titles/{id}", api.SetWatched)
 	mux.HandleFunc("DELETE /titles/{id}", api.DeleteTitle)

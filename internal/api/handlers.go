@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
@@ -24,41 +25,20 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func GetTitlessHandler(w http.ResponseWriter, r *http.Request) {
+func GetTitlesHandler(w http.ResponseWriter, r *http.Request) {
+	size := generics.StringToInt(r.URL.Query().Get("size"))
+	page := generics.StringToInt(r.URL.Query().Get("page"))
+	orderBy := r.URL.Query().Get("orderBy")
 
-	// titles.GetPageOfTitles()
 	ctx := context.Background()
-
-	// Get all titles from MongoDB
-	cursor, err := titles.GetAllTitlesDb(ctx)
+	pageOfTitles, err := titles.GetPageOfTitles(ctx, size, page, orderBy)
 	if err != nil {
+		log.Printf("Error getting titles from DB: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch movies from database")
 		return
 	}
-	defer cursor.Close(ctx)
 
-	var allMovies []titles.Title
-
-	// Iterate through the cursor and map each title to a movie
-	for cursor.Next(ctx) {
-		var title imdb.Title
-		if err := cursor.Decode(&title); err != nil {
-			respondWithError(w, http.StatusInternalServerError, "Failed to decode movie data")
-			return
-		}
-
-		movie := titles.MapDbTitleToApiTitle(title)
-		allMovies = append(allMovies, movie)
-	}
-
-	// Check for cursor errors
-	if err := cursor.Err(); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Database cursor error")
-		return
-	}
-
-	// Return the list of movies
-	respondWithJSON(w, http.StatusOK, titles.AllMoviesResponse{Movies: allMovies})
+	respondWithJSON(w, http.StatusOK, pageOfTitles)
 }
 
 func AddTitleHandler(w http.ResponseWriter, r *http.Request) {

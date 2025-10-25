@@ -6,66 +6,89 @@ import (
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func GetPageOfTitles(ctx context.Context, size, page int) (generics.Page[Title], error) {
-	cursor, err := GetAllTitlesDb(ctx)
+/*
+This gets the paginated titles
+
+Example on how to filter by field
+filter := bson.M{"category": "news"}
+
+Example on how to set limits, offsets, orderBy, ...
+opts := options.Find().SetSort(bson.D{{"addedAt", -1}}).SetLimit(20)
+*/
+func GetPageOfTitles(ctx context.Context, size, page int, orderByField string) (generics.Page[Title], error) {
+	if size <= 0 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+
+	if page == 0 {
+		page = 1
+	}
+	if orderByField == "" {
+		orderByField = "addedAt"
+	}
+
+	skip := (int64(page) - 1) * int64(size)
+	opts := options.Find().
+		SetLimit(int64(size)).
+		SetSkip(skip).
+		SetSort(bson.D{{Key: orderByField, Value: -1}})
+
+	totalTitlesInDB, err := CountTotalTitlesDb(ctx)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
-	defer cursor.Close(ctx)
 
-	var allMovies []Title
-
-	for cursor.Next(ctx) {
-		var title imdb.Title
-		if err := cursor.Decode(&title); err != nil {
-			return generics.Page[Title]{}, nil
-		}
-
-		movie := MapDbTitleToApiTitle(title)
-		allMovies = append(allMovies, movie)
+	allTitles, err := GetTitlesDb(ctx, opts)
+	if err != nil {
+		return generics.Page[Title]{}, err
+	}
+	if allTitles == nil {
+		allTitles = []Title{}
 	}
 
-	if err := cursor.Err(); err != nil {
-		return generics.Page[Title]{}, nil
+	totalPages := (totalTitlesInDB + size - 1) / size
+	if totalTitlesInDB == 0 {
+		totalPages = 1
 	}
 
 	return generics.Page[Title]{
-		TotalResults: len(allMovies),
-		Page:         1,
-		TotalPages:   1,
-		Content:      allMovies,
+		TotalResults: totalTitlesInDB,
+		Size:         size,
+		Page:         page,
+		TotalPages:   int(totalPages),
+		Content:      allTitles,
 	}, nil
 }
 
 // mapTitleToMovie converts an imdb.Title to api.Movie
 func MapDbTitleToApiTitle(title imdb.Title) Title {
-	// Extract director names
 	directorNames := make([]string, len(title.Directors))
 	for i, director := range title.Directors {
 		directorNames[i] = director.DisplayName
 	}
 
-	// Extract writer names
 	writerNames := make([]string, len(title.Writers))
 	for i, writer := range title.Writers {
 		writerNames[i] = writer.DisplayName
 	}
 
-	// Extract star names
 	starNames := make([]string, len(title.Stars))
 	for i, star := range title.Stars {
 		starNames[i] = star.DisplayName
 	}
 
-	// Extract origin country names
 	originCountries := make([]string, len(title.OriginCountries))
 	for i, country := range title.OriginCountries {
 		originCountries[i] = country.Name
 	}
 
-	// Set watched to false if it is not set
 	watched := title.Watched
 	if !watched {
 		watched = false
