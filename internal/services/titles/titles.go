@@ -19,14 +19,18 @@ filter := bson.M{"category": "news"}
 Example on how to set limits, offsets, orderBy, ...
 opts := options.Find().SetSort(bson.D{{"addedAt", -1}}).SetLimit(20)
 */
-func GetPageOfTitles(ctx context.Context, size, page int, orderByField string) (generics.Page[Title], error) {
+func GetPageOfTitles(
+	ctx context.Context,
+	size, page int,
+	orderByField string,
+	watched *bool,
+) (generics.Page[Title], error) {
 	if size <= 0 {
 		size = 20
 	}
 	if size > 100 {
 		size = 100
 	}
-
 	if page == 0 {
 		page = 1
 	}
@@ -40,12 +44,17 @@ func GetPageOfTitles(ctx context.Context, size, page int, orderByField string) (
 		SetSkip(skip).
 		SetSort(bson.D{{Key: orderByField, Value: -1}})
 
-	totalTitlesInDB, err := CountTotalTitlesDb(ctx)
+	filter := bson.M{}
+	if watched != nil {
+		filter["watched"] = *watched
+	}
+
+	totalTitlesInDB, err := CountTotalTitlesDb(ctx, filter)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
 
-	allTitles, err := GetTitlesDb(ctx, opts)
+	allTitles, err := GetTitlesDb(ctx, filter, opts)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}

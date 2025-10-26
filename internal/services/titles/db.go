@@ -79,7 +79,7 @@ func GetTitlesDb(ctx context.Context, args ...any) ([]Title, error) {
 func CountTotalTitlesDb(ctx context.Context, args ...any) (int, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 
-	filter, _ := mongodb.ResolveFilterAndOptionsSearch(args)
+	filter, _ := mongodb.ResolveFilterAndOptionsSearch(args...)
 	totalTitles, err := coll.CountDocuments(ctx, filter)
 	if err != nil {
 		return 0, err
