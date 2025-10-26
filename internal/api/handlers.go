@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/imdb"
+	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
@@ -26,6 +26,8 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetTitlesHandler(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
 	size := generics.StringToInt(r.URL.Query().Get("size"))
 	page := generics.StringToInt(r.URL.Query().Get("page"))
 	orderBy := r.URL.Query().Get("orderBy")
@@ -33,7 +35,7 @@ func GetTitlesHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	pageOfTitles, err := titles.GetPageOfTitles(ctx, size, page, orderBy)
 	if err != nil {
-		log.Printf("Error getting titles from DB: %v", err)
+		logger.Printf("Error getting titles from DB: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch movies from database")
 		return
 	}
@@ -42,6 +44,7 @@ func GetTitlesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
 	if r.Method != http.MethodPost {
 		respondWithError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -61,7 +64,7 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 	re := regexp.MustCompile(`^https?://(?:www\.)?imdb\.com/title/(tt[0-9]+)/?`)
 	m := re.FindStringSubmatch(req.URL)
 	if len(m) != 2 {
-		respondWithError(w, http.StatusBadRequest, "invalid IMDb title URL")
+		respondWithError(w, http.StatusBadRequest, "Invalid IMDb title URL")
 		return
 	}
 	titleID := m[1]
@@ -73,7 +76,7 @@ func AddTitleHandler(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "title already added")
 		return
 	} else if err != mongodb.ErrRecordNotFound {
-		log.Printf("Error getting title by ID: %v", err)
+		logger.Printf("Error getting title by ID: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
 		return
 	}
@@ -155,6 +158,8 @@ func GetRatingByIdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func AddRating(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
 	var req ratings.Rating
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
@@ -163,7 +168,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	if ok, err := users.CheckIfUserExist(ctx, req.UserId); err != nil {
-		log.Println("Error checking user in database:", err)
+		logger.Println("Error checking user in database:", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
 		return
 	} else if !ok {
@@ -172,7 +177,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ok, err := titles.ChecKIfTitleExist(ctx, req.TitleId); err != nil {
-		log.Println("Error checking title in database:", err)
+		logger.Println("Error checking title in database:", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
 		return
 	} else if !ok {
@@ -193,11 +198,13 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetTitleRatingsHandler(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
 	titleId := r.PathValue("id")
 	if titleId == "" {
 		respondWithError(w, http.StatusBadRequest, "Title id is required")
 		return
 	}
+	logger.Printf("Getting ratings for title id %s", titleId)
 
 	ctx := context.Background()
 	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
@@ -225,11 +232,12 @@ func GetTitleRatingsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUsers(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
+	logger := logx.FromContext(r.Context())
 
+	ctx := context.Background()
 	cursor, err := users.GetAllUsers(ctx)
 	if err != nil {
-		log.Printf("Error getting all users: %v", err)
+		logger.Printf("Error getting all users: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
 		return
 	}
@@ -237,7 +245,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 
 	var allUsers []users.User
 	if err := cursor.All(ctx, &allUsers); err != nil {
-		log.Printf("Error decoding users: %v", err)
+		logger.Printf("Error decoding users: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "failed to decode users")
 		return
 	}
@@ -251,6 +259,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateRatingHandler(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
 	ratingId := r.PathValue("id")
 	if ratingId == "" {
 		respondWithError(w, http.StatusBadRequest, "Rating id is required")
@@ -278,7 +287,7 @@ func UpdateRatingHandler(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
 			return
 		}
-		log.Printf("Error updating rating: %v", err)
+		logger.Printf("Error updating rating: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to update rating")
 		return
 	}
@@ -287,6 +296,8 @@ func UpdateRatingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SetWatched(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
 	titleId := r.PathValue("id")
 	if titleId == "" {
 		respondWithError(w, http.StatusBadRequest, "Title id is required")
@@ -310,7 +321,7 @@ func SetWatched(w http.ResponseWriter, r *http.Request) {
 
 	updatedTitle, err := titles.SetWatched(ctx, titleId, req.Watched, req.WatchedAt)
 	if err != nil {
-		log.Printf("Error setting watched: %v", err)
+		logger.Printf("Error setting watched: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database error while setting watched")
 		return
 	}
@@ -319,6 +330,7 @@ func SetWatched(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteTitle(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
 	titleId := r.PathValue("id")
 	if titleId == "" {
 		respondWithError(w, http.StatusBadRequest, "Title id is required")
@@ -337,7 +349,7 @@ func DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	// Cascade delete using titles service
 	deletedRatingsCount, err := titles.CascadeDeleteTitle(ctx, titleId)
 	if err != nil {
-		log.Printf("Error in cascade delete: %v", err)
+		logger.Printf("Error in cascade delete: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database error during cascade delete")
 		return
 	}

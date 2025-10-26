@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/imdb"
@@ -147,15 +146,13 @@ func CascadeDeleteTitle(ctx context.Context, titleId string) (int64, error) {
 	// Delete all related ratings first
 	deletedRatingsCount, err := ratings.DeleteRatingsByTitleId(ctx, titleId)
 	if err != nil {
-		log.Printf("Error deleting related ratings: %v", err)
-		return 0, fmt.Errorf("failed to delete related ratings: %w", err)
+		return 0, err
 	}
 
 	// Delete the title
 	_, err = DeleteTitleByID(ctx, titleId)
 	if err != nil {
-		log.Printf("Error deleting title: %v", err)
-		return 0, fmt.Errorf("failed to delete title: %w", err)
+		return 0, err
 	}
 
 	return deletedRatingsCount, nil

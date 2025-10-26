@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/logx"
 )
 
 func main() {
@@ -75,40 +76,25 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 		requestID := generateRequestID()
 		startTime := time.Now()
 
-		// Override the global logger for this request
-		originalLogger := log.Default()
-		defer func() {
-			log.SetOutput(originalLogger.Writer()) // Restore original logger
-		}()
+		// Create a request-specific logger (not global)
+		logger := log.New(os.Stdout, "["+requestID+"]["+r.Method+":"+r.URL.Path+"] - ", log.LstdFlags)
 
-		// Create a request-specific logger
-		log.SetOutput(os.Stdout)
-		log.SetPrefix("[" + requestID + "] - ")
-		log.SetFlags(log.LstdFlags)
+		logger.Printf("Request received...")
 
-		// Log request start
-		log.Printf("Started %s %s", r.Method, r.URL.Path)
-
-		// Store requestID in context
+		// Store logger and requestID in context
 		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		ctx = logx.WithLogger(ctx, logger)
 		r = r.WithContext(ctx)
 
-		// Wrap the response writer to capture status code
 		recorder := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
-		// Call next handler
 		next.ServeHTTP(recorder, r)
 
-		// Calculate duration
 		duration := time.Since(startTime)
-
-		// Log completion with status and duration
 		if duration > time.Second {
-			log.Printf("Completed %s %s in %.2fs (status %d)",
-				r.Method, r.URL.Path, duration.Seconds(), recorder.statusCode)
+			logger.Printf("Request completed in %.2fs (status %d)", duration.Seconds(), recorder.statusCode)
 		} else {
-			log.Printf("Completed %s %s in %dms (status %d)",
-				r.Method, r.URL.Path, duration.Milliseconds(), recorder.statusCode)
+			logger.Printf("Request completed in %dms (status %d)", duration.Milliseconds(), recorder.statusCode)
 		}
 	})
 }
