@@ -38,6 +38,10 @@ func GetPageOfTitles(
 	if orderByField == "" {
 		orderByField = "addedAt"
 	}
+	// Handle nested rating field
+	if orderByField == "imdbRating" {
+		orderByField = "rating.aggregateRating"
+	}
 	ascendingValue := -1
 	if ascending != nil && *ascending {
 		ascendingValue = 1
