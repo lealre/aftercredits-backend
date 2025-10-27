@@ -24,6 +24,7 @@ func GetPageOfTitles(
 	size, page int,
 	orderByField string,
 	watched *bool,
+	ascending *bool,
 ) (generics.Page[Title], error) {
 	if size <= 0 {
 		size = 20
@@ -37,12 +38,16 @@ func GetPageOfTitles(
 	if orderByField == "" {
 		orderByField = "addedAt"
 	}
+	ascendingValue := -1
+	if ascending != nil && *ascending {
+		ascendingValue = 1
+	}
 
 	skip := (int64(page) - 1) * int64(size)
 	opts := options.Find().
 		SetLimit(int64(size)).
 		SetSkip(skip).
-		SetSort(bson.D{{Key: orderByField, Value: -1}})
+		SetSort(bson.D{{Key: orderByField, Value: ascendingValue}})
 
 	filter := bson.M{}
 	if watched != nil {
@@ -105,6 +110,7 @@ func MapDbTitleToApiTitle(title imdb.Title) Title {
 
 	return Title{
 		ID:           title.ID,
+		Type:         title.Type,
 		PrimaryTitle: title.PrimaryTitle,
 		PrimaryImage: Image{
 			URL:    title.PrimaryImage.URL,

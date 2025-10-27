@@ -23,20 +23,11 @@ func GetTitles(w http.ResponseWriter, r *http.Request) {
 	size := generics.StringToInt(r.URL.Query().Get("size"))
 	page := generics.StringToInt(r.URL.Query().Get("page"))
 	orderBy := r.URL.Query().Get("orderBy")
-	watchedParam := r.URL.Query().Get("watched")
-
-	var watched *bool
-	switch watchedParam {
-	case "true":
-		val := true
-		watched = &val
-	case "false":
-		val := false
-		watched = &val
-	}
+	ascending := parseUrlQueryToBool(r.URL.Query().Get("ascending"))
+	watched := parseUrlQueryToBool(r.URL.Query().Get("watched"))
 
 	ctx := context.Background()
-	pageOfTitles, err := titles.GetPageOfTitles(ctx, size, page, orderBy, watched)
+	pageOfTitles, err := titles.GetPageOfTitles(ctx, size, page, orderBy, watched, ascending)
 	if err != nil {
 		logger.Printf("Error getting titles from DB: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch movies from database")

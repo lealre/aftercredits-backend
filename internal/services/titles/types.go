@@ -10,6 +10,7 @@ import (
 type Title struct {
 	ID              string     `json:"id"`
 	PrimaryTitle    string     `json:"primaryTitle"`
+	Type            string     `json:"type"`
 	PrimaryImage    Image      `json:"primaryImage"`
 	StartYear       int        `json:"startYear"`
 	RuntimeSeconds  int        `json:"runtimeSeconds"`

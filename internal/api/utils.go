@@ -25,3 +25,17 @@ func respondWithError(w http.ResponseWriter, code int, msg string) error {
 	}
 	return respondWithJSON(w, code, messageBody)
 }
+
+func parseUrlQueryToBool(val string) *bool {
+	var parsedVal *bool
+	switch val {
+	case "true":
+		val := true
+		parsedVal = &val
+	case "false":
+		val := false
+		parsedVal = &val
+	}
+
+	return parsedVal
+}
