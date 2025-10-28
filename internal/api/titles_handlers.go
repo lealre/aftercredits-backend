@@ -12,6 +12,7 @@ import (
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -123,6 +124,40 @@ func AddTitle(w http.ResponseWriter, r *http.Request) {
 	// Map to API movie type and respond
 	movie := titles.MapDbTitleToApiTitle(title)
 	respondWithJSON(w, http.StatusCreated, movie)
+}
+
+func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	titleId := r.PathValue("id")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+	logger.Printf("Getting ratings for title id %s", titleId)
+
+	ctx := context.Background()
+	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
+		return
+	}
+
+	// Get all ratings for this title
+	titleRatings, err := ratings.GetRatingsByTitleId(ctx, titleId)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "database error while getting ratings")
+		return
+	}
+
+	if len(titleRatings) == 0 {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("No ratings found for title with id %s", titleId))
+		return
+	}
+
+	allRatings := ratings.AllRatingsFromMovie{Ratings: titleRatings}
+	respondWithJSON(w, http.StatusOK, allRatings)
 }
 
 func SetWatched(w http.ResponseWriter, r *http.Request) {

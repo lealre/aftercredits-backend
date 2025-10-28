@@ -17,6 +17,7 @@ func ListenAndServe() error {
 	mux.HandleFunc("DELETE /titles/{id}", api.DeleteTitle)
 
 	mux.HandleFunc("GET /ratings/{id}", api.GetRatingById)
+	mux.HandleFunc("POST /ratings/batch", api.GetRatingsBatch)
 	mux.HandleFunc("POST /ratings", api.AddRating)
 	mux.HandleFunc("PATCH /ratings/{id}", api.UpdateRating)
 

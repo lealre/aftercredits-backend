@@ -76,40 +76,6 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, req)
 }
 
-func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
-	logger := logx.FromContext(r.Context())
-	titleId := r.PathValue("id")
-	if titleId == "" {
-		respondWithError(w, http.StatusBadRequest, "Title id is required")
-		return
-	}
-	logger.Printf("Getting ratings for title id %s", titleId)
-
-	ctx := context.Background()
-	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
-		return
-	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
-		return
-	}
-
-	// Get all ratings for this title
-	titleRatings, err := ratings.GetRatingsByTitleId(ctx, titleId)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while getting ratings")
-		return
-	}
-
-	if len(titleRatings) == 0 {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("No ratings found for title with id %s", titleId))
-		return
-	}
-
-	allRatings := ratings.AllRatingsFromMovie{Ratings: titleRatings}
-	respondWithJSON(w, http.StatusOK, allRatings)
-}
-
 func UpdateRating(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	ratingId := r.PathValue("id")
@@ -145,4 +111,26 @@ func UpdateRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rating updated successfully"})
+}
+
+func GetRatingsBatch(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
+	var req ratings.GetRatingsBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
+		return
+	}
+
+	logger.Printf("All titles after unmarshall: %s", req.Titles)
+
+	titlesRatingsMap, err := ratings.GetRatingsBatch(req.Titles, logger)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error getting ratings from titles list")
+		return
+	}
+	logger.Printf("Returning titles map: %v", titlesRatingsMap.Titles)
+
+	respondWithJSON(w, http.StatusOK, titlesRatingsMap)
+
 }

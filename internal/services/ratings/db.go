@@ -114,3 +114,21 @@ func UpdateRating(ctx context.Context, ratingId string, updateReq UpdateRatingRe
 
 	return nil
 }
+
+func getRatingsDb(ctx context.Context, args ...any) ([]Rating, error) {
+	coll := mongodb.GetRatingsCollection(ctx)
+
+	filter, opts := mongodb.ResolveFilterAndOptionsSearch(args...)
+	cursor, err := coll.Find(ctx, filter, opts...)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var ratings []Rating
+	if err := cursor.All(ctx, &ratings); err != nil {
+		return nil, err
+	}
+
+	return ratings, nil
+}
