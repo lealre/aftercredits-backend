@@ -15,13 +15,14 @@ import (
 )
 
 func GetRatingById(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
 	ratingId := r.PathValue("id")
 	if ratingId == "" {
-		respondWithError(w, http.StatusBadRequest, "rating id is required")
+		respondWithError(w, http.StatusBadRequest, "Rating id is required")
 		return
 	}
 
-	// Get rating by ID
 	ctx := context.Background()
 	rating, err := ratings.GetRatingById(ctx, ratingId)
 	if err != nil {
@@ -29,6 +30,7 @@ func GetRatingById(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
 			return
 		}
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database error while getting rating")
 		return
 	}
@@ -41,13 +43,14 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 
 	var req ratings.Rating
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
 		return
 	}
 
 	ctx := context.Background()
 	if ok, err := users.CheckIfUserExist(ctx, req.UserId); err != nil {
-		logger.Println("Error checking user in database:", err)
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
 		return
 	} else if !ok {
@@ -56,7 +59,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ok, err := titles.ChecKIfTitleExist(ctx, req.TitleId); err != nil {
-		logger.Println("Error checking title in database:", err)
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
 		return
 	} else if !ok {
@@ -69,6 +72,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusBadRequest, "Rating already exists for this user and title")
 			return
 		}
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while adding rating")
 		return
 	}
@@ -84,14 +88,13 @@ func UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse request body
 	var updateReq ratings.UpdateRatingRequest
 	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
 		return
 	}
 
-	// Validate the update request
 	if updateReq.Note < 0 || updateReq.Note > 10 {
 		respondWithError(w, http.StatusBadRequest, "Note must be between 1 and 10")
 		return
@@ -99,13 +102,12 @@ func UpdateRating(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 
-	// Update the rating
 	if err := ratings.UpdateRating(ctx, ratingId, updateReq); err != nil {
 		if err == mongodb.ErrRecordNotFound {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
 			return
 		}
-		logger.Printf("Error updating rating: %v", err)
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to update rating")
 		return
 	}
@@ -118,18 +120,17 @@ func GetRatingsBatch(w http.ResponseWriter, r *http.Request) {
 
 	var req ratings.GetRatingsBatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
 		return
 	}
 
-	logger.Printf("All titles after unmarshall: %s", req.Titles)
-
-	titlesRatingsMap, err := ratings.GetRatingsBatch(req.Titles, logger)
+	titlesRatingsMap, err := ratings.GetRatingsBatch(req.Titles)
 	if err != nil {
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error getting ratings from titles list")
 		return
 	}
-	logger.Printf("Returning titles map: %v", titlesRatingsMap.Titles)
 
 	respondWithJSON(w, http.StatusOK, titlesRatingsMap)
 
