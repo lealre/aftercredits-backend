@@ -70,3 +70,8 @@ func GetRatingsCollection(ctx context.Context) *mongo.Collection {
 	client := getMongoClient(ctx)
 	return client.Database(getDatabaseName()).Collection("ratings")
 }
+
+func GetCommentsCollection(ctx context.Context) *mongo.Collection {
+	client := getMongoClient(ctx)
+	return client.Database(getDatabaseName()).Collection("comments")
+}
