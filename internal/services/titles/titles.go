@@ -2,11 +2,14 @@ package titles
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -63,7 +66,7 @@ func GetPageOfTitles(
 		return generics.Page[Title]{}, err
 	}
 
-	allTitles, err := GetTitlesDb(ctx, filter, opts)
+	allTitles, err := getTitlesDb(ctx, filter, opts)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
@@ -141,7 +144,7 @@ func MapDbTitleToApiTitle(title imdb.Title) Title {
 }
 
 func ChecKIfTitleExist(ctx context.Context, id string) (bool, error) {
-	_, err := GetTitleByID(ctx, id)
+	_, err := getTitleByIdDb(ctx, id)
 	if err == nil {
 		return true, nil
 	}
@@ -149,4 +152,64 @@ func ChecKIfTitleExist(ctx context.Context, id string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
+	// TODO: Handle the case where the titles id is returning nothing from IMDB API
+
+	// Not found; fetch from IMDb API and store
+	body, err := imdb.FetchMovie(titleId)
+	if err != nil {
+		return Title{}, err
+	}
+
+	// Parse the IMDB API response into the Title struct
+	var title imdb.Title
+	if err := json.Unmarshal(body, &title); err != nil {
+		return Title{}, err
+	}
+
+	// Set missing fields
+	title.Watched = false
+	now := time.Now()
+	title.AddedAt = &now
+	title.UpdatedAt = &now
+
+	// Convert to BSON document for MongoDB storage
+	doc, err := bson.Marshal(title)
+	if err != nil {
+		return Title{}, err
+	}
+
+	var bsonDoc bson.M
+	if err := bson.Unmarshal(doc, &bsonDoc); err != nil {
+		return Title{}, err
+	}
+
+	if err := addTitleDb(ctx, bsonDoc); err != nil {
+		if !mongo.IsDuplicateKeyError(err) {
+			return Title{}, err
+		}
+		// If duplicate, try to read back the stored document
+		if stored, gerr := ChecKIfTitleExist(ctx, titleId); gerr == nil && stored {
+			raw, _ := json.Marshal(stored)
+			_ = json.Unmarshal(raw, &title)
+		}
+	}
+
+	// Map to API movie type and respond
+	movie := MapDbTitleToApiTitle(title)
+	return movie, nil
+}
+
+func UpdateTitleWatchedProperties(
+	ctx context.Context,
+	titleId string,
+	req SetWatchedRequest,
+) (*Title, error) {
+	return updateTitleWatchedPropertiesDb(ctx, titleId, req.Watched, req.WatchedAt)
+}
+
+func CascadeDeleteTitle(ctx context.Context, titleId string) (int64, error) {
+	return cascadeDeleteTitleDb(ctx, titleId)
 }

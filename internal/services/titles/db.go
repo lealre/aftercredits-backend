@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func GetTitleByID(ctx context.Context, id string) (bson.M, error) {
+func getTitleByIdDb(ctx context.Context, id string) (bson.M, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 	var out bson.M
 	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&out); err != nil {
@@ -26,7 +26,7 @@ func GetTitleByID(ctx context.Context, id string) (bson.M, error) {
 	return out, nil
 }
 
-func AddTitle(ctx context.Context, doc map[string]any) error {
+func addTitleDb(ctx context.Context, doc map[string]any) error {
 	if doc == nil {
 		return fmt.Errorf("doc is nil")
 	}
@@ -38,7 +38,7 @@ func AddTitle(ctx context.Context, doc map[string]any) error {
 	return err
 }
 
-func DeleteTitleByID(ctx context.Context, id string) (bool, error) {
+func deleteTitleDb(ctx context.Context, id string) (bool, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 	res, err := coll.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
@@ -47,7 +47,7 @@ func DeleteTitleByID(ctx context.Context, id string) (bool, error) {
 	return res.DeletedCount > 0, nil
 }
 
-func GetTitlesDb(ctx context.Context, args ...any) ([]Title, error) {
+func getTitlesDb(ctx context.Context, args ...any) ([]Title, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 
 	filter, opts := mongodb.ResolveFilterAndOptionsSearch(args...)
@@ -88,7 +88,7 @@ func CountTotalTitlesDb(ctx context.Context, args ...any) (int, error) {
 	return int(totalTitles), nil
 }
 
-func SetWatched(ctx context.Context, id string, watched *bool, watchedAt *FlexibleDate) (*Title, error) {
+func updateTitleWatchedPropertiesDb(ctx context.Context, id string, watched *bool, watchedAt *FlexibleDate) (*Title, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 
 	// Use FindOneAndUpdate to get the updated document
@@ -97,12 +97,10 @@ func SetWatched(ctx context.Context, id string, watched *bool, watchedAt *Flexib
 
 	updateDoc := bson.M{}
 
-	// Update watched field if provided
 	if watched != nil {
 		updateDoc["watched"] = *watched
 	}
 
-	// Update watchedAt field if provided
 	if watchedAt != nil {
 		if watchedAt.Time != nil {
 			updateDoc["watchedAt"] = *watchedAt.Time
@@ -141,16 +139,13 @@ func SetWatched(ctx context.Context, id string, watched *bool, watchedAt *Flexib
 	return &updatedTitleDb, nil
 }
 
-// CascadeDeleteTitle deletes a title and all its related data (ratings)
-func CascadeDeleteTitle(ctx context.Context, titleId string) (int64, error) {
-	// Delete all related ratings first
+func cascadeDeleteTitleDb(ctx context.Context, titleId string) (int64, error) {
 	deletedRatingsCount, err := ratings.DeleteRatingsByTitleId(ctx, titleId)
 	if err != nil {
 		return 0, err
 	}
 
-	// Delete the title
-	_, err = DeleteTitleByID(ctx, titleId)
+	_, err = deleteTitleDb(ctx, titleId)
 	if err != nil {
 		return 0, err
 	}

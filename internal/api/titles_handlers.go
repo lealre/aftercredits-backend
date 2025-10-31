@@ -6,16 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
-	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func GetTitles(w http.ResponseWriter, r *http.Request) {
@@ -40,18 +36,14 @@ func GetTitles(w http.ResponseWriter, r *http.Request) {
 
 func AddTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
-	if r.Method != http.MethodPost {
-		respondWithError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
 
 	var req titles.AddMovieRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid JSON body")
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
 	if req.URL == "" {
-		respondWithError(w, http.StatusBadRequest, "url is required")
+		respondWithError(w, http.StatusBadRequest, "Imdb url is required")
 		return
 	}
 
@@ -65,64 +57,21 @@ func AddTitle(w http.ResponseWriter, r *http.Request) {
 	titleID := m[1]
 
 	ctx := context.Background()
-
-	// First, check if the document already exists
-	if _, err := titles.GetTitleByID(ctx, titleID); err == nil {
-		respondWithError(w, http.StatusBadRequest, "title already added")
+	if titleExists, err := titles.ChecKIfTitleExist(ctx, titleID); titleExists {
+		respondWithError(w, http.StatusBadRequest, "Title already added")
 		return
-	} else if err != mongodb.ErrRecordNotFound {
+	} else if err != nil && err != mongodb.ErrRecordNotFound {
 		logger.Printf("Error getting title by ID: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
 		return
 	}
 
-	// Not found; fetch from IMDb API and store
-	body, err := imdb.FetchMovie(titleID)
+	movie, err := titles.AddNewTitle(ctx, titleID)
 	if err != nil {
-		respondWithError(w, http.StatusBadGateway, "failed to fetch title from IMDb API")
+		respondWithError(w, http.StatusInternalServerError, "Error adding title")
 		return
 	}
 
-	// Parse the IMDB API response into the Title struct
-	var title imdb.Title
-	if err := json.Unmarshal(body, &title); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to parse IMDb API response")
-		return
-	}
-
-	// Set missing fields
-	title.Watched = false
-	now := time.Now()
-	title.AddedAt = &now
-	title.UpdatedAt = &now
-
-	// Convert to BSON document for MongoDB storage
-	doc, err := bson.Marshal(title)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to convert title to BSON")
-		return
-	}
-
-	var bsonDoc bson.M
-	if err := bson.Unmarshal(doc, &bsonDoc); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "failed to convert to BSON document")
-		return
-	}
-
-	if err := titles.AddTitle(ctx, bsonDoc); err != nil {
-		if !mongo.IsDuplicateKeyError(err) {
-			respondWithError(w, http.StatusInternalServerError, "failed to store title in database")
-			return
-		}
-		// If duplicate, try to read back the stored document
-		if stored, gerr := titles.GetTitleByID(ctx, titleID); gerr == nil && stored != nil {
-			raw, _ := json.Marshal(stored)
-			_ = json.Unmarshal(raw, &title)
-		}
-	}
-
-	// Map to API movie type and respond
-	movie := titles.MapDbTitleToApiTitle(title)
 	respondWithJSON(w, http.StatusCreated, movie)
 }
 
@@ -137,7 +86,8 @@ func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database error while checking title")
 		return
 	} else if !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
@@ -147,7 +97,8 @@ func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 	// Get all ratings for this title
 	titleRatings, err := ratings.GetRatingsByTitleId(ctx, titleId)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while getting ratings")
+		logger.Printf("ERROR: - %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database error while getting ratings")
 		return
 	}
 
@@ -184,10 +135,10 @@ func SetWatched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedTitle, err := titles.SetWatched(ctx, titleId, req.Watched, req.WatchedAt)
+	updatedTitle, err := titles.UpdateTitleWatchedProperties(ctx, titleId, req)
 	if err != nil {
-		logger.Printf("Error setting watched: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "database error while setting watched")
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Error while updating title")
 		return
 	}
 
@@ -204,7 +155,8 @@ func DeleteTitle(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database error while checking title")
 		return
 	} else if !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
@@ -214,13 +166,14 @@ func DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	// Cascade delete using titles service
 	deletedRatingsCount, err := titles.CascadeDeleteTitle(ctx, titleId)
 	if err != nil {
-		logger.Printf("Error in cascade delete: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "database error during cascade delete")
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database error during cascade delete")
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
-		"message":        "Title and related data deleted from database",
-		"deletedRatings": deletedRatingsCount,
-	})
+	if deletedRatingsCount > 0 {
+		respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title and %d ratings deleted from database", deletedRatingsCount))
+	} else {
+		respondWithJSON(w, http.StatusOK, "Title deleted from database")
+	}
 }
