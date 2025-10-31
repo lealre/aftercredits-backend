@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// Movie represents a movie with all its details
 type Title struct {
 	ID              string     `json:"id"`
 	PrimaryTitle    string     `json:"primaryTitle"`
@@ -38,19 +37,19 @@ type Rating struct {
 	VoteCount       int     `json:"voteCount"`
 }
 
-type AddMovieRequest struct {
+type AddTitleRequest struct {
 	URL string `json:"url"`
 }
 
-type AllMoviesResponse struct {
-	Movies []Title `json:"movies"`
+type AllTitlesResponse struct {
+	Titles []Title `json:"titles"`
 }
 
 /*
 FlexibleDate is a custom type that can unmarshal both date-only
 and full datetime strings from JSON.
 
-This type is used to facilitate updating the date when a movie was watched,
+This type is used to facilitate updating the date when a title was watched,
 as the specific hour, minutes, and seconds are typically not important
 for tracking viewing history.
 */

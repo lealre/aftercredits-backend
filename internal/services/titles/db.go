@@ -57,23 +57,20 @@ func getTitlesDb(ctx context.Context, args ...any) ([]Title, error) {
 	}
 	defer cursor.Close(ctx)
 
-	// Iterate through the cursor and map each title to a API title struct
-	var allMovies []Title
+	var allTitles []Title
 	for cursor.Next(ctx) {
 		var title imdb.Title
 		if err := cursor.Decode(&title); err != nil {
 			return []Title{}, err
 		}
-
-		movie := MapDbTitleToApiTitle(title)
-		allMovies = append(allMovies, movie)
+		allTitles = append(allTitles, MapDbTitleToApiTitle(title))
 	}
 
 	if err := cursor.Err(); err != nil {
 		return []Title{}, err
 	}
 
-	return allMovies, nil
+	return allTitles, nil
 }
 
 func CountTotalTitlesDb(ctx context.Context, args ...any) (int, error) {
@@ -88,6 +85,14 @@ func CountTotalTitlesDb(ctx context.Context, args ...any) (int, error) {
 	return int(totalTitles), nil
 }
 
+/*
+Update the watched properties of a title in the database.
+
+If the watchedAt is provided but watchedAt.Time is nil,
+or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
+
+TODO: If watchedAt is provided but whatched is false or nil, do not proceed with the update.
+*/
 func updateTitleWatchedPropertiesDb(ctx context.Context, id string, watched *bool, watchedAt *FlexibleDate) (*Title, error) {
 	coll := mongodb.GetTitlesCollection(ctx)
 
@@ -110,7 +115,6 @@ func updateTitleWatchedPropertiesDb(ctx context.Context, id string, watched *boo
 		}
 	}
 
-	// Always update the updatedAt timestamp if any field is being updated
 	if len(updateDoc) > 0 {
 		now := time.Now()
 		updateDoc["updatedAt"] = now

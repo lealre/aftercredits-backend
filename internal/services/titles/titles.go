@@ -88,7 +88,7 @@ func GetPageOfTitles(
 	}, nil
 }
 
-// mapTitleToMovie converts an imdb.Title to api.Movie
+// mapTitleToTitle converts an imdb.Title to api.Title
 func MapDbTitleToApiTitle(title imdb.Title) Title {
 	directorNames := make([]string, len(title.Directors))
 	for i, director := range title.Directors {
@@ -157,13 +157,11 @@ func ChecKIfTitleExist(ctx context.Context, id string) (bool, error) {
 func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
 	// TODO: Handle the case where the titles id is returning nothing from IMDB API
 
-	// Not found; fetch from IMDb API and store
-	body, err := imdb.FetchMovie(titleId)
+	body, err := imdb.FetchTitle(titleId)
 	if err != nil {
 		return Title{}, err
 	}
 
-	// Parse the IMDB API response into the Title struct
 	var title imdb.Title
 	if err := json.Unmarshal(body, &title); err != nil {
 		return Title{}, err
@@ -175,7 +173,6 @@ func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
 	title.AddedAt = &now
 	title.UpdatedAt = &now
 
-	// Convert to BSON document for MongoDB storage
 	doc, err := bson.Marshal(title)
 	if err != nil {
 		return Title{}, err
@@ -197,9 +194,7 @@ func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
 		}
 	}
 
-	// Map to API movie type and respond
-	movie := MapDbTitleToApiTitle(title)
-	return movie, nil
+	return MapDbTitleToApiTitle(title), nil
 }
 
 func UpdateTitleWatchedProperties(

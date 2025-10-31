@@ -26,8 +26,8 @@ func GetTitles(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	pageOfTitles, err := titles.GetPageOfTitles(ctx, size, page, orderBy, watched, ascending)
 	if err != nil {
-		logger.Printf("Error getting titles from DB: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to fetch movies from database")
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch titles from database")
 		return
 	}
 
@@ -37,8 +37,9 @@ func GetTitles(w http.ResponseWriter, r *http.Request) {
 func AddTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
-	var req titles.AddMovieRequest
+	var req titles.AddTitleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
@@ -61,18 +62,19 @@ func AddTitle(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Title already added")
 		return
 	} else if err != nil && err != mongodb.ErrRecordNotFound {
-		logger.Printf("Error getting title by ID: %v", err)
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
 		return
 	}
 
-	movie, err := titles.AddNewTitle(ctx, titleID)
+	title, err := titles.AddNewTitle(ctx, titleID)
 	if err != nil {
+		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error adding title")
 		return
 	}
 
-	respondWithJSON(w, http.StatusCreated, movie)
+	respondWithJSON(w, http.StatusCreated, title)
 }
 
 func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +84,6 @@ func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Title id is required")
 		return
 	}
-	logger.Printf("Getting ratings for title id %s", titleId)
 
 	ctx := context.Background()
 	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
@@ -107,7 +108,7 @@ func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allRatings := ratings.AllRatingsFromMovie{Ratings: titleRatings}
+	allRatings := ratings.AllRatingsFromTitle{Ratings: titleRatings}
 	respondWithJSON(w, http.StatusOK, allRatings)
 }
 

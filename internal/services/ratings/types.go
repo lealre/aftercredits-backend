@@ -13,7 +13,7 @@ type UpdateRatingRequest struct {
 	Comments string  `json:"comments" bson:"comments"`
 }
 
-type AllRatingsFromMovie struct {
+type AllRatingsFromTitle struct {
 	Ratings []Rating `json:"ratings"`
 }
 

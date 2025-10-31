@@ -8,7 +8,7 @@ import (
 
 const imdbFreeApiBaseURL = "https://api.imdbapi.dev"
 
-func FetchMovie(titleID string) ([]byte, error) {
+func FetchTitle(titleID string) ([]byte, error) {
 	requestURL := fmt.Sprintf("%s/titles/%s", imdbFreeApiBaseURL, titleID)
 
 	req, err := http.NewRequest(http.MethodGet, requestURL, nil)

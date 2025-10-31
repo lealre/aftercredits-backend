@@ -1,5 +1,5 @@
-// This files defines the struct that represents a movie/title document as found in ./sample_response.json,
-// that is the response from the IMDB API (https://api.imdbapi.dev/titles/{titleID}).
+// This files defines the struct that represents a title document
+// that is the response from the IMDb API (https://api.imdbapi.dev/titles/{titleID}).
 // The ID is mapped to Mongo's _id via the bson tag so the same struct
 // works for JSON (API) and MongoDB (storage).
 package imdb
