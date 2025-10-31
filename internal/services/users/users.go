@@ -6,11 +6,16 @@ import (
 	"github.com/lealre/movies-backend/internal/mongodb"
 )
 
-// CheckIfUserExist returns true when a user with the provided id exists.
-// It returns false and nil error when the user does not exist.
-// For other database errors, it returns false with the error for callers to handle.
+func GetAllUsers(ctx context.Context) ([]User, error) {
+	return getAllUsersDb(ctx)
+}
+
+func GetUserById(ctx context.Context, id string) (User, error) {
+	return getUserByIdDb(ctx, id)
+}
+
 func CheckIfUserExist(ctx context.Context, id string) (bool, error) {
-	_, err := getUserByID(ctx, id)
+	_, err := getUserByIdDb(ctx, id)
 	if err == nil {
 		return true, nil
 	}

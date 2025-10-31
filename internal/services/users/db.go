@@ -9,7 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func getUserByID(ctx context.Context, id string) (User, error) {
+func getUserByIdDb(ctx context.Context, id string) (User, error) {
 	coll := mongodb.GetUsersCollection(ctx)
 	var user User
 	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&user); err != nil {
@@ -22,11 +22,17 @@ func getUserByID(ctx context.Context, id string) (User, error) {
 	return user, nil
 }
 
-func GetAllUsers(ctx context.Context) (*mongo.Cursor, error) {
+func getAllUsersDb(ctx context.Context) ([]User, error) {
 	coll := mongodb.GetUsersCollection(ctx)
 	cursor, err := coll.Find(ctx, bson.M{})
 	if err != nil {
-		return nil, err
+		return []User{}, err
 	}
-	return cursor, nil
+	defer cursor.Close(ctx)
+
+	var allUsers []User
+	if err := cursor.All(ctx, &allUsers); err != nil {
+		return []User{}, err
+	}
+	return allUsers, nil
 }
