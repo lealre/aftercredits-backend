@@ -33,12 +33,17 @@ func GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commments, err := comments.GetCommentsByTitleId(ctx, titleId)
+	commentsList, err := comments.GetCommentsByTitleId(ctx, titleId)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusOK, "Error while seraching comments in Database")
 	}
-	respondWithJSON(w, http.StatusOK, comments.AllCommentsFromTitle{Comments: commments})
+
+	if commentsList == nil {
+		commentsList = []comments.Comment{}
+	}
+
+	respondWithJSON(w, http.StatusOK, comments.AllCommentsFromTitle{Comments: commentsList})
 }
 
 func UpdateComment(w http.ResponseWriter, r *http.Request) {

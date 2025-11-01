@@ -115,7 +115,7 @@ func UpdateRating(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rating updated successfully"})
 }
 
-func GetRatingsBatch(w http.ResponseWriter, r *http.Request) {
+func GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var req ratings.GetRatingsBatchRequest

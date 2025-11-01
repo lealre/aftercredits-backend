@@ -2,6 +2,7 @@ package ratings
 
 import (
 	"context"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
@@ -14,12 +15,14 @@ func AddRating(ctx context.Context, rating Rating) error {
 
 	rating.Id = primitive.NewObjectID().Hex()
 
+	now := time.Now()
 	doc := map[string]any{
-		"_id":      rating.Id,
-		"titleId":  rating.TitleId,
-		"userId":   rating.UserId,
-		"note":     rating.Note,
-		"comments": rating.Comments,
+		"_id":       rating.Id,
+		"titleId":   rating.TitleId,
+		"userId":    rating.UserId,
+		"note":      rating.Note,
+		"createdAt": now,
+		"updatedAt": now,
 	}
 
 	_, err := coll.InsertOne(ctx, doc)
@@ -81,10 +84,12 @@ func UpdateRating(ctx context.Context, ratingId string, updateReq UpdateRatingRe
 
 	filter := bson.M{"_id": ratingId}
 
+	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
-			"note":     updateReq.Note,
-			"comments": updateReq.Comments,
+			"note":      updateReq.Note,
+			"comments":  updateReq.Comments,
+			"updatedAt": now,
 		},
 	}
 
