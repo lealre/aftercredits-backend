@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetRatingById(w http.ResponseWriter, r *http.Request) {
+func (a *API) GetRatingById(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	ratingId := r.PathValue("id")
@@ -38,7 +38,7 @@ func GetRatingById(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, rating)
 }
 
-func AddRating(w http.ResponseWriter, r *http.Request) {
+func (a *API) AddRating(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var req ratings.Rating
@@ -80,7 +80,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, req)
 }
 
-func UpdateRating(w http.ResponseWriter, r *http.Request) {
+func (a *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	ratingId := r.PathValue("id")
 	if ratingId == "" {
@@ -115,7 +115,7 @@ func UpdateRating(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rating updated successfully"})
 }
 
-func GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
+func (a *API) GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var req ratings.GetRatingsBatchRequest

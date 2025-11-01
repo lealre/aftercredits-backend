@@ -14,7 +14,7 @@ import (
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
 
-func GetTitles(w http.ResponseWriter, r *http.Request) {
+func (a *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	size := generics.StringToInt(r.URL.Query().Get("size"))
@@ -34,7 +34,7 @@ func GetTitles(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, pageOfTitles)
 }
 
-func AddTitle(w http.ResponseWriter, r *http.Request) {
+func (a *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var req titles.AddTitleRequest
@@ -77,7 +77,7 @@ func AddTitle(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, title)
 }
 
-func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
+func (a *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	titleId := r.PathValue("id")
 	if titleId == "" {
@@ -112,7 +112,7 @@ func GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, allRatings)
 }
 
-func SetWatched(w http.ResponseWriter, r *http.Request) {
+func (a *API) SetWatched(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	titleId := r.PathValue("id")
@@ -146,7 +146,7 @@ func SetWatched(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, updatedTitle)
 }
 
-func DeleteTitle(w http.ResponseWriter, r *http.Request) {
+func (a *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	titleId := r.PathValue("id")
 	if titleId == "" {

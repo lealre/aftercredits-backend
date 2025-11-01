@@ -1,17 +1,24 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/joho/godotenv"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/server"
 )
 
 func main() {
-	godotenv.Load()
+	_ = godotenv.Load()
 
-	err := server.ListenAndServe()
+	db, err := mongodb.Connect(context.Background())
 	if err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer db.Disconnect(context.Background())
+
+	if err = server.ListenAndServe(db); err != nil {
+		log.Fatalf("error while starting server: %v", err)
 	}
 }

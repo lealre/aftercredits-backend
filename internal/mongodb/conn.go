@@ -18,6 +18,26 @@ var (
 	mongoClientOnce sync.Once
 )
 
+// Connect creates a new MongoDB client using the MONGODB_URI env var
+func Connect(ctx context.Context) (*mongo.Client, error) {
+	uri := os.Getenv("MONGODB_URI")
+	if uri == "" {
+		return nil, fmt.Errorf("MONGODB_URI is required (e.g. mongodb://localhost:27017)")
+	}
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, fmt.Errorf("mongo connect error: %v", err)
+	}
+
+	if err := client.Ping(ctx, readpref.Primary()); err != nil {
+		_ = client.Disconnect(ctx)
+		return nil, fmt.Errorf("mongo ping error: %v", err)
+	}
+
+	return client, nil
+}
+
 // connectMongo connects to MongoDB using MONGODB_URI and verifies the connection with a ping.
 func ConnectMongo(ctx context.Context) *mongo.Client {
 	uri := os.Getenv("MONGODB_URI")

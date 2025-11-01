@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
+func (a *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	titleId := r.PathValue("titleId")
@@ -46,7 +46,7 @@ func GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, comments.AllCommentsFromTitle{Comments: commentsList})
 }
 
-func UpdateComment(w http.ResponseWriter, r *http.Request) {
+func (a *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	commentId := r.PathValue("id")
@@ -77,7 +77,7 @@ func UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func AddComment(w http.ResponseWriter, r *http.Request) {
+func (a *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var comment comments.Comment
@@ -120,7 +120,7 @@ func AddComment(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, createdComment)
 }
 
-func DeleteComment(w http.ResponseWriter, r *http.Request) {
+func (a *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	commentId := r.PathValue("id")

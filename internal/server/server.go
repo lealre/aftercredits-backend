@@ -1,39 +1,50 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/lealre/movies-backend/internal/api"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func ListenAndServe() error {
+func NewServer(db *mongo.Client) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /titles", api.GetTitles)
-	mux.HandleFunc("GET /titles/{id}/ratings", api.GetTitleRatings)
-	mux.HandleFunc("POST /titles", api.AddTitle)
-	mux.HandleFunc("PATCH /titles/{id}", api.SetWatched)
-	mux.HandleFunc("DELETE /titles/{id}", api.DeleteTitle)
+	a := api.NewAPI(db)
 
-	mux.HandleFunc("GET /ratings/{id}", api.GetRatingById)
-	mux.HandleFunc("POST /ratings/batch", api.GetRatingsBatchByTitleIDs)
-	mux.HandleFunc("POST /ratings", api.AddRating)
-	mux.HandleFunc("PATCH /ratings/{id}", api.UpdateRating)
+	mux.HandleFunc("GET /titles", a.GetTitles)
+	mux.HandleFunc("GET /titles/{id}/ratings", a.GetTitleRatings)
+	mux.HandleFunc("POST /titles", a.AddTitle)
+	mux.HandleFunc("PATCH /titles/{id}", a.SetWatched)
+	mux.HandleFunc("DELETE /titles/{id}", a.DeleteTitle)
 
-	mux.HandleFunc("GET /comments/{titleId}", api.GetCommentsByTitleID)
-	mux.HandleFunc("PATCH /comments/{id}", api.UpdateComment)
-	mux.HandleFunc("POST /comments", api.AddComment)
-	mux.HandleFunc("DELETE /comments/{id}", api.DeleteComment)
+	mux.HandleFunc("GET /ratings/{id}", a.GetRatingById)
+	mux.HandleFunc("POST /ratings/batch", a.GetRatingsBatchByTitleIDs)
+	mux.HandleFunc("POST /ratings", a.AddRating)
+	mux.HandleFunc("PATCH /ratings/{id}", a.UpdateRating)
 
-	mux.HandleFunc("GET /users", api.GetUsers)
+	mux.HandleFunc("GET /comments/{titleId}", a.GetCommentsByTitleID)
+	mux.HandleFunc("PATCH /comments/{id}", a.UpdateComment)
+	mux.HandleFunc("POST /comments", a.AddComment)
+	mux.HandleFunc("DELETE /comments/{id}", a.DeleteComment)
 
-	wrappedMux := RequestIDMiddleware(mux)
+	mux.HandleFunc("GET /users", a.GetUsers)
+
+	return RequestIDMiddleware(mux)
+}
+
+func ListenAndServe(db *mongo.Client) error {
 	server := &http.Server{
 		Addr:    ":8080",
-		Handler: wrappedMux,
+		Handler: NewServer(db),
 	}
-
-	log.Println("Server is running on port 8080")
-	return server.ListenAndServe()
+	log.Println("Server running on :8080")
+	err := server.ListenAndServe()
+	if err != nil {
+		return fmt.Errorf("error while starting server: %v", err)
+	}
+	log.Println("Server started listening on port 8080")
+	return nil
 }

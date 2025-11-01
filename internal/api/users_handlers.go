@@ -8,7 +8,7 @@ import (
 	"github.com/lealre/movies-backend/internal/services/users"
 )
 
-func GetUsers(w http.ResponseWriter, r *http.Request) {
+func (a *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	ctx := context.Background()
