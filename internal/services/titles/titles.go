@@ -39,22 +39,24 @@ func GetPageOfTitles(
 		page = 1
 	}
 	if orderByField == "" {
-		orderByField = "addedAt"
+		orderByField = "primaryTitle"
 	}
 	// Handle nested rating field
 	if orderByField == "imdbRating" {
 		orderByField = "rating.aggregateRating"
 	}
-	ascendingValue := -1
-	if ascending != nil && *ascending {
-		ascendingValue = 1
+	orderByValue := 1
+	if ascending != nil {
+		if !*ascending {
+			orderByValue = -1
+		}
 	}
 
 	skip := (int64(page) - 1) * int64(size)
 	opts := options.Find().
 		SetLimit(int64(size)).
 		SetSkip(skip).
-		SetSort(bson.D{{Key: orderByField, Value: ascendingValue}})
+		SetSort(bson.D{{Key: orderByField, Value: orderByValue}})
 
 	filter := bson.M{}
 	if watched != nil {
