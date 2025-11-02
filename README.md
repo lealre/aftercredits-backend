@@ -4,17 +4,15 @@
 
 ### 1. Backup MongoDB Data
 
-Create a backup of your MongoDB data (only if data has changed):
+Create a backup of your MongoDB data:
 
 ```bash
 ./scripts/backup-volume.sh
 ```
 
 This script:
-- Calculates a hash of your data to detect changes
-- Only creates backup if data has changed since last backup
 - Stores backup in `./backups/` directory
-- Automatically cleans up old backups (older than 7 days)
+- Automatically cleans up old backups (older than 30 days)
 
 ### 2. Restore MongoDB Data
 
