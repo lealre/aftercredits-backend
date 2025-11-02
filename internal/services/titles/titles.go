@@ -208,12 +208,14 @@ func UpdateTitleWatchedProperties(
 	return MapDbTitleToApiTitle(*titleUpdatedBd), nil
 }
 
-/*
-This method will delete the title and the rating
-TODO: Delete the comments also
-*/
+// Deletes the title and its related ratings and comments
 func CascadeDeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) (int64, error) {
 	deletedRatingsCount, err := db.DeleteRatingsByTitleId(ctx, titleId)
+	if err != nil {
+		return 0, err
+	}
+
+	deletedCommentsCount, err := db.DeleteCommentsByTitleId(ctx, titleId)
 	if err != nil {
 		return 0, err
 	}
@@ -223,6 +225,6 @@ func CascadeDeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) (in
 		return 0, err
 	}
 
-	return deletedRatingsCount, nil
+	return deletedRatingsCount + deletedCommentsCount, nil
 
 }

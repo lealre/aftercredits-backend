@@ -166,7 +166,7 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if deletedRatingsCount > 0 {
-		respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title and %d ratings deleted from database", deletedRatingsCount))
+		respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title and %d ratings/comments deleted from database", deletedRatingsCount))
 	} else {
 		respondWithJSON(w, http.StatusOK, "Title deleted from database")
 	}

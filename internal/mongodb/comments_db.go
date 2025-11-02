@@ -106,3 +106,14 @@ func (db *DB) DeleteComment(ctx context.Context, commentId string) (int64, error
 
 	return result.DeletedCount, nil
 }
+
+func (db *DB) DeleteCommentsByTitleId(ctx context.Context, titleId string) (int64, error) {
+	coll := db.Collection(CommentsCollection)
+
+	filter := bson.M{"titleId": titleId}
+	result, err := coll.DeleteMany(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return result.DeletedCount, nil
+}
