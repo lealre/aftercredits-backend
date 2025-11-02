@@ -1,28 +1,26 @@
-// INSERT USERS
-db("brunan")
-  .collection("users")
-  .insertMany([
-    { _id: "68e67788956f936302a2a778", name: "Renan" },
-    { _id: "68e67788956f936302a2a779", name: "Bruna" },
-  ]);
+// Add users
+// db('brunan').collection('users').insertMany([
+//     { _id: "68e67788956f936302a2a778", name: 'Renan' },
+//     { _id: "68e67788956f936302a2a779", name: 'Bruna' }
+//   ]);
 
-// ADD INDEX TO RATINGS COLLECTION
+// Create unique index for ratings collection
 db("brunan")
   .collection("ratings")
   .createIndex({ userId: 1, titleId: 1 }, { unique: true });
 
-// ADD NEW FIELD TO ALL TITLES
+  // Create unique index for comments collection
 db("brunan")
-  .collection("titles")
-  .updateMany({}, { $set: { watched: false } })
-  .then((result) => {
-    console.log(`${result.modifiedCount} documents updated`);
-  })
-  .catch((err) => {
-    console.error("Error updating titles:", err);
-  });
+.collection("comments")
+.createIndex({ userId: 1, titleId: 1 }, { unique: true })
+.then((result) => {
+  console.log(`✅ Unique index created: ${result}`);
+})
+.catch((err) => {
+  console.error("❌ Error creating unique index:", err);
+});
 
-// DELETE TITLE
+// Delete a title (example)
 db("brunan")
   .collection("titles")
   .deleteOne({ _id: "tt0117060" })
@@ -33,22 +31,7 @@ db("brunan")
     console.error("Error deleting title:", err);
   });
 
-// ADD NEW FILEDS TO TITLES
+// Add new fields to titles
 db("brunan")
   .collection("titles")
-  .updateMany(
-    {},
-    {
-      $set: {
-        addedAt: new Date(),
-        updatedAt: new Date(),
-        watchedAt: null,
-      },
-    }
-  )
-  .then((result) => {
-    console.log(`${result.modifiedCount} documents updated with timestamps`);
-  })
-  .catch((err) => {
-    console.error("Error updating titles:", err);
-  });
+  .updateMany({}, { $set: { addedAt: new Date(), updatedAt: new Date(), watchedAt: null } });

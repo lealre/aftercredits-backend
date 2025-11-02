@@ -9,12 +9,10 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
-	"github.com/lealre/movies-backend/internal/services/titles"
-	"github.com/lealre/movies-backend/internal/services/users"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetRatingById(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetRatingById(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	ratingId := r.PathValue("id")
@@ -24,7 +22,7 @@ func GetRatingById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	rating, err := ratings.GetRatingById(ctx, ratingId)
+	rating, err := ratings.GetRatingById(api.Db, ctx, ratingId)
 	if err != nil {
 		if err == mongodb.ErrRecordNotFound {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
@@ -38,7 +36,7 @@ func GetRatingById(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, rating)
 }
 
-func AddRating(w http.ResponseWriter, r *http.Request) {
+func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var req ratings.Rating
@@ -49,7 +47,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	if ok, err := users.CheckIfUserExist(ctx, req.UserId); err != nil {
+	if ok, err := api.Db.UserExists(ctx, req.UserId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
 		return
@@ -58,7 +56,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := titles.ChecKIfTitleExist(ctx, req.TitleId); err != nil {
+	if ok, err := api.Db.TitleExists(ctx, req.TitleId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
 		return
@@ -67,7 +65,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ratings.AddRating(ctx, req); err != nil {
+	if err := ratings.AddRating(api.Db, ctx, req); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			respondWithError(w, http.StatusBadRequest, "Rating already exists for this user and title")
 			return
@@ -80,7 +78,7 @@ func AddRating(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, req)
 }
 
-func UpdateRating(w http.ResponseWriter, r *http.Request) {
+func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	ratingId := r.PathValue("id")
 	if ratingId == "" {
@@ -96,13 +94,11 @@ func UpdateRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if updateReq.Note < 0 || updateReq.Note > 10 {
-		respondWithError(w, http.StatusBadRequest, "Note must be between 1 and 10")
+		respondWithError(w, http.StatusBadRequest, "Note must be between 0 and 10")
 		return
 	}
 
-	ctx := context.Background()
-
-	if err := ratings.UpdateRating(ctx, ratingId, updateReq); err != nil {
+	if err := ratings.UpdateRating(api.Db, r.Context(), ratingId, updateReq); err != nil {
 		if err == mongodb.ErrRecordNotFound {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
 			return
@@ -115,7 +111,7 @@ func UpdateRating(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rating updated successfully"})
 }
 
-func GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var req ratings.GetRatingsBatchRequest
@@ -125,7 +121,7 @@ func GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	titlesRatingsMap, err := ratings.GetRatingsBatch(req.Titles)
+	titlesRatingsMap, err := ratings.GetRatingsBatch(api.Db, r.Context(), req.Titles)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error getting ratings from titles list")

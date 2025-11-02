@@ -12,8 +12,7 @@ type Rating struct {
 }
 
 type UpdateRatingRequest struct {
-	Note     float32 `json:"note" bson:"note"`
-	Comments string  `json:"comments" bson:"comments"`
+	Note float32 `json:"note" bson:"note"`
 }
 
 type AllRatingsFromTitle struct {

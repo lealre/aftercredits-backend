@@ -1,18 +1,16 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/users"
 )
 
-func GetUsers(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
-	ctx := context.Background()
-	allUsers, err := users.GetAllUsers(ctx)
+	allUsers, err := users.GetAllUsers(api.Db, r.Context())
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
