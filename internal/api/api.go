@@ -1,13 +1,13 @@
 package api
 
 import (
-	"go.mongodb.org/mongo-driver/mongo"
+	"github.com/lealre/movies-backend/internal/mongodb"
 )
 
 type API struct {
-	DB *mongo.Client
+	Db *mongodb.DB
 }
 
-func NewAPI(db *mongo.Client) *API {
-	return &API{DB: db}
+func NewAPI(db *mongodb.DB) *API {
+	return &API{Db: db}
 }

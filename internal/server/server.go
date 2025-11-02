@@ -6,13 +6,14 @@ import (
 	"net/http"
 
 	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func NewServer(db *mongo.Client) http.Handler {
 	mux := http.NewServeMux()
 
-	a := api.NewAPI(db)
+	a := api.NewAPI(mongodb.NewDB(db))
 
 	mux.HandleFunc("GET /titles", a.GetTitles)
 	mux.HandleFunc("GET /titles/{id}/ratings", a.GetTitleRatings)

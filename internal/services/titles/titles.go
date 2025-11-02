@@ -23,6 +23,7 @@ Example on how to set limits, offsets, orderBy, ...
 opts := options.Find().SetSort(bson.D{{"addedAt", -1}}).SetLimit(20)
 */
 func GetPageOfTitles(
+	db *mongodb.DB,
 	ctx context.Context,
 	size, page int,
 	orderByField string,
@@ -63,15 +64,21 @@ func GetPageOfTitles(
 		filter["watched"] = *watched
 	}
 
-	totalTitlesInDB, err := CountTotalTitlesDb(ctx, filter)
+	totalTitlesInDB, err := db.CountTotalTitles(ctx, filter)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
 
-	allTitles, err := getTitlesDb(ctx, filter, opts)
+	allTitlesDb, err := db.GetTitles(ctx, filter, opts)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
+
+	var allTitles []Title
+	for _, titleDb := range allTitlesDb {
+		allTitles = append(allTitles, MapDbTitleToApiTitle(titleDb))
+	}
+
 	if allTitles == nil {
 		allTitles = []Title{}
 	}
@@ -90,8 +97,7 @@ func GetPageOfTitles(
 	}, nil
 }
 
-// mapTitleToTitle converts an imdb.Title to api.Title
-func MapDbTitleToApiTitle(title imdb.Title) Title {
+func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 	directorNames := make([]string, len(title.Directors))
 	for i, director := range title.Directors {
 		directorNames[i] = director.DisplayName
@@ -145,18 +151,7 @@ func MapDbTitleToApiTitle(title imdb.Title) Title {
 	}
 }
 
-func ChecKIfTitleExist(ctx context.Context, id string) (bool, error) {
-	_, err := getTitleByIdDb(ctx, id)
-	if err == nil {
-		return true, nil
-	}
-	if err == mongodb.ErrRecordNotFound {
-		return false, nil
-	}
-	return false, err
-}
-
-func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
+func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, error) {
 	// TODO: Handle the case where the titles id is returning nothing from IMDB API
 
 	body, err := imdb.FetchTitle(titleId)
@@ -164,7 +159,7 @@ func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
 		return Title{}, err
 	}
 
-	var title imdb.Title
+	var title mongodb.TitleDb
 	if err := json.Unmarshal(body, &title); err != nil {
 		return Title{}, err
 	}
@@ -185,12 +180,12 @@ func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
 		return Title{}, err
 	}
 
-	if err := addTitleDb(ctx, bsonDoc); err != nil {
+	if err := db.AddTitle(ctx, bsonDoc); err != nil {
 		if !mongo.IsDuplicateKeyError(err) {
 			return Title{}, err
 		}
 		// If duplicate, try to read back the stored document
-		if stored, gerr := ChecKIfTitleExist(ctx, titleId); gerr == nil && stored {
+		if stored, gerr := db.TitleExists(ctx, titleId); gerr == nil && stored {
 			raw, _ := json.Marshal(stored)
 			_ = json.Unmarshal(raw, &title)
 		}
@@ -200,13 +195,34 @@ func AddNewTitle(ctx context.Context, titleId string) (Title, error) {
 }
 
 func UpdateTitleWatchedProperties(
+	db *mongodb.DB,
 	ctx context.Context,
 	titleId string,
 	req SetWatchedRequest,
-) (*Title, error) {
-	return updateTitleWatchedPropertiesDb(ctx, titleId, req.Watched, req.WatchedAt)
+) (Title, error) {
+	titleUpdatedBd, err := db.UpdateTitleWatchedProperties(ctx, titleId, req.Watched, req.WatchedAt)
+	if err != nil {
+		return Title{}, err
+	}
+
+	return MapDbTitleToApiTitle(*titleUpdatedBd), nil
 }
 
-func CascadeDeleteTitle(ctx context.Context, titleId string) (int64, error) {
-	return cascadeDeleteTitleDb(ctx, titleId)
+/*
+This method will delete the title and the rating
+TODO: Delete the comments also
+*/
+func CascadeDeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) (int64, error) {
+	deletedRatingsCount, err := db.DeleteRatingsByTitleId(ctx, titleId)
+	if err != nil {
+		return 0, err
+	}
+
+	_, err = db.DeleteTitle(ctx, titleId)
+	if err != nil {
+		return 0, err
+	}
+
+	return deletedRatingsCount, nil
+
 }

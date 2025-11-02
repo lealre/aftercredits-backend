@@ -9,12 +9,11 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/comments"
-	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (a *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	titleId := r.PathValue("titleId")
@@ -24,7 +23,7 @@ func (a *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); !ok {
+	if ok, err := api.Db.TitleExists(ctx, titleId); !ok {
 		respondWithError(w, http.StatusBadRequest, "Title Id not found")
 		return
 	} else if err != nil {
@@ -46,7 +45,7 @@ func (a *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, comments.AllCommentsFromTitle{Comments: commentsList})
 }
 
-func (a *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
+func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	commentId := r.PathValue("id")
@@ -77,7 +76,7 @@ func (a *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (a *API) AddComment(w http.ResponseWriter, r *http.Request) {
+func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var comment comments.Comment
@@ -97,7 +96,7 @@ func (a *API) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := titles.ChecKIfTitleExist(ctx, comment.TitleId); !ok {
+	if ok, err := api.Db.TitleExists(ctx, comment.TitleId); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", comment.TitleId))
 		return
 	} else if err != nil {

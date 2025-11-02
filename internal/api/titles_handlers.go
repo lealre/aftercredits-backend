@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,7 +13,7 @@ import (
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
 
-func (a *API) GetTitles(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	size := generics.StringToInt(r.URL.Query().Get("size"))
@@ -23,8 +22,7 @@ func (a *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	ascending := parseUrlQueryToBool(r.URL.Query().Get("ascending"))
 	watched := parseUrlQueryToBool(r.URL.Query().Get("watched"))
 
-	ctx := context.Background()
-	pageOfTitles, err := titles.GetPageOfTitles(ctx, size, page, orderBy, watched, ascending)
+	pageOfTitles, err := titles.GetPageOfTitles(api.Db, r.Context(), size, page, orderBy, watched, ascending)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch titles from database")
@@ -34,7 +32,7 @@ func (a *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, pageOfTitles)
 }
 
-func (a *API) AddTitle(w http.ResponseWriter, r *http.Request) {
+func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	var req titles.AddTitleRequest
@@ -57,8 +55,7 @@ func (a *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	}
 	titleID := m[1]
 
-	ctx := context.Background()
-	if titleExists, err := titles.ChecKIfTitleExist(ctx, titleID); titleExists {
+	if titleExists, err := api.Db.TitleExists(r.Context(), titleID); titleExists {
 		respondWithError(w, http.StatusBadRequest, "Title already added")
 		return
 	} else if err != nil && err != mongodb.ErrRecordNotFound {
@@ -67,7 +64,7 @@ func (a *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	title, err := titles.AddNewTitle(ctx, titleID)
+	title, err := titles.AddNewTitle(api.Db, r.Context(), titleID)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error adding title")
@@ -77,7 +74,7 @@ func (a *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, title)
 }
 
-func (a *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	titleId := r.PathValue("id")
 	if titleId == "" {
@@ -85,8 +82,7 @@ func (a *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
+	if ok, err := api.Db.TitleExists(r.Context(), titleId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database error while checking title")
 		return
@@ -96,7 +92,7 @@ func (a *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all ratings for this title
-	titleRatings, err := ratings.GetRatingsByTitleId(ctx, titleId)
+	titleRatings, err := ratings.GetRatingsByTitleId(api.Db, r.Context(), titleId)
 	if err != nil {
 		logger.Printf("ERROR: - %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database error while getting ratings")
@@ -112,7 +108,7 @@ func (a *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, allRatings)
 }
 
-func (a *API) SetWatched(w http.ResponseWriter, r *http.Request) {
+func (api *API) SetWatched(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	titleId := r.PathValue("id")
@@ -127,8 +123,7 @@ func (a *API) SetWatched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
+	if ok, err := api.Db.TitleExists(r.Context(), titleId); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
 		return
 	} else if !ok {
@@ -136,7 +131,7 @@ func (a *API) SetWatched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedTitle, err := titles.UpdateTitleWatchedProperties(ctx, titleId, req)
+	updatedTitle, err := titles.UpdateTitleWatchedProperties(api.Db, r.Context(), titleId, req)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error while updating title")
@@ -146,7 +141,7 @@ func (a *API) SetWatched(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, updatedTitle)
 }
 
-func (a *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
+func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	titleId := r.PathValue("id")
 	if titleId == "" {
@@ -154,8 +149,7 @@ func (a *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if ok, err := titles.ChecKIfTitleExist(ctx, titleId); err != nil {
+	if ok, err := api.Db.TitleExists(r.Context(), titleId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database error while checking title")
 		return
@@ -164,8 +158,7 @@ func (a *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cascade delete using titles service
-	deletedRatingsCount, err := titles.CascadeDeleteTitle(ctx, titleId)
+	deletedRatingsCount, err := titles.CascadeDeleteTitle(api.Db, r.Context(), titleId)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database error during cascade delete")
