@@ -194,20 +194,6 @@ func (db *DB) UpdateTitleWatchedProperties(ctx context.Context, id string, watch
 	return &updatedTitleDb, nil
 }
 
-// func (db *DB) cascadeDeleteTitleDb(ctx context.Context, titleId string) (int64, error) {
-// 	deletedRatingsCount, err := ratings.DeleteRatingsByTitleId(ctx, titleId)
-// 	if err != nil {
-// 		return 0, err
-// 	}
-
-// 	_, err = db.deleteTitleDb(ctx, titleId)
-// 	if err != nil {
-// 		return 0, err
-// 	}
-
-// 	return deletedRatingsCount, nil
-// }
-
 func (db *DB) TitleExists(ctx context.Context, id string) (bool, error) {
 	coll := db.Collection(TitlesCollection)
 

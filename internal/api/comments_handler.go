@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/comments"
-	"github.com/lealre/movies-backend/internal/services/users"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -22,8 +20,7 @@ func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if ok, err := api.Db.TitleExists(ctx, titleId); !ok {
+	if ok, err := api.Db.TitleExists(r.Context(), titleId); !ok {
 		respondWithError(w, http.StatusBadRequest, "Title Id not found")
 		return
 	} else if err != nil {
@@ -32,14 +29,11 @@ func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentsList, err := comments.GetCommentsByTitleId(ctx, titleId)
+	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), titleId)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusOK, "Error while seraching comments in Database")
-	}
-
-	if commentsList == nil {
-		commentsList = []comments.Comment{}
+		return
 	}
 
 	respondWithJSON(w, http.StatusOK, comments.AllCommentsFromTitle{Comments: commentsList})
@@ -61,8 +55,7 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if err := comments.UpdateComment(ctx, commentId, updateReq); err != nil {
+	if err := comments.UpdateComment(api.Db, r.Context(), commentId, updateReq); err != nil {
 		if err == mongodb.ErrRecordNotFound {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Comment with id %s not found", commentId))
 			return
@@ -86,8 +79,7 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if ok, err := users.CheckIfUserExist(ctx, comment.UserId); !ok {
+	if ok, err := api.Db.UserExists(r.Context(), comment.UserId); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", comment.UserId))
 		return
 	} else if err != nil {
@@ -96,7 +88,7 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.TitleExists(ctx, comment.TitleId); !ok {
+	if ok, err := api.Db.TitleExists(r.Context(), comment.TitleId); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", comment.TitleId))
 		return
 	} else if err != nil {
@@ -105,7 +97,7 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdComment, err := comments.AddComment(ctx, comment)
+	createdComment, err := comments.AddComment(api.Db, r.Context(), comment)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			respondWithError(w, http.StatusBadRequest, "Comment already exists for this user and title")
@@ -119,7 +111,7 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, createdComment)
 }
 
-func (a *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
+func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
 	commentId := r.PathValue("id")
@@ -128,8 +120,7 @@ func (a *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if deletedCount, err := comments.DeleteComment(ctx, commentId); err != nil {
+	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting comment")
 		return

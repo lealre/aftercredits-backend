@@ -9,10 +9,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// ----- Types for the database -----
+
 type UserDb struct {
 	Id   string `json:"id" bson:"_id"`
 	Name string `json:"name" bson:"name"`
 }
+
+// ----- Methods for the database -----
 
 func (db *DB) GetUserById(ctx context.Context, id string) (UserDb, error) {
 	coll := db.Collection(UsersCollection)

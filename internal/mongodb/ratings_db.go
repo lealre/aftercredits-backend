@@ -9,6 +9,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// ----- Types for the database -----
+
 type RatingDb struct {
 	Id        string    `json:"id" bson:"_id"`
 	TitleId   string    `json:"titleId" bson:"titleId"`
@@ -17,6 +19,8 @@ type RatingDb struct {
 	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
 }
+
+// ----- Methods for the database -----
 
 func (db *DB) AddRating(ctx context.Context, rating RatingDb) error {
 	coll := db.Collection(RatingsCollection)

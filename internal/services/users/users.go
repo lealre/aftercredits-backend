@@ -6,21 +6,29 @@ import (
 	"github.com/lealre/movies-backend/internal/mongodb"
 )
 
-func GetAllUsers(ctx context.Context) ([]User, error) {
-	return getAllUsersDb(ctx)
+func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]User, error) {
+	usersDb, err := db.GetAllUsers(ctx)
+	if err != nil {
+		return []User{}, err
+	}
+
+	var users []User
+	for _, userDb := range usersDb {
+		users = append(users, MapDbUserToApiUser(userDb))
+	}
+
+	return users, nil
 }
 
-func GetUserById(ctx context.Context, id string) (User, error) {
-	return getUserByIdDb(ctx, id)
+func GetUserById(db *mongodb.DB, ctx context.Context, id string) (User, error) {
+	userDb, err := db.GetUserById(ctx, id)
+	if err != nil {
+		return User{}, err
+	}
+
+	return MapDbUserToApiUser(userDb), nil
 }
 
-func CheckIfUserExist(ctx context.Context, id string) (bool, error) {
-	_, err := getUserByIdDb(ctx, id)
-	if err == nil {
-		return true, nil
-	}
-	if err == mongodb.ErrRecordNotFound {
-		return false, nil
-	}
-	return false, err
+func MapDbUserToApiUser(userDb mongodb.UserDb) User {
+	return User(userDb)
 }
