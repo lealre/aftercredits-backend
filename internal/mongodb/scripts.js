@@ -35,3 +35,7 @@ db("brunan")
 db("brunan")
   .collection("titles")
   .updateMany({}, { $set: { addedAt: new Date(), updatedAt: new Date(), watchedAt: null } });
+
+
+db("brunan")
+.createCollection("groups")

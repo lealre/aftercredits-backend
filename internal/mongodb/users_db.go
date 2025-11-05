@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -12,8 +13,17 @@ import (
 // ----- Types for the database -----
 
 type UserDb struct {
-	Id   string `json:"id" bson:"_id"`
-	Name string `json:"name" bson:"name"`
+	Id           string     `json:"id" bson:"_id"`
+	Name         string     `json:"name" bson:"name"`
+	Email        string     `json:"email" bson:"email"`
+	PasswordHash string     `json:"passwordHash" bson:"passwordHash"`
+	AvatarURL    *string    `json:"avatarUrl,omitempty" bson:"avatarUrl,omitempty"`
+	Groups       []string   `json:"groups,omitempty" bson:"groups,omitempty"`
+	Role         string     `json:"role" bson:"role"`
+	IsActive     bool       `json:"isActive" bson:"isActive"`
+	LastLoginAt  *time.Time `json:"lastLoginAt,omitempty" bson:"lastLoginAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt" bson:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt" bson:"updatedAt"`
 }
 
 // ----- Methods for the database -----
