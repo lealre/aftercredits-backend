@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,51 +10,90 @@ import (
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 )
+
+func TestAddTitles(t *testing.T) {
+	t.Run("Test adding a title", func(t *testing.T) {
+		resetDB(t)
+
+		fixtureTitles := loadTitlesFixture(t, "fixtures/titles.json")
+		expectedTitle := fixtureTitles[0]
+
+		reqBody := titles.AddTitleRequest{
+			URL: fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
+		}
+		jsonData, err := json.Marshal(reqBody)
+		require.NoError(t, err)
+
+		resp, err := http.Post(
+			testServer.URL+"/titles",
+			"application/json",
+			bytes.NewBuffer(jsonData),
+		)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		var titleResp titles.Title
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&titleResp))
+		require.Equal(t, titleResp.ID, expectedTitle.ID)
+		require.Equal(t, titleResp.PrimaryTitle, expectedTitle.PrimaryTitle)
+		require.Equal(t, titleResp.Type, expectedTitle.Type)
+		require.False(t, titleResp.Watched, "the watched field should be false when adding a title")
+		require.NotNil(t, titleResp.AddedAt, "the addedAt field should not be nil when adding a title")
+		require.NotNil(t, titleResp.UpdatedAt, "the updatedAt field should not be nil when adding a title")
+		require.Equal(t, titleResp.AddedAt, titleResp.UpdatedAt, "addedAt and updatedAt should be equal when adding a title")
+		require.Nil(t, titleResp.WatchedAt, "the watchedAt field should be nil when adding a title")
+	})
+}
 
 func TestGetTitles(t *testing.T) {
 	resetDB(t)
 	var pageTitlesResponse generics.Page[titles.Title]
 
-	fmt.Println("Testing empty response..")
-	resp, err := http.Get(testServer.URL + "/titles")
-	require.NoError(t, err)
-	defer resp.Body.Close()
+	t.Run("Test empty titles response", func(t *testing.T) {
+		resp, err := http.Get(testServer.URL + "/titles")
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&pageTitlesResponse))
-	require.NotNil(t, pageTitlesResponse.Content)
-	require.Empty(t, pageTitlesResponse.Content)
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&pageTitlesResponse))
+		require.NotNil(t, pageTitlesResponse.Content)
+		require.Empty(t, pageTitlesResponse.Content)
+	})
 
-	fmt.Println("Testing response with titles..")
-	titles := loadFixture(t, "fixtures/titles.json")
-	seedTitles(t, titles)
-	resp, err = http.Get(testServer.URL + "/titles")
-	require.NoError(t, err)
-	defer resp.Body.Close()
+	t.Run("Testing response with titles added through db client", func(t *testing.T) {
+		titles := loadTitlesFixture(t, "fixtures/titles.json")
+		seedTitles(t, titles)
+		resp, err := http.Get(testServer.URL + "/titles")
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&pageTitlesResponse))
-	require.NotNil(t, pageTitlesResponse.Content)
-	require.NotEmpty(t, pageTitlesResponse.Content)
-	require.Equal(t, len(pageTitlesResponse.Content), len(titles))
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&pageTitlesResponse))
+		require.NotNil(t, pageTitlesResponse.Content)
+		require.NotEmpty(t, pageTitlesResponse.Content)
+		require.Equal(t, len(pageTitlesResponse.Content), len(titles))
+		require.Equal(t, pageTitlesResponse.Size, 20)
+		require.Equal(t, pageTitlesResponse.TotalResults, len(titles))
+		require.Equal(t, pageTitlesResponse.TotalPages, 1)
+		require.Equal(t, pageTitlesResponse.Page, 1)
 
-	responseTitlesNames := make([]string, len(pageTitlesResponse.Content))
-	for i, responseTitle := range pageTitlesResponse.Content {
-		responseTitlesNames[i] = responseTitle.PrimaryTitle
-	}
+		responseTitlesIds := make([]string, len(pageTitlesResponse.Content))
+		responseTitlesNames := make([]string, len(pageTitlesResponse.Content))
+		for i, responseTitle := range pageTitlesResponse.Content {
+			responseTitlesIds[i] = responseTitle.ID
+			responseTitlesNames[i] = responseTitle.PrimaryTitle
+		}
 
-	for _, title := range titles {
-		titleMap, ok := title.(bson.M)
-		require.True(t, ok, "failed to cast title to bson.M")
+		for _, title := range titles {
+			require.Contains(t, responseTitlesIds, title.ID)
+			require.Contains(t, responseTitlesNames, title.PrimaryTitle)
+		}
+	})
+}
 
-		primaryTitle, ok := titleMap["primaryTitle"].(string)
-		require.True(t, ok, "failed to get primaryTitle as string")
-
-		require.Contains(t, responseTitlesNames, primaryTitle)
-	}
+func TestSetTitleWatched(t *testing.T) {
 
 }
