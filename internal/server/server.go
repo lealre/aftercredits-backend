@@ -15,6 +15,9 @@ func NewServer(db *mongo.Client) http.Handler {
 
 	a := api.NewAPI(mongodb.NewDB(db))
 
+	mux.HandleFunc("GET /users", a.GetUsers)
+	mux.HandleFunc("POST /users", a.CreateUser)
+
 	mux.HandleFunc("GET /titles", a.GetTitles)
 	mux.HandleFunc("GET /titles/{id}/ratings", a.GetTitleRatings)
 	mux.HandleFunc("POST /titles", a.AddTitle)
@@ -30,8 +33,6 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("PATCH /comments/{id}", a.UpdateComment)
 	mux.HandleFunc("POST /comments", a.AddComment)
 	mux.HandleFunc("DELETE /comments/{id}", a.DeleteComment)
-
-	mux.HandleFunc("GET /users", a.GetUsers)
 
 	return RequestIDMiddleware(mux)
 }

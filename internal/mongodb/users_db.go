@@ -10,6 +10,16 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// ----- UserRole enum -----
+
+// UserRole represents the role of a user in the system
+type UserRole string
+
+const (
+	RoleUser  UserRole = "user"
+	RoleAdmin UserRole = "admin"
+)
+
 // ----- Types for the database -----
 
 type UserDb struct {
@@ -19,7 +29,7 @@ type UserDb struct {
 	PasswordHash string     `json:"passwordHash" bson:"passwordHash"`
 	AvatarURL    *string    `json:"avatarUrl,omitempty" bson:"avatarUrl,omitempty"`
 	Groups       []string   `json:"groups,omitempty" bson:"groups,omitempty"`
-	Role         string     `json:"role" bson:"role"`
+	Role         UserRole   `json:"role" bson:"role"`
 	IsActive     bool       `json:"isActive" bson:"isActive"`
 	LastLoginAt  *time.Time `json:"lastLoginAt,omitempty" bson:"lastLoginAt,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt" bson:"createdAt"`
@@ -70,4 +80,10 @@ func (db *DB) UserExists(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (db *DB) AddUser(ctx context.Context, user UserDb) error {
+	coll := db.Collection(UsersCollection)
+	_, err := coll.InsertOne(ctx, user)
+	return err
 }
