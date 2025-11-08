@@ -77,3 +77,7 @@ func MapDbUserToApiUserResponse(userDb mongodb.UserDb) UserResponse {
 		Groups:      userDb.Groups,
 	}
 }
+
+func DeleteUserById(db *mongodb.DB, ctx context.Context, id string) error {
+	return db.DeleteUserById(ctx, id)
+}

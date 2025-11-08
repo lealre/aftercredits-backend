@@ -87,3 +87,15 @@ func (db *DB) AddUser(ctx context.Context, user UserDb) error {
 	_, err := coll.InsertOne(ctx, user)
 	return err
 }
+
+func (db *DB) DeleteUserById(ctx context.Context, id string) error {
+	coll := db.Collection(UsersCollection)
+	_, err := coll.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrRecordNotFound
+		}
+		return err
+	}
+	return err
+}

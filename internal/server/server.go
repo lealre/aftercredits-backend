@@ -17,6 +17,7 @@ func NewServer(db *mongo.Client) http.Handler {
 
 	mux.HandleFunc("GET /users", a.GetUsers)
 	mux.HandleFunc("POST /users", a.CreateUser)
+	mux.HandleFunc("DELETE /users/{id}", a.DeleteUserById)
 
 	mux.HandleFunc("GET /titles", a.GetTitles)
 	mux.HandleFunc("GET /titles/{id}/ratings", a.GetTitleRatings)

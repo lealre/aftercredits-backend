@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -56,4 +57,31 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusCreated, user)
+}
+
+func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
+	userId := r.PathValue("id")
+	if userId == "" {
+		respondWithError(w, http.StatusBadRequest, "User id is required")
+		return
+	}
+
+	if ok, err := api.Db.UserExists(r.Context(), userId); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
+		return
+	}
+
+	if err := users.DeleteUserById(api.Db, r.Context(), userId); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting user")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, fmt.Sprintf("User with id %s deleted successfully", userId))
 }
