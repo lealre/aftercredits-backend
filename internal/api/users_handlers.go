@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/users"
@@ -23,9 +25,8 @@ func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 
 /*
 TODO:
-  - handle duplicated username
   - handle invalid password
-  - Validate email format
+  - validate email format
   - handle duplicated email
 */
 func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -38,13 +39,17 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || req.Password == "" {
+	if strings.TrimSpace(req.Name) == "" || req.Password == "" {
 		respondWithError(w, http.StatusBadRequest, "Username and Password fields are required.")
 		return
 	}
 
 	user, err := users.AddUser(api.Db, r.Context(), req)
 	if err != nil {
+		if errors.Is(err, users.ErrUsernameAlreadyExists) {
+			respondWithError(w, http.StatusBadRequest, "Username already exists")
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to add user")
 		return

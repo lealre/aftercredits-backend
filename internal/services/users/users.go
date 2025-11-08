@@ -2,12 +2,16 @@ package users
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
+
+var ErrUsernameAlreadyExists = errors.New("username already exists")
 
 func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
 	usersDb, err := db.GetAllUsers(ctx)
@@ -52,6 +56,9 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 
 	err = db.AddUser(ctx, userDb)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return UserResponse{}, ErrUsernameAlreadyExists
+		}
 		return UserResponse{}, err
 	}
 
