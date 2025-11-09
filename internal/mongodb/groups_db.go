@@ -1,13 +1,17 @@
 package mongodb
 
 import (
+	"context"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // ----- Types for the database -----
 
 type GroupDb struct {
 	Id        string         `json:"id" bson:"_id"`
+	Name      string         `json:"name" bson:"name"`
 	OwnerId   string         `json:"ownerId" bson:"ownerId"`
 	Users     UsersIds       `json:"users" bson:"users"`
 	Titles    []GroupTitleDb `json:"titles" bson:"titles"`
@@ -26,3 +30,19 @@ type GroupTitleDb struct {
 }
 
 // ----- Methods for the database -----
+
+func (db *DB) CreateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
+	coll := db.Collection(GroupsCollection)
+
+	group.Id = primitive.NewObjectID().Hex()
+	now := time.Now()
+	group.CreatedAt = now
+	group.UpdatedAt = now
+
+	_, err := coll.InsertOne(ctx, group)
+	if err != nil {
+		return GroupDb{}, err
+	}
+
+	return group, nil
+}
