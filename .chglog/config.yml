@@ -1,0 +1,17 @@
+style: github
+template: CHANGELOG.tpl.md
+info:
+  title: CHANGELOG
+  repository_url: https://github.com/lealre/fs-mcp
+options:
+  commit_groups:
+    title_maps:
+      test: "Tests"
+  header:
+    pattern: "^([a-zA-Z]+): (.*)$"
+    pattern_maps:
+      - Type
+      - Subject
+  notes:
+    keywords:
+      - BREAKING CHANGE
