@@ -29,6 +29,7 @@ func GetPageOfTitles(
 	orderByField string,
 	watched *bool,
 	ascending *bool,
+	titleIds []string,
 ) (generics.Page[Title], error) {
 	if size <= 0 {
 		size = 20
@@ -62,6 +63,10 @@ func GetPageOfTitles(
 	filter := bson.M{}
 	if watched != nil {
 		filter["watched"] = *watched
+	}
+	// Filter by title IDs if provided
+	if len(titleIds) > 0 {
+		filter["_id"] = bson.M{"$in": titleIds}
 	}
 
 	totalTitlesInDB, err := db.CountTotalTitles(ctx, filter)
@@ -124,7 +129,7 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 	}
 
 	return Title{
-		ID:           title.ID,
+		Id:           title.ID,
 		Type:         title.Type,
 		PrimaryTitle: title.PrimaryTitle,
 		PrimaryImage: Image{
@@ -144,10 +149,7 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 		WritersNames:    writerNames,
 		StarsNames:      starNames,
 		OriginCountries: originCountries,
-		Watched:         watched,
 		AddedAt:         title.AddedAt,
-		UpdatedAt:       title.UpdatedAt,
-		WatchedAt:       title.WatchedAt,
 	}
 }
 

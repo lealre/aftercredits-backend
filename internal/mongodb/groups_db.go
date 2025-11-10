@@ -2,9 +2,13 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // ----- Types for the database -----
@@ -44,5 +48,35 @@ func (db *DB) CreateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
 		return GroupDb{}, err
 	}
 
+	return group, nil
+}
+
+func (db *DB) GroupExists(ctx context.Context, id string) (bool, error) {
+	coll := db.Collection(GroupsCollection)
+
+	// Only ask MongoDB for the _id field
+	opts := options.FindOne().SetProjection(bson.M{"_id": 1})
+
+	err := coll.FindOne(ctx, bson.M{"_id": id}, opts).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (db *DB) GetGroupById(ctx context.Context, id string) (GroupDb, error) {
+	coll := db.Collection(GroupsCollection)
+
+	var group GroupDb
+	err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&group)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return GroupDb{}, ErrRecordNotFound
+		}
+		return GroupDb{}, err
+	}
 	return group, nil
 }

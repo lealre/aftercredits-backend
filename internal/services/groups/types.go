@@ -1,6 +1,11 @@
 package groups
 
-import "time"
+import (
+	"time"
+
+	"github.com/lealre/movies-backend/internal/services/ratings"
+	"github.com/lealre/movies-backend/internal/services/titles"
+)
 
 type Group struct {
 	Id        string       `json:"id"`
@@ -35,4 +40,13 @@ type GroupResponse struct {
 	Titles    []GroupTitle `json:"titles"`
 	CreatedAt time.Time    `json:"createdAt"`
 	UpdatedAt time.Time    `json:"updatedAt"`
+}
+
+type GroupTitleDetail struct {
+	titles.Title
+	Ratings   []ratings.Rating `json:"ratings"`
+	Watched   bool             `json:"watched"`
+	AddedAt   time.Time        `json:"addedAt"`
+	UpdatedAt time.Time        `json:"updatedAt"`
+	WatchedAt *time.Time       `json:"watchedAt,omitempty"`
 }
