@@ -91,10 +91,10 @@ func GetTitlesFromGroup(
 	for _, title := range titles.Content {
 		groupTitle := titleGroupMap[title.Id]
 		detail := GroupTitleDetail{
-			Ratings:   ratings.Titles[title.Id],
-			Watched:   groupTitle.Watched,
-			AddedAt:   groupTitle.AddedAt,
-			UpdatedAt: groupTitle.UpdatedAt,
+			GroupRatings: ratings.Titles[title.Id],
+			Watched:      groupTitle.Watched,
+			AddedAt:      groupTitle.AddedAt,
+			UpdatedAt:    groupTitle.UpdatedAt,
 		}
 		detail.Title = title
 		allTitlesDetails = append(allTitlesDetails, detail)

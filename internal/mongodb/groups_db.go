@@ -26,7 +26,7 @@ type GroupDb struct {
 type UsersIds []string
 
 type GroupTitleDb struct {
-	Id        string     `json:"id" bson:"_id"`
+	Id        string     `json:"id" bson:"titleId"`
 	Watched   bool       `json:"watched" bson:"watched"`
 	AddedAt   time.Time  `json:"addedAt" bson:"addedAt"`
 	UpdatedAt time.Time  `json:"updatedAt" bson:"updatedAt"`

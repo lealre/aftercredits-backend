@@ -44,9 +44,9 @@ type GroupResponse struct {
 
 type GroupTitleDetail struct {
 	titles.Title
-	Ratings   []ratings.Rating `json:"ratings"`
-	Watched   bool             `json:"watched"`
-	AddedAt   time.Time        `json:"addedAt"`
-	UpdatedAt time.Time        `json:"updatedAt"`
-	WatchedAt *time.Time       `json:"watchedAt,omitempty"`
+	GroupRatings []ratings.Rating `json:"groupRatings"`
+	Watched      bool             `json:"watched"`
+	AddedAt      time.Time        `json:"addedAt"`
+	UpdatedAt    time.Time        `json:"updatedAt"`
+	WatchedAt    *time.Time       `json:"watchedAt,omitempty"`
 }
