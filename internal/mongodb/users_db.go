@@ -25,15 +25,15 @@ const (
 type UserDb struct {
 	Id           string     `json:"id" bson:"_id"`
 	Name         string     `json:"name" bson:"name"`
-	Email        string     `json:"email" bson:"email"`
-	PasswordHash string     `json:"passwordHash" bson:"passwordHash"`
+	Email        string     `json:"email,omitempty" bson:"email,omitempty"`
+	PasswordHash string     `json:"passwordHash,omitempty" bson:"passwordHash,omitempty"`
 	AvatarURL    *string    `json:"avatarUrl,omitempty" bson:"avatarUrl,omitempty"`
 	Groups       []string   `json:"groups,omitempty" bson:"groups,omitempty"`
-	Role         UserRole   `json:"role" bson:"role"`
-	IsActive     bool       `json:"isActive" bson:"isActive"`
+	Role         UserRole   `json:"role,omitempty" bson:"role,omitempty"`
+	IsActive     bool       `json:"isActive,omitempty" bson:"isActive,omitempty"`
 	LastLoginAt  *time.Time `json:"lastLoginAt,omitempty" bson:"lastLoginAt,omitempty"`
-	CreatedAt    time.Time  `json:"createdAt" bson:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt" bson:"updatedAt"`
+	CreatedAt    time.Time  `json:"createdAt,omitempty" bson:"createdAt,omitempty"`
+	UpdatedAt    time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
 }
 
 // ----- Methods for the database -----

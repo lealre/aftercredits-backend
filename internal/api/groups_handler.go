@@ -9,6 +9,7 @@ import (
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/groups"
+	"github.com/lealre/movies-backend/internal/services/users"
 )
 
 func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -81,4 +82,31 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, titles)
+}
+
+func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	groupId := r.PathValue("id")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+		return
+	}
+
+	groupUsers, err := groups.GetUsersFromGroup(api.Db, r.Context(), groupId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while getting users from group")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, users.AllUsersResponse{Users: groupUsers})
 }

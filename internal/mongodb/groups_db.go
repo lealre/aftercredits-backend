@@ -80,3 +80,36 @@ func (db *DB) GetGroupById(ctx context.Context, id string) (GroupDb, error) {
 	}
 	return group, nil
 }
+
+func (db *DB) GetUsersFromGroup(ctx context.Context, groupId string) ([]UserDb, error) {
+	// First, get the group to find user IDs
+	group, err := db.GetGroupById(ctx, groupId)
+	if err != nil {
+		return []UserDb{}, err
+	}
+
+	if len(group.Users) == 0 {
+		return []UserDb{}, nil
+	}
+
+	// Query users collection with only _id and name fields
+	usersColl := db.Collection(UsersCollection)
+	filter := bson.M{"_id": bson.M{"$in": group.Users}}
+	opts := options.Find().SetProjection(bson.M{
+		"_id":  1,
+		"name": 1,
+	})
+
+	cursor, err := usersColl.Find(ctx, filter, opts)
+	if err != nil {
+		return []UserDb{}, err
+	}
+	defer cursor.Close(ctx)
+
+	var users []UserDb
+	if err := cursor.All(ctx, &users); err != nil {
+		return []UserDb{}, err
+	}
+
+	return users, nil
+}

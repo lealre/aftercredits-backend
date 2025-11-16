@@ -7,6 +7,7 @@ import (
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
+	"github.com/lealre/movies-backend/internal/services/users"
 )
 
 func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (GroupResponse, error) {
@@ -107,4 +108,18 @@ func GetTitlesFromGroup(
 		TotalPages:   titles.TotalPages,
 		Content:      allTitlesDetails,
 	}, nil
+}
+
+func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]users.UserResponse, error) {
+	usersDb, err := db.GetUsersFromGroup(ctx, groupId)
+	if err != nil {
+		return []users.UserResponse{}, err
+	}
+
+	var usersResponse []users.UserResponse
+	for _, userDb := range usersDb {
+		usersResponse = append(usersResponse, users.MapDbUserToApiUserResponse(userDb))
+	}
+
+	return usersResponse, nil
 }
