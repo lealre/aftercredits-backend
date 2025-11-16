@@ -12,6 +12,7 @@ import (
 )
 
 var ErrTitleAlreadyInGroup = errors.New("title already in group")
+var ErrTitleNotInGroup = errors.New("title not in group")
 
 func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (GroupResponse, error) {
 	group := mongodb.GroupDb{
@@ -154,4 +155,26 @@ func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string
 		return GroupTitle{}, err
 	}
 	return MapDbGroupTitleToApiGroupTitle(*groupTitle), nil
+}
+
+func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
+	group, err := db.GetGroupById(ctx, groupId)
+	if err != nil {
+		return err
+	}
+
+	// Check if the title exists in the group
+	found := false
+	for _, title := range group.Titles {
+		if title.Id == titleId {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return ErrTitleNotInGroup
+	}
+
+	return db.RemoveTitleFromGroup(ctx, groupId, titleId)
 }

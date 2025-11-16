@@ -233,3 +233,49 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 
 	respondWithJSON(w, http.StatusOK, groupTitle)
 }
+
+func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	if ok, err := api.Db.TitleExists(r.Context(), titleId); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
+		return
+	}
+
+	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId)
+	if err != nil {
+		if errors.Is(err, groups.ErrTitleNotInGroup) {
+			respondWithError(w, http.StatusBadRequest, "Title not in group")
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Error removing title from group")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title %s deleted from group %s", titleId, groupId))
+}
