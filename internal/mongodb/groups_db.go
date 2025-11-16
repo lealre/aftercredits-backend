@@ -113,3 +113,27 @@ func (db *DB) GetUsersFromGroup(ctx context.Context, groupId string) ([]UserDb, 
 
 	return users, nil
 }
+
+func (db *DB) UpdateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
+	coll := db.Collection(GroupsCollection)
+
+	_, err := coll.UpdateOne(ctx, bson.M{"_id": group.Id}, bson.M{"$set": group})
+	if err != nil {
+		return GroupDb{}, err
+	}
+	return group, nil
+}
+
+func (db *DB) AddNewGroupTitle(ctx context.Context, groupId string, titleId string) error {
+	coll := db.Collection(GroupsCollection)
+
+	_, err := coll.UpdateOne(
+		ctx,
+		bson.M{"_id": groupId},
+		bson.M{"$push": bson.M{"titles": GroupTitleDb{Id: titleId, Watched: false, AddedAt: time.Now(), UpdatedAt: time.Now()}}},
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}

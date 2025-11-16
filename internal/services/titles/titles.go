@@ -230,3 +230,12 @@ func CascadeDeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) (in
 	return deletedRatingsCount + deletedCommentsCount, nil
 
 }
+
+func GetTitleById(db *mongodb.DB, ctx context.Context, titleId string) (Title, error) {
+	titleDb, err := db.GetTitleById(ctx, titleId)
+	if err != nil {
+		return Title{}, err
+	}
+
+	return MapDbTitleToApiTitle(titleDb), nil
+}

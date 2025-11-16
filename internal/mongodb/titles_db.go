@@ -72,19 +72,19 @@ type Interest struct {
 	IsSubgenre bool   `json:"isSubgenre,omitempty" bson:"isSubgenre,omitempty"`
 }
 
-func (db *DB) GetTitleById(ctx context.Context, id string) (bson.M, error) {
-	coll := db.Collection(TitlesCollection)
-	var out bson.M
-	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&out); err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrRecordNotFound
-		}
-		return nil, err
-	}
-	return out, nil
-}
-
 // ----- Methods for the database -----
+
+func (db *DB) GetTitleById(ctx context.Context, id string) (TitleDb, error) {
+	coll := db.Collection(TitlesCollection)
+	var titleDb TitleDb
+	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&titleDb); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return TitleDb{}, ErrRecordNotFound
+		}
+		return TitleDb{}, err
+	}
+	return titleDb, nil
+}
 
 func (db *DB) AddTitle(ctx context.Context, doc map[string]any) error {
 	if doc == nil {

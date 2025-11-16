@@ -50,3 +50,8 @@ type GroupTitleDetail struct {
 	UpdatedAt    time.Time        `json:"updatedAt"`
 	WatchedAt    *time.Time       `json:"watchedAt,omitempty"`
 }
+
+type AddTitleToGroupRequest struct {
+	URL     string `json:"url"`
+	GroupId string `json:"groupId"`
+}

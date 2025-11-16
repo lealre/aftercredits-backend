@@ -123,3 +123,11 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]u
 
 	return usersResponse, nil
 }
+
+func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
+	err := db.AddNewGroupTitle(ctx, groupId, titleId)
+	if err != nil {
+		return err
+	}
+	return nil
+}
