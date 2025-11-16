@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -174,6 +175,10 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 
 	err = groups.AddTitleToGroup(api.Db, r.Context(), groupId, titleID)
 	if err != nil {
+		if errors.Is(err, groups.ErrTitleAlreadyInGroup) {
+			respondWithError(w, http.StatusBadRequest, "Title already added to group")
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error adding title to group")
 		return

@@ -2,6 +2,7 @@ package groups
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -9,6 +10,8 @@ import (
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
 )
+
+var ErrTitleAlreadyInGroup = errors.New("title already in group")
 
 func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (GroupResponse, error) {
 	group := mongodb.GroupDb{
@@ -126,7 +129,19 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]u
 }
 
 func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
-	err := db.AddNewGroupTitle(ctx, groupId, titleId)
+
+	group, err := db.GetGroupById(ctx, groupId)
+	if err != nil {
+		return err
+	}
+
+	for _, title := range group.Titles {
+		if title.Id == titleId {
+			return ErrTitleAlreadyInGroup
+		}
+	}
+
+	err = db.AddNewGroupTitle(ctx, groupId, titleId)
 	if err != nil {
 		return err
 	}
