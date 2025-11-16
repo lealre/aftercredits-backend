@@ -179,5 +179,52 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusCreated, fmt.Sprintf("Title %s added to group %s", titleID, groupId))
+	respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title %s added to group %s", titleID, groupId))
+}
+
+func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	groupId := r.PathValue("id")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+		return
+	}
+
+	var req groups.UpdateGroupTitleWatchedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+	if req.TitleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	if ok, err := api.Db.TitleExists(r.Context(), req.TitleId); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", req.TitleId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
+		return
+	}
+
+	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, req.TitleId, req.Watched, req.WatchedAt)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Error updating group title watched")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, groupTitle)
 }

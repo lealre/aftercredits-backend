@@ -54,6 +54,7 @@ func MapDbGroupTitleToApiGroupTitle(title mongodb.GroupTitleDb) GroupTitle {
 		Watched:   watched,
 		AddedAt:   title.AddedAt,
 		UpdatedAt: title.UpdatedAt,
+		WatchedAt: title.WatchedAt,
 	}
 }
 
@@ -130,4 +131,12 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleI
 		return err
 	}
 	return nil
+}
+
+func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
+	groupTitle, err := db.UpdateGroupTitleWatched(ctx, groupId, titleId, watched, watchedAt)
+	if err != nil {
+		return GroupTitle{}, err
+	}
+	return MapDbGroupTitleToApiGroupTitle(*groupTitle), nil
 }

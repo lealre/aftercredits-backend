@@ -3,8 +3,10 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/generics"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -136,4 +138,83 @@ func (db *DB) AddNewGroupTitle(ctx context.Context, groupId string, titleId stri
 		return err
 	}
 	return nil
+}
+
+/*
+Update the watched properties of a title in the database.
+
+If the watchedAt is provided but watchedAt.Time is nil,
+or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
+
+TODO: If watchedAt is provided but whatched is false or nil, do not proceed with the update.
+*/
+func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*GroupTitleDb, error) {
+	coll := db.Collection(GroupsCollection)
+
+	// Use FindOneAndUpdate to get the updated document
+	opts := options.FindOneAndUpdate()
+	opts.SetReturnDocument(options.After) // Return the document after update
+
+	updateDoc := bson.M{}
+
+	if watched != nil {
+		updateDoc["watched"] = *watched
+	}
+
+	if watchedAt != nil {
+		if watchedAt.Time != nil {
+			updateDoc["watchedAt"] = *watchedAt.Time
+		} else {
+			// If watchedAt is provided but Time is nil, set it to null in database
+			updateDoc["watchedAt"] = nil
+		}
+	}
+
+	if len(updateDoc) > 0 {
+		now := time.Now()
+		updateDoc["updatedAt"] = now
+	}
+
+	if len(updateDoc) == 0 {
+		return nil, fmt.Errorf("no fields to update")
+	}
+
+	// Build the update document with array filters to update the nested array element
+	setDoc := bson.M{}
+	for key, value := range updateDoc {
+		setDoc["titles.$[elem]."+key] = value
+	}
+
+	// Use array filters to match the specific title by titleId
+	// Note: The BSON field name is "titleId" (from the struct tag), not "id"
+	arrayFilters := options.ArrayFilters{
+		Filters: []interface{}{
+			bson.M{"elem.titleId": titleId},
+		},
+	}
+	opts.SetArrayFilters(arrayFilters)
+
+	var updatedGroup GroupDb
+	err := coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": groupId},
+		bson.M{"$set": setDoc},
+		opts,
+	).Decode(&updatedGroup)
+
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+
+	// Find and return the updated title from the group
+	for _, title := range updatedGroup.Titles {
+		if title.Id == titleId {
+			return &title, nil
+		}
+	}
+
+	return nil, ErrRecordNotFound
 }

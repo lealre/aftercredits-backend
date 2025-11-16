@@ -3,6 +3,7 @@ package groups
 import (
 	"time"
 
+	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
@@ -54,4 +55,10 @@ type GroupTitleDetail struct {
 type AddTitleToGroupRequest struct {
 	URL     string `json:"url"`
 	GroupId string `json:"groupId"`
+}
+
+type UpdateGroupTitleWatchedRequest struct {
+	TitleId   string                 `json:"titleId"`
+	Watched   *bool                  `json:"watched,omitempty"`
+	WatchedAt *generics.FlexibleDate `json:"watchedAt,omitempty"`
 }
