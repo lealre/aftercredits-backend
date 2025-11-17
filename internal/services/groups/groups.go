@@ -3,6 +3,8 @@ package groups
 import (
 	"context"
 	"errors"
+	"sort"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -79,11 +81,58 @@ func GetTitlesFromGroup(
 	var allTitlesIds []string
 	var titleGroupMap map[string]mongodb.GroupTitleDb = make(map[string]mongodb.GroupTitleDb)
 	for _, title := range group.Titles {
+
+		if watched != nil && title.Watched != *watched {
+			continue
+		}
+
 		titleGroupMap[title.Id] = title
 		allTitlesIds = append(allTitlesIds, title.Id)
 	}
 
-	titles, err := titles.GetPageOfTitles(db, ctx, size, page, orderBy, watched, ascending, allTitlesIds)
+	if len(allTitlesIds) > 1 && (orderBy == "watchedAt" || orderBy == "addedAt") {
+		isAscending := true
+		if ascending != nil {
+			isAscending = *ascending
+		}
+
+		// If its a group field sorting, we must sort on the ids order of the group titles.
+		// Later in GetPageOfTitles, it will mantain the order of the ids
+		if orderBy == "addedAt" || orderBy == "watchedAt" {
+			getOrderValue := func(title mongodb.GroupTitleDb) (timeValue *time.Time) {
+				if orderBy == "watchedAt" {
+					return title.WatchedAt
+				}
+				return &title.AddedAt
+			}
+
+			sort.SliceStable(allTitlesIds, func(i, j int) bool {
+				left := titleGroupMap[allTitlesIds[i]]
+				right := titleGroupMap[allTitlesIds[j]]
+
+				leftTime := getOrderValue(left)
+				rightTime := getOrderValue(right)
+
+				switch {
+				case leftTime == nil && rightTime == nil:
+					return allTitlesIds[i] < allTitlesIds[j]
+				case leftTime == nil:
+					return false
+				case rightTime == nil:
+					return true
+				case leftTime.Equal(*rightTime):
+					return allTitlesIds[i] < allTitlesIds[j]
+				default:
+					if isAscending {
+						return leftTime.Before(*rightTime)
+					}
+					return leftTime.After(*rightTime)
+				}
+			})
+		}
+	}
+
+	titles, err := titles.GetPageOfTitles(db, ctx, size, page, orderBy, ascending, allTitlesIds)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
@@ -99,6 +148,7 @@ func GetTitlesFromGroup(
 		detail := GroupTitleDetail{
 			GroupRatings: ratings.Titles[title.Id],
 			Watched:      groupTitle.Watched,
+			WatchedAt:    groupTitle.WatchedAt,
 			AddedAt:      groupTitle.AddedAt,
 			UpdatedAt:    groupTitle.UpdatedAt,
 		}

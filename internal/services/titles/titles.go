@@ -13,92 +13,114 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-/*
-This gets the paginated titles
-
-Example on how to filter by field
-filter := bson.M{"category": "news"}
-
-Example on how to set limits, offsets, orderBy, ...
-opts := options.Find().SetSort(bson.D{{"addedAt", -1}}).SetLimit(20)
-*/
 func GetPageOfTitles(
 	db *mongodb.DB,
 	ctx context.Context,
 	size, page int,
 	orderByField string,
-	watched *bool,
 	ascending *bool,
 	titleIds []string,
 ) (generics.Page[Title], error) {
+
 	if size <= 0 {
 		size = 20
 	}
 	if size > 100 {
 		size = 100
 	}
-	if page == 0 {
+	if page <= 0 {
 		page = 1
-	}
-	if orderByField == "" {
-		orderByField = "primaryTitle"
-	}
-	// Handle nested rating field
-	if orderByField == "imdbRating" {
-		orderByField = "rating.aggregateRating"
-	}
-	orderByValue := 1
-	if ascending != nil {
-		if !*ascending {
-			orderByValue = -1
-		}
 	}
 
 	skip := (int64(page) - 1) * int64(size)
-	opts := options.Find().
-		SetLimit(int64(size)).
-		SetSkip(skip).
-		SetSort(bson.D{{Key: orderByField, Value: orderByValue}})
 
-	filter := bson.M{}
-	if watched != nil {
-		filter["watched"] = *watched
+	ascendingValue := 1
+	if ascending != nil && !*ascending {
+		ascendingValue = -1
 	}
-	// Filter by title IDs if provided
+
+	// Build base filter
+	filter := bson.M{}
 	if len(titleIds) > 0 {
 		filter["_id"] = bson.M{"$in": titleIds}
 	}
 
-	totalTitlesInDB, err := db.CountTotalTitles(ctx, filter)
+	// Count total
+	totalResults, err := db.CountTotalTitles(ctx, filter)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
 
-	allTitlesDb, err := db.GetTitles(ctx, filter, opts)
+	////////////////////////////////////////////////////////////////////////////
+	//  🟦 CASE 1 — MUST USE CUSTOM ORDER (group fields sorting)
+	////////////////////////////////////////////////////////////////////////////
+	groupFieldsSort := orderByField == "watched" || orderByField == "watchedAt" || orderByField == "addedAt"
+	if groupFieldsSort {
+		idsAsInterfaces := make([]interface{}, len(titleIds))
+		for i, id := range titleIds {
+			idsAsInterfaces[i] = id
+		}
+
+		pipeline := mongo.Pipeline{
+			{{Key: "$match", Value: filter}},
+			{{Key: "$addFields", Value: bson.M{
+				"sortOrder": bson.M{"$indexOfArray": []interface{}{idsAsInterfaces, "$_id"}},
+			}}},
+			{{Key: "$sort", Value: bson.M{"sortOrder": 1}}},
+			{{Key: "$skip", Value: skip}},
+			{{Key: "$limit", Value: int64(size)}},
+		}
+
+		titlesDb, err := db.AggregateTitles(ctx, pipeline)
+		if err != nil {
+			return generics.Page[Title]{}, err
+		}
+
+		titles := make([]Title, len(titlesDb))
+		for i, t := range titlesDb {
+			titles[i] = MapDbTitleToApiTitle(t)
+		}
+
+		return generics.Page[Title]{
+			TotalResults: totalResults,
+			Size:         size,
+			Page:         page,
+			TotalPages:   int((totalResults + size - 1) / size),
+			Content:      titles,
+		}, nil
+	}
+
+	////////////////////////////////////////////////////////////////////////////
+	//  🟩 CASE 2 — STANDARD MONGO SORTING (no group fields sorting)
+	////////////////////////////////////////////////////////////////////////////
+	if orderByField == "" {
+		orderByField = "primaryTitle"
+	}
+	if orderByField == "imdbRating" {
+		orderByField = "rating.aggregateRating"
+	}
+
+	opts := options.Find().
+		SetLimit(int64(size)).
+		SetSkip(skip).
+		SetSort(bson.D{{Key: orderByField, Value: ascendingValue}})
+
+	dbTitles, err := db.GetTitles(ctx, filter, opts)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
 
-	var allTitles []Title
-	for _, titleDb := range allTitlesDb {
-		allTitles = append(allTitles, MapDbTitleToApiTitle(titleDb))
-	}
-
-	if allTitles == nil {
-		allTitles = []Title{}
-	}
-
-	totalPages := (totalTitlesInDB + size - 1) / size
-	if totalTitlesInDB == 0 {
-		totalPages = 1
+	titles := make([]Title, len(dbTitles))
+	for i, t := range dbTitles {
+		titles[i] = MapDbTitleToApiTitle(t)
 	}
 
 	return generics.Page[Title]{
-		TotalResults: totalTitlesInDB,
+		TotalResults: totalResults,
 		Size:         size,
 		Page:         page,
-		TotalPages:   int(totalPages),
-		Content:      allTitles,
+		TotalPages:   int((totalResults + size - 1) / size),
+		Content:      titles,
 	}, nil
 }
 
