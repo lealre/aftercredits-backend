@@ -97,7 +97,7 @@ func GetTitlesFromGroup(
 		}
 
 		// If its a group field sorting, we must sort on the ids order of the group titles.
-		// Later in GetPageOfTitles, it will mantain the order of the ids
+		// Later in GetPageOfTitles, it will mantain the order of the ids.
 		if orderBy == "addedAt" || orderBy == "watchedAt" {
 			getOrderValue := func(title mongodb.GroupTitleDb) (timeValue *time.Time) {
 				if orderBy == "watchedAt" {

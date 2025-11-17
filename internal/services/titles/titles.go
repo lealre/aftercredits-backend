@@ -13,6 +13,16 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+/*
+This can filter by the native titles fields from titles Ids or by the group fields sorting.
+
+🟦 CASE 1: Filter by the fields in group titles, by preserving the order in titleIds list
+  - watched
+  - watchedAt
+  - addedAt
+
+🟩 CASE 2: Filter by the native titles collection fields
+*/
 func GetPageOfTitles(
 	db *mongodb.DB,
 	ctx context.Context,
@@ -39,13 +49,11 @@ func GetPageOfTitles(
 		ascendingValue = -1
 	}
 
-	// Build base filter
 	filter := bson.M{}
 	if len(titleIds) > 0 {
 		filter["_id"] = bson.M{"$in": titleIds}
 	}
 
-	// Count total
 	totalResults, err := db.CountTotalTitles(ctx, filter)
 	if err != nil {
 		return generics.Page[Title]{}, err
@@ -55,7 +63,7 @@ func GetPageOfTitles(
 	//  🟦 CASE 1 — MUST USE CUSTOM ORDER (group fields sorting)
 	////////////////////////////////////////////////////////////////////////////
 	groupFieldsSort := orderByField == "watched" || orderByField == "watchedAt" || orderByField == "addedAt"
-	if groupFieldsSort {
+	if len(titleIds) > 0 && groupFieldsSort {
 		idsAsInterfaces := make([]interface{}, len(titleIds))
 		for i, id := range titleIds {
 			idsAsInterfaces[i] = id
