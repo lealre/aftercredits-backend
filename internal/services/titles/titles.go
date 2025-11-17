@@ -145,11 +145,6 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 		originCountries[i] = country.Name
 	}
 
-	watched := title.Watched
-	if !watched {
-		watched = false
-	}
-
 	return Title{
 		Id:           title.ID,
 		Type:         title.Type,
@@ -172,6 +167,7 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 		StarsNames:      starNames,
 		OriginCountries: originCountries,
 		AddedAt:         title.AddedAt,
+		UpdatedAt:       title.UpdatedAt,
 	}
 }
 
@@ -189,7 +185,6 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 	}
 
 	// Set missing fields
-	title.Watched = false
 	now := time.Now()
 	title.AddedAt = &now
 	title.UpdatedAt = &now

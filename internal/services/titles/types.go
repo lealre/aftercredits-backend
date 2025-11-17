@@ -22,6 +22,7 @@ type Title struct {
 	StarsNames      []string   `json:"starsNames"`
 	OriginCountries []string   `json:"originCountries"`
 	AddedAt         *time.Time `json:"addedAt,omitempty"`
+	UpdatedAt       *time.Time `json:"updatedAt,omitempty"`
 }
 
 type TitleResponse struct {

@@ -31,10 +31,8 @@ type TitleDb struct {
 	OriginCountries []CodeName  `json:"originCountries" bson:"originCountries"`
 	SpokenLanguages []CodeName  `json:"spokenLanguages" bson:"spokenLanguages"`
 	Interests       []Interest  `json:"interests" bson:"interests"`
-	Watched         bool        `json:"watched" bson:"watched"`
 	AddedAt         *time.Time  `json:"addedAt,omitempty" bson:"addedAt,omitempty"`
 	UpdatedAt       *time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
-	WatchedAt       *time.Time  `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
 }
 
 type Image struct {

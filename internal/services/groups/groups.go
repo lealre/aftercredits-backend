@@ -180,7 +180,6 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]u
 }
 
 func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
-
 	group, err := db.GetGroupById(ctx, groupId)
 	if err != nil {
 		return err
