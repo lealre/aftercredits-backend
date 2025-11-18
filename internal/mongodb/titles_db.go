@@ -31,10 +31,8 @@ type TitleDb struct {
 	OriginCountries []CodeName  `json:"originCountries" bson:"originCountries"`
 	SpokenLanguages []CodeName  `json:"spokenLanguages" bson:"spokenLanguages"`
 	Interests       []Interest  `json:"interests" bson:"interests"`
-	Watched         bool        `json:"watched" bson:"watched"`
 	AddedAt         *time.Time  `json:"addedAt,omitempty" bson:"addedAt,omitempty"`
 	UpdatedAt       *time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
-	WatchedAt       *time.Time  `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
 }
 
 type Image struct {
@@ -72,19 +70,19 @@ type Interest struct {
 	IsSubgenre bool   `json:"isSubgenre,omitempty" bson:"isSubgenre,omitempty"`
 }
 
-func (db *DB) GetTitleById(ctx context.Context, id string) (bson.M, error) {
-	coll := db.Collection(TitlesCollection)
-	var out bson.M
-	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&out); err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrRecordNotFound
-		}
-		return nil, err
-	}
-	return out, nil
-}
-
 // ----- Methods for the database -----
+
+func (db *DB) GetTitleById(ctx context.Context, id string) (TitleDb, error) {
+	coll := db.Collection(TitlesCollection)
+	var titleDb TitleDb
+	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&titleDb); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return TitleDb{}, ErrRecordNotFound
+		}
+		return TitleDb{}, err
+	}
+	return titleDb, nil
+}
 
 func (db *DB) AddTitle(ctx context.Context, doc map[string]any) error {
 	if doc == nil {
@@ -208,4 +206,21 @@ func (db *DB) TitleExists(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (db *DB) AggregateTitles(ctx context.Context, pipeline mongo.Pipeline) ([]TitleDb, error) {
+	coll := db.Collection(TitlesCollection)
+
+	cursor, err := coll.Aggregate(ctx, pipeline)
+	if err != nil {
+		return []TitleDb{}, err
+	}
+	defer cursor.Close(ctx)
+
+	var dbTitles []TitleDb
+	if err := cursor.All(ctx, &dbTitles); err != nil {
+		return []TitleDb{}, err
+	}
+
+	return dbTitles, nil
 }

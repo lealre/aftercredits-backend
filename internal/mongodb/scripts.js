@@ -35,3 +35,9 @@ db("brunan")
 db("brunan")
   .collection("titles")
   .updateMany({}, { $set: { addedAt: new Date(), updatedAt: new Date(), watchedAt: null } });
+
+
+// Create unique index for users collection (case-insensitive)
+db("brunan")
+  .collection("users")
+  .createIndex({ name: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } })

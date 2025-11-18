@@ -20,9 +20,8 @@ func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	page := generics.StringToInt(r.URL.Query().Get("page"))
 	orderBy := r.URL.Query().Get("orderBy")
 	ascending := parseUrlQueryToBool(r.URL.Query().Get("ascending"))
-	watched := parseUrlQueryToBool(r.URL.Query().Get("watched"))
 
-	pageOfTitles, err := titles.GetPageOfTitles(api.Db, r.Context(), size, page, orderBy, watched, ascending)
+	pageOfTitles, err := titles.GetPageOfTitles(api.Db, r.Context(), size, page, orderBy, ascending, nil)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch titles from database")
@@ -104,8 +103,7 @@ func (api *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allRatings := ratings.AllRatingsFromTitle{Ratings: titleRatings}
-	respondWithJSON(w, http.StatusOK, allRatings)
+	respondWithJSON(w, http.StatusOK, ratings.AllRatingsFromTitle{Ratings: titleRatings})
 }
 
 func (api *API) SetWatched(w http.ResponseWriter, r *http.Request) {
@@ -166,8 +164,8 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if deletedRatingsCount > 0 {
-		respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title and %d ratings/comments deleted from database", deletedRatingsCount))
+		respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Title and %d ratings/comments deleted from database", deletedRatingsCount)})
 	} else {
-		respondWithJSON(w, http.StatusOK, "Title deleted from database")
+		respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Title deleted from database"})
 	}
 }

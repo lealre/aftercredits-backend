@@ -83,6 +83,45 @@ func resetDB(t *testing.T) {
 			t.Fatalf("failed to drop collection %s: %v", coll, err)
 		}
 	}
+
+	// Recreate indexes after dropping collections
+	createIndexes(t, db)
+}
+
+func createIndexes(t *testing.T, db *mongo.Database) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	// Create unique index on users collection (case-insensitive)
+	usersIndexModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "name", Value: 1}},
+		Options: options.Index().SetUnique(true).SetCollation(&options.Collation{Locale: "en", Strength: 2}),
+	}
+	_, err := db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, usersIndexModel)
+	if err != nil {
+		t.Fatalf("failed to create unique index on users collection: %v", err)
+	}
+
+	// Create unique index on ratings collection
+	ratingsIndexModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	}
+	_, err = db.Collection(mongodb.RatingsCollection).Indexes().CreateOne(ctx, ratingsIndexModel)
+	if err != nil {
+		t.Fatalf("failed to create unique index on ratings collection: %v", err)
+	}
+
+	// Create unique index on comments collection
+	commentsIndexModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	}
+	_, err = db.Collection(mongodb.CommentsCollection).Indexes().CreateOne(ctx, commentsIndexModel)
+	if err != nil {
+		t.Fatalf("failed to create unique index on comments collection: %v", err)
+	}
 }
 
 func seedTitles(t *testing.T, titles []imdb.Title) {

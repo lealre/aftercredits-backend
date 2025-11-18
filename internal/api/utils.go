@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 )
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
@@ -19,9 +18,9 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) error {
-	messageBody := map[string]string{
-		"status_code":   strconv.Itoa(code),
-		"error_message": msg,
+	messageBody := ErrorResponse{
+		StatusCode:   code,
+		ErrorMessage: msg,
 	}
 	return respondWithJSON(w, code, messageBody)
 }

@@ -3,17 +3,37 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// ----- UserRole enum -----
+
+// UserRole represents the role of a user in the system
+type UserRole string
+
+const (
+	RoleUser  UserRole = "user"
+	RoleAdmin UserRole = "admin"
+)
+
 // ----- Types for the database -----
 
 type UserDb struct {
-	Id   string `json:"id" bson:"_id"`
-	Name string `json:"name" bson:"name"`
+	Id           string     `json:"id" bson:"_id"`
+	Name         string     `json:"name" bson:"name"`
+	Email        string     `json:"email,omitempty" bson:"email,omitempty"`
+	PasswordHash string     `json:"passwordHash,omitempty" bson:"passwordHash,omitempty"`
+	AvatarURL    *string    `json:"avatarUrl,omitempty" bson:"avatarUrl,omitempty"`
+	Groups       []string   `json:"groups,omitempty" bson:"groups,omitempty"`
+	Role         UserRole   `json:"role,omitempty" bson:"role,omitempty"`
+	IsActive     bool       `json:"isActive,omitempty" bson:"isActive,omitempty"`
+	LastLoginAt  *time.Time `json:"lastLoginAt,omitempty" bson:"lastLoginAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt,omitempty" bson:"createdAt,omitempty"`
+	UpdatedAt    time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
 }
 
 // ----- Methods for the database -----
@@ -60,4 +80,22 @@ func (db *DB) UserExists(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (db *DB) AddUser(ctx context.Context, user UserDb) error {
+	coll := db.Collection(UsersCollection)
+	_, err := coll.InsertOne(ctx, user)
+	return err
+}
+
+func (db *DB) DeleteUserById(ctx context.Context, id string) error {
+	coll := db.Collection(UsersCollection)
+	_, err := coll.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrRecordNotFound
+		}
+		return err
+	}
+	return err
 }

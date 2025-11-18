@@ -64,10 +64,6 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating Rating) error {
 	return db.AddRating(ctx, ratingDb)
 }
 
-func MapDbRatingDbToApiRating(dbRating mongodb.RatingDb) Rating {
-	return Rating(dbRating)
-}
-
 func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId string, updateReq UpdateRatingRequest) error {
 	ratingDb := mongodb.RatingDb{
 		Id:   ratingId,

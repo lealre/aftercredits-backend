@@ -16,9 +16,11 @@ var ErrRecordNotFound = errors.New("record not found in the database")
 
 const (
 	TitlesCollection   = "titles"
+	TitlesCollectionG  = "titlesG"
 	UsersCollection    = "users"
 	RatingsCollection  = "ratings"
 	CommentsCollection = "comments"
+	GroupsCollection   = "groups"
 )
 
 type DB struct {
