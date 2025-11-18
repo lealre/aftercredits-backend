@@ -108,7 +108,7 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rating updated successfully"})
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Rating updated successfully"})
 }
 
 func (api *API) GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {

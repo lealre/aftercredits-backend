@@ -103,8 +103,7 @@ func (api *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allRatings := ratings.AllRatingsFromTitle{Ratings: titleRatings}
-	respondWithJSON(w, http.StatusOK, allRatings)
+	respondWithJSON(w, http.StatusOK, ratings.AllRatingsFromTitle{Ratings: titleRatings})
 }
 
 func (api *API) SetWatched(w http.ResponseWriter, r *http.Request) {
@@ -165,8 +164,8 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if deletedRatingsCount > 0 {
-		respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title and %d ratings/comments deleted from database", deletedRatingsCount))
+		respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Title and %d ratings/comments deleted from database", deletedRatingsCount)})
 	} else {
-		respondWithJSON(w, http.StatusOK, "Title deleted from database")
+		respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Title deleted from database"})
 	}
 }

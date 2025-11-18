@@ -5,11 +5,6 @@ import (
 	"net/http"
 )
 
-type ErrorResponse struct {
-	StatusCode   int    `json:"status_code"`
-	ErrorMessage string `json:"error_message"`
-}
-
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
 	response, err := json.Marshal(&payload)
 	if err != nil {

@@ -83,5 +83,5 @@ func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, fmt.Sprintf("User with id %s deleted successfully", userId))
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("User with id %s deleted successfully", userId)})
 }

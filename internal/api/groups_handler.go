@@ -184,7 +184,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title %s added to group %s", titleID, groupId))
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Title %s added to group %s", titleID, groupId)})
 }
 
 func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) {
@@ -277,5 +277,5 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, fmt.Sprintf("Title %s deleted from group %s", titleId, groupId))
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Title %s deleted from group %s", titleId, groupId)})
 }

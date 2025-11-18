@@ -65,7 +65,7 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Comment updated successfully"})
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Comment updated successfully"})
 
 }
 
@@ -129,5 +129,5 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("Comment with id %s deleted successfully", commentId)})
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Comment with id %s deleted successfully", commentId)})
 }
