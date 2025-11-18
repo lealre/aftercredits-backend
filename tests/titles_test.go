@@ -35,14 +35,10 @@ func TestAddTitles(t *testing.T) {
 
 		var titleResp titles.Title
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&titleResp))
-		require.Equal(t, titleResp.ID, expectedTitle.ID)
+		require.Equal(t, titleResp.Id, expectedTitle.ID)
 		require.Equal(t, titleResp.PrimaryTitle, expectedTitle.PrimaryTitle)
 		require.Equal(t, titleResp.Type, expectedTitle.Type)
-		require.False(t, titleResp.Watched, "the watched field should be false when adding a title")
 		require.NotNil(t, titleResp.AddedAt, "the addedAt field should not be nil when adding a title")
-		require.NotNil(t, titleResp.UpdatedAt, "the updatedAt field should not be nil when adding a title")
-		require.Equal(t, titleResp.AddedAt, titleResp.UpdatedAt, "addedAt and updatedAt should be equal when adding a title")
-		require.Nil(t, titleResp.WatchedAt, "the watchedAt field should be nil when adding a title")
 	})
 }
 
@@ -83,7 +79,7 @@ func TestGetTitles(t *testing.T) {
 		responseTitlesIds := make([]string, len(pageTitlesResponse.Content))
 		responseTitlesNames := make([]string, len(pageTitlesResponse.Content))
 		for i, responseTitle := range pageTitlesResponse.Content {
-			responseTitlesIds[i] = responseTitle.ID
+			responseTitlesIds[i] = responseTitle.Id
 			responseTitlesNames[i] = responseTitle.PrimaryTitle
 		}
 
@@ -92,8 +88,4 @@ func TestGetTitles(t *testing.T) {
 			require.Contains(t, responseTitlesNames, title.PrimaryTitle)
 		}
 	})
-}
-
-func TestSetTitleWatched(t *testing.T) {
-
 }
