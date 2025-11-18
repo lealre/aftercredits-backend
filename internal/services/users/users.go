@@ -65,19 +65,6 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 	return MapDbUserToApiUserResponse(userDb), nil
 }
 
-func MapDbUserToApiUserResponse(userDb mongodb.UserDb) UserResponse {
-	return UserResponse{
-		Id:          userDb.Id,
-		Name:        userDb.Name,
-		Email:       userDb.Email,
-		CreatedAt:   userDb.CreatedAt,
-		UpdatedAt:   userDb.UpdatedAt,
-		LastLoginAt: userDb.LastLoginAt,
-		AvatarURL:   userDb.AvatarURL,
-		Groups:      userDb.Groups,
-	}
-}
-
 func DeleteUserById(db *mongodb.DB, ctx context.Context, id string) error {
 	return db.DeleteUserById(ctx, id)
 }
