@@ -1,4 +1,30 @@
 
+<a name="v0.0.2"></a>
+## [v0.0.2](https://github.com/lealre/fs-mcp/compare/v0.0.1...v0.0.2) (2025-11-18)
+
+* Add groups management for users/titles ([#2](https://github.com/lealre/fs-mcp/issues/2))
+* test: update titles test
+* refactor: add default response in api for messages
+* refactor: separate mappers inside services
+* Add small documentation on custom titles pagination
+* Remove watched field from titles when adding it
+* Fix group titles pagination
+* Add endpoint to remove title from a group
+* Add check validation to title already in a group
+* Add endpoint to update the title watche state in a group
+* Add endpoint to add titles to a  group
+* Add endpoint to get users from a group
+* Fix bson placeholder to groups and json placeholder to ratings in groups
+* Add endpoint to get titles by group ID with embedded ratings
+* test: create group endpoint
+* Add endpoint to create a group
+* test: delete users endpoint
+* Add endpoint to delete user (no auth for now)
+* Check duplicated username (with test)
+* Add POST to create user with minimal test and auth package
+* Add first version of groups collection and extend users collections field
+* Add small changelog configuration
+
 <a name="v0.0.1"></a>
 ## v0.0.1 (2025-11-05)
 
