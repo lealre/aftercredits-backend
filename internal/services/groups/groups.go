@@ -32,6 +32,10 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (G
 	return MapDbGroupToApiGroupResponse(newGroup), nil
 }
 
+func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
+	return db.AddUserToGroup(ctx, groupId, userId)
+}
+
 func GetTitlesFromGroup(
 	db *mongodb.DB,
 	ctx context.Context,

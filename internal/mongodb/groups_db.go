@@ -83,6 +83,29 @@ func (db *DB) GetGroupById(ctx context.Context, id string) (GroupDb, error) {
 	return group, nil
 }
 
+func (db *DB) AddUserToGroup(ctx context.Context, groupId string, userId string) error {
+	coll := db.Collection(GroupsCollection)
+
+	result, err := coll.UpdateOne(
+		ctx,
+		bson.M{"_id": groupId},
+		bson.M{
+			"$addToSet": bson.M{"users": userId},
+			"$set":      bson.M{"updatedAt": time.Now()},
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	// Check if the group was found
+	if result.MatchedCount == 0 {
+		return ErrRecordNotFound
+	}
+
+	return nil
+}
+
 func (db *DB) GetUsersFromGroup(ctx context.Context, groupId string) ([]UserDb, error) {
 	// First, get the group to find user IDs
 	group, err := db.GetGroupById(ctx, groupId)

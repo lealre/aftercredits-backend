@@ -10,6 +10,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
@@ -52,6 +53,59 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusCreated, group)
+}
+
+func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
+	groupId := r.PathValue("id")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	var req groups.AddUserToGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	if strings.TrimSpace(req.UserId) == "" {
+		respondWithError(w, http.StatusBadRequest, "UserId is required")
+		return
+	}
+
+	if ok, err := api.Db.UserExists(r.Context(), req.UserId); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.UserId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
+		return
+	}
+
+	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+		return
+	}
+
+	err := groups.AddUserToGroup(api.Db, r.Context(), groupId, req.UserId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("User %s added to group %s", req.UserId, groupId)})
 }
 
 func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
