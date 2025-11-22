@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
@@ -168,4 +169,106 @@ func TestGroupUsers(t *testing.T) {
 		require.Contains(t, allUsersIds, userTwo.Id, "user added to group not found in group response after being added")
 	})
 
+}
+
+func TestGroupTitles(t *testing.T) {
+
+	// --- TEST SETUP ----
+	resetDB(t)
+
+	// Create User 1
+	userOne := addUser(t, users.NewUserRequest{
+		Name:     "testNameOne",
+		Password: "testPass",
+	})
+
+	// Create a group for user
+	newGroup := groups.CreateGroupRequest{
+		Name:    "testgroupname",
+		OwnerId: userOne.Id,
+	}
+	jsonData, err := json.Marshal(newGroup)
+	require.NoError(t, err)
+	respGroup, err := http.Post(
+		testServer.URL+"/groups",
+		"application/json",
+		bytes.NewBuffer(jsonData),
+	)
+	require.NoError(t, err)
+	defer respGroup.Body.Close()
+	require.Equal(t, http.StatusCreated, respGroup.StatusCode)
+
+	var group groups.GroupResponse
+	require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&group))
+
+	// Load titles in database
+	titles := loadTitlesFixture(t)
+	seedTitles(t, titles)
+	expectedTitle := titles[0]
+
+	t.Run("Add one title to a group successfully", func(t *testing.T) {
+		newTitle := groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
+			GroupId: group.Id,
+		}
+
+		jsonData, err := json.Marshal(newTitle)
+		require.NoError(t, err)
+		respGroupAddTitle, err := http.Post(
+			testServer.URL+"/groups/titles",
+			"application/json",
+			bytes.NewBuffer(jsonData),
+		)
+		require.NoError(t, err)
+		defer respGroupAddTitle.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupAddTitle.StatusCode)
+
+		var respGroupTitlesBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respGroupAddTitle.Body).Decode(&respGroupTitlesBody))
+		require.Contains(
+			t,
+			respGroupTitlesBody.Message,
+			fmt.Sprintf("Title %s added to group %s", expectedTitle.ID, group.Id),
+			"title id and/or group id not in message response after adding a title to a group",
+		)
+
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb)
+		require.NotEmpty(t, groupDb.Titles)
+		require.Equal(t, len(groupDb.Titles), 1)
+
+		groupTitleDb := groupDb.Titles[0]
+		require.Equal(t, groupTitleDb.Id, expectedTitle.ID, "group title ID should match expected title ID when adding a title to a group")
+		require.NotEmpty(t, groupTitleDb.AddedAt, "AddedAt should not be empty when adding a title to a group")
+		require.NotEmpty(t, groupTitleDb.UpdatedAt, "UpdatedAt should not be empty when adding a title to a group")
+		require.False(t, groupTitleDb.Watched, "Watched should be false by default when adding a title to a group")
+		require.Empty(t, groupTitleDb.WatchedAt, "WatchedAt should be empty by default when adding a title to a group")
+	})
+
+	t.Run("Get title from a group expecting one record successfully", func(t *testing.T) {
+		respGroupTitles, err := http.Get(
+			testServer.URL + "/groups/" + group.Id + "/titles",
+		)
+		require.NoError(t, err)
+		defer respGroupTitles.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupTitles.StatusCode)
+
+		var respGroupTitlesBody generics.Page[groups.GroupTitleDetail]
+		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesBody))
+		require.Equal(t, respGroupTitlesBody.Page, 1, "Expected Page to be 1, got %d", respGroupTitlesBody.Page)
+		require.Equal(t, respGroupTitlesBody.Size, 20, "Expected Size to be 20, got %d", respGroupTitlesBody.Size)
+		require.Equal(t, respGroupTitlesBody.TotalPages, 1, "Expected TotalPages to be 1, got %d", respGroupTitlesBody.TotalPages)
+		require.Equal(t, respGroupTitlesBody.TotalResults, 1, "Expected TotalResults to be 1, got %d", respGroupTitlesBody.TotalResults)
+		require.NotEmpty(t, respGroupTitlesBody.Content, "Expected Content to not be empty")
+		require.Equal(t, len(respGroupTitlesBody.Content), 1, "Expected length of Content to be 1, got %d", len(respGroupTitlesBody.Content))
+
+		respTitle := respGroupTitlesBody.Content[0]
+		require.Equal(t, respTitle.Id, expectedTitle.ID, "Expected Id to be %s, got %s", expectedTitle.ID, respTitle.Id)
+		require.Equal(t, respTitle.PrimaryTitle, expectedTitle.PrimaryTitle, "Expected PrimaryTitle to be %s, got %s", expectedTitle.PrimaryTitle, respTitle.PrimaryTitle)
+
+	})
+
+	// TODO: Add test to set title as watched and date watched
+	// TODO: Add test to set title as unwatched
+	// TODO: Add test to remove title from group
 }

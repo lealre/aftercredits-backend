@@ -16,7 +16,7 @@ func TestAddTitles(t *testing.T) {
 	t.Run("Test adding a title", func(t *testing.T) {
 		resetDB(t)
 
-		fixtureTitles := loadTitlesFixture(t, "fixtures/titles.json")
+		fixtureTitles := loadTitlesFixture(t)
 		expectedTitle := fixtureTitles[0]
 
 		reqBody := titles.AddTitleRequest{
@@ -59,7 +59,7 @@ func TestGetTitles(t *testing.T) {
 	})
 
 	t.Run("Testing response with titles added through db client", func(t *testing.T) {
-		titles := loadTitlesFixture(t, "fixtures/titles.json")
+		titles := loadTitlesFixture(t)
 		seedTitles(t, titles)
 		resp, err := http.Get(testServer.URL + "/titles")
 		require.NoError(t, err)

@@ -11,6 +11,8 @@ import (
 	"github.com/lealre/movies-backend/internal/mongodb"
 )
 
+const TILES_FIXTURES_PATH = "fixtures/titles.json"
+
 func seedTitles(t *testing.T, titles []imdb.Title) {
 	t.Helper()
 
@@ -28,10 +30,10 @@ func seedTitles(t *testing.T, titles []imdb.Title) {
 	}
 }
 
-func loadTitlesFixture(t *testing.T, path string) []imdb.Title {
+func loadTitlesFixture(t *testing.T) []imdb.Title {
 	t.Helper()
 
-	absPath, err := filepath.Abs(path)
+	absPath, err := filepath.Abs(TILES_FIXTURES_PATH)
 	if err != nil {
 		t.Fatalf("failed to get abs path: %v", err)
 	}
