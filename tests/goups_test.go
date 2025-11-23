@@ -136,7 +136,7 @@ func TestGroupUsers(t *testing.T) {
 		require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&respNewUserToGroupBody))
 		require.Contains(t, respNewUserToGroupBody.Message, fmt.Sprintf("User %s added to group %s", userTwo.Id, respGroupBody.Id))
 
-		// Check if users are in the group by querying database database
+		// Check if users are in the group by querying database
 		groupDb := getGroup(t, respGroupBody.Id)
 		var isUserOneInGroup, isUserTwoInGroup bool
 		for _, groupUserId := range groupDb.Users {
@@ -246,7 +246,7 @@ func TestGroupTitles(t *testing.T) {
 		require.Empty(t, groupTitleDb.WatchedAt, "WatchedAt should be empty by default when adding a title to a group")
 	})
 
-	t.Run("Get title from a group expecting one record successfully", func(t *testing.T) {
+	t.Run("Get title from a group with one record successfully", func(t *testing.T) {
 		respGroupTitles, err := http.Get(
 			testServer.URL + "/groups/" + group.Id + "/titles",
 		)
@@ -286,7 +286,7 @@ func TestGroupTitles(t *testing.T) {
 		return resp
 	}
 
-	t.Run("Set title from a group as Watched and watchedAt null successfully", func(t *testing.T) {
+	t.Run("Set title from a group as watched with watchedAt empty successfully", func(t *testing.T) {
 		watched := true
 		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
 			TitleId: expectedTitle.ID,
@@ -310,7 +310,7 @@ func TestGroupTitles(t *testing.T) {
 		require.Empty(t, titleDb.WatchedAt, "Expected title WatchedAt in db to be empty")
 	})
 
-	t.Run("Set watchedAt field from a title group with watched already setted as true successfully", func(t *testing.T) {
+	t.Run("Set watchedAt field from a title group with watched already set as true successfully", func(t *testing.T) {
 		testDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
 			TitleId: expectedTitle.ID,
@@ -360,6 +360,32 @@ func TestGroupTitles(t *testing.T) {
 		require.Empty(t, titleDb.WatchedAt, "Expected title WatchedAt in db to be empty when watched is false")
 	})
 
+	t.Run("Setting watchedAt when watched is false in db should return 400", func(t *testing.T) {
+		testDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitle.ID,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate,
+			},
+		})
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPatch,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			bytes.NewBuffer(pathBody),
+		)
+		require.NoError(t, err)
+		client := &http.Client{}
+		respGroupSetWatched, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupSetWatched.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respGroupSetWatched.StatusCode)
+
+		var respGroupSetWatchedBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&respGroupSetWatchedBody))
+		require.Contains(t, respGroupSetWatchedBody.ErrorMessage, groups.ErrUpdatingWatchedAtWhenWatchedIsFalse.Error()[1:])
+	})
+
 	t.Run("Remove title from a group successfully", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodDelete,
 			testServer.URL+"/groups/"+group.Id+"/titles/"+expectedTitle.ID,
@@ -382,5 +408,4 @@ func TestGroupTitles(t *testing.T) {
 		require.Equal(t, 0, len(grouDb.Titles), "Expected group should have 0 title, got %d", len(grouDb.Titles))
 	})
 
-	// TODO: Add test to not allow updating only the watchedAt field if it is set in the database as false
 }
