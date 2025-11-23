@@ -37,35 +37,38 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 	return string(signedToken), nil
 }
 
-func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-		return []byte(tokenSecret), nil
-	})
+func ValidateJWT(tokenString, tokenSecret string) (string, error) {
+	claims := &jwt.RegisteredClaims{}
+
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		claims,
+		func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("unexpected signing method")
+			}
+			return []byte(tokenSecret), nil
+		},
+	)
 	if err != nil {
-		return uuid.Nil, err
+		return "", err
 	}
 
-	// Extract claims
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
-	if !ok || !token.Valid {
-		return uuid.Nil, errors.New("invalid token claims")
+	if !token.Valid {
+		return "", errors.New("invalid token")
 	}
 
-	// Check for expiration
+	// Check expiration
 	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
-		return uuid.Nil, errors.New("token has expired")
+		return "", errors.New("token has expired")
 	}
 
-	// Parse the Subject (user ID) as UUID
-	userID, err := uuid.Parse(claims.Subject)
-	if err != nil {
-		return uuid.Nil, errors.New("invalid user ID in token")
+	// Subject *is already a string*
+	if claims.Subject == "" {
+		return "", errors.New("token has no subject")
 	}
 
-	return userID, nil
+	return claims.Subject, nil
 }
 
 func GetBearerToken(headers http.Header) (string, error) {

@@ -13,7 +13,8 @@ import (
 func NewServer(db *mongo.Client) http.Handler {
 	mux := http.NewServeMux()
 
-	a := api.NewAPI(mongodb.NewDB(db))
+	dbClient := mongodb.NewDB(db)
+	a := api.NewAPI(dbClient)
 
 	mux.HandleFunc("GET /users", a.GetUsers)
 	mux.HandleFunc("POST /users", a.CreateUser)
@@ -43,7 +44,10 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("POST /comments", a.AddComment)
 	mux.HandleFunc("DELETE /comments/{id}", a.DeleteComment)
 
-	return RequestIDMiddleware(mux)
+	handler := AuthMiddleware("your-secret", dbClient)(mux)
+	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
+
+	return handler
 }
 
 func ListenAndServe(db *mongo.Client) error {

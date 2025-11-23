@@ -20,3 +20,8 @@ type API struct {
 func NewAPI(db *mongodb.DB) *API {
 	return &API{Db: db}
 }
+
+var PublicPaths = map[string]bool{
+	"POST /login": true,
+	"POST /users": true,
+}
