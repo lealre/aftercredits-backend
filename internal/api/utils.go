@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
@@ -37,4 +38,12 @@ func parseUrlQueryToBool(val string) *bool {
 	}
 
 	return parsedVal
+}
+
+func formatErrorMessage(err error) string {
+	errorMsg := err.Error()
+	if len(errorMsg) > 0 {
+		return strings.ToUpper(errorMsg[:1]) + errorMsg[1:]
+	}
+	return ""
 }

@@ -230,7 +230,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	err = groups.AddTitleToGroup(api.Db, r.Context(), groupId, titleID)
 	if err != nil {
 		if errors.Is(err, groups.ErrTitleAlreadyInGroup) {
-			respondWithError(w, http.StatusBadRequest, "Title already added to group")
+			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -280,6 +280,9 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 
 	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, req.TitleId, req.Watched, req.WatchedAt)
 	if err != nil {
+		if err == groups.ErrUpdatingWatchedAtWhenWatchedIsFalse {
+			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error updating group title watched")
 		return
@@ -323,7 +326,7 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId)
 	if err != nil {
 		if errors.Is(err, groups.ErrTitleNotInGroup) {
-			respondWithError(w, http.StatusBadRequest, "Title not in group")
+			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)

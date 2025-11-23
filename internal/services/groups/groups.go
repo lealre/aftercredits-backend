@@ -13,8 +13,9 @@ import (
 	"github.com/lealre/movies-backend/internal/services/users"
 )
 
-var ErrTitleAlreadyInGroup = errors.New("title already in group")
-var ErrTitleNotInGroup = errors.New("title not in group")
+var ErrTitleAlreadyInGroup = errors.New("title is already in group")
+var ErrTitleNotInGroup = errors.New("title not found in group")
+var ErrUpdatingWatchedAtWhenWatchedIsFalse = errors.New("cannot update watchedAt when watched is set to false")
 
 func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (GroupResponse, error) {
 	group := mongodb.GroupDb{
@@ -171,6 +172,24 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleI
 }
 
 func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
+	groupDb, err := db.GetGroupById(ctx, groupId)
+	if err != nil {
+		return GroupTitle{}, err
+	}
+
+	// Don't allow updating watchedAt if watched is set to false or when title is not watched
+	watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
+	watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
+	for _, title := range groupDb.Titles {
+		if title.Id != titleId {
+			continue
+		}
+
+		if !title.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
+			return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
+		}
+		break
+	}
 
 	// If the request comes with the watched field set to false, clear the watchedAt field.
 	// We must always pass a FlexibleDate with Time = nil to clear watchedAt in the database.
