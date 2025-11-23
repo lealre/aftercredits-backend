@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/generics"
@@ -268,7 +269,118 @@ func TestGroupTitles(t *testing.T) {
 
 	})
 
-	// TODO: Add test to set title as watched and date watched
-	// TODO: Add test to set title as unwatched
-	// TODO: Add test to remove title from group
+	// Setup patch api call to be used on the next tests
+	sendPatchApiCall := func(pathBody []byte) groups.GroupTitle {
+		req, err := http.NewRequest(http.MethodPatch,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			bytes.NewBuffer(pathBody),
+		)
+		require.NoError(t, err)
+		client := &http.Client{}
+		respGroupSetWatched, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupSetWatched.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupSetWatched.StatusCode)
+		var resp groups.GroupTitle
+		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&resp))
+		return resp
+	}
+
+	t.Run("Set title from a group as Watched and watchedAt null successfully", func(t *testing.T) {
+		watched := true
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitle.ID,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitle.ID, "Expected Id to be %s, got %s", expectedTitle.ID, respGroupSetWatchedBody.Id)
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected Watched to be true, got %v", respGroupSetWatchedBody.Watched)
+		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
+		require.Empty(t, respGroupSetWatchedBody.WatchedAt, "Expected WatchedAt to be empty when just setting watched: true")
+
+		// Database assertion
+		grouDb := getGroup(t, group.Id)
+		require.NotEmpty(t, grouDb, "Expected group to not be empty")
+		require.Equal(t, len(grouDb.Titles), 1, "Expected group should have 1 title, got %d", len(grouDb.Titles))
+
+		titleDb := grouDb.Titles[0]
+		require.Equal(t, titleDb.Id, respGroupSetWatchedBody.Id, "Expected title ID in db to match response, got %s vs %s", titleDb.Id, respGroupSetWatchedBody.Id)
+		require.True(t, titleDb.Watched, "Expected title Watched in db to be true")
+		require.Empty(t, titleDb.WatchedAt, "Expected title WatchedAt in db to be empty")
+	})
+
+	t.Run("Set watchedAt field from a title group with watched already setted as true successfully", func(t *testing.T) {
+		testDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitle.ID,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate,
+			},
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitle.ID, "Expected Id to be %s, got %s", expectedTitle.ID, respGroupSetWatchedBody.Id)
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected Watched to be true, got %v", respGroupSetWatchedBody.Watched)
+		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
+		require.Equal(t, respGroupSetWatchedBody.WatchedAt, &testDate, "Expected WatchedAt to be empty when just setting watched: true")
+
+		// Database assertion
+		grouDb := getGroup(t, group.Id)
+		require.NotEmpty(t, grouDb, "Expected group to not be empty")
+		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
+
+		titleDb := grouDb.Titles[0]
+		require.Equal(t, respGroupSetWatchedBody.Id, titleDb.Id, "Expected title ID in db to match response, expected: %s, got: %s", respGroupSetWatchedBody.Id, titleDb.Id)
+		require.True(t, titleDb.Watched, "Expected title Watched in db to be true, got: %v", titleDb.Watched)
+		require.Equal(t, &testDate, titleDb.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleDb.WatchedAt)
+	})
+
+	t.Run("Set watched as false should set watchedAt as empty successfully", func(t *testing.T) {
+		watched := false
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitle.ID,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitle.ID, "Expected Id to be %s, got %s", expectedTitle.ID, respGroupSetWatchedBody.Id)
+		require.False(t, respGroupSetWatchedBody.Watched, "Expected Watched to be false, got %v", respGroupSetWatchedBody.Watched)
+		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
+		require.Empty(t, respGroupSetWatchedBody.WatchedAt, "Expected WatchedAt to be empty when watched is false")
+
+		// Database assertion
+		grouDb := getGroup(t, group.Id)
+		require.NotEmpty(t, grouDb, "Expected group to not be empty")
+		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
+
+		titleDb := grouDb.Titles[0]
+		require.Equal(t, respGroupSetWatchedBody.Id, titleDb.Id, "Expected title ID in db to match response, expected: %s, got: %s", respGroupSetWatchedBody.Id, titleDb.Id)
+		require.False(t, titleDb.Watched, "Expected title Watched in db to be false, got: %v", titleDb.Watched)
+		require.Empty(t, titleDb.WatchedAt, "Expected title WatchedAt in db to be empty when watched is false")
+	})
+
+	t.Run("Remove title from a group successfully", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodDelete,
+			testServer.URL+"/groups/"+group.Id+"/titles/"+expectedTitle.ID,
+			nil,
+		)
+		require.NoError(t, err)
+		client := &http.Client{}
+		respGroupSetWatched, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupSetWatched.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupSetWatched.StatusCode)
+
+		var resp api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&resp))
+		require.Contains(t, resp.Message, fmt.Sprintf("Title %s deleted from group %s", expectedTitle.ID, group.Id))
+
+		// Database assertion
+		grouDb := getGroup(t, group.Id)
+		require.NotEmpty(t, grouDb, "Expected group to not be empty")
+		require.Equal(t, 0, len(grouDb.Titles), "Expected group should have 0 title, got %d", len(grouDb.Titles))
+	})
+
+	// TODO: Add test to not allow updating only the watchedAt field if it is set in the database as false
 }
