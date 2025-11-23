@@ -171,6 +171,13 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleI
 }
 
 func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
+
+	// If the request comes with the watched field set to false, clear the watchedAt field.
+	// We must always pass a FlexibleDate with Time = nil to clear watchedAt in the database.
+	if watched != nil && !*watched {
+		watchedAt = &generics.FlexibleDate{Time: nil}
+	}
+
 	groupTitle, err := db.UpdateGroupTitleWatched(ctx, groupId, titleId, watched, watchedAt)
 	if err != nil {
 		return GroupTitle{}, err

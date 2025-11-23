@@ -168,8 +168,6 @@ Update the watched properties of a title in the database.
 
 If the watchedAt is provided but watchedAt.Time is nil,
 or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
-
-TODO: If watchedAt is provided but whatched is false or nil, do not proceed with the update.
 */
 func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*GroupTitleDb, error) {
 	coll := db.Collection(GroupsCollection)
