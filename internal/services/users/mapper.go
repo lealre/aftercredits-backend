@@ -5,6 +5,7 @@ import "github.com/lealre/movies-backend/internal/mongodb"
 func MapDbUserToApiUserResponse(userDb mongodb.UserDb) UserResponse {
 	return UserResponse{
 		Id:          userDb.Id,
+		Username:    userDb.Username,
 		Name:        userDb.Name,
 		Email:       userDb.Email,
 		CreatedAt:   userDb.CreatedAt,
