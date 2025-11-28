@@ -21,7 +21,7 @@ func TestCreateGroup(t *testing.T) {
 		resetDB(t)
 
 		// Create a new user
-		user := addUser(t, users.NewUserRequest{
+		user, _ := addUser(t, users.NewUserRequest{
 			Name:     "testname",
 			Password: "testpass",
 		})
@@ -87,13 +87,13 @@ func TestGroupUsers(t *testing.T) {
 		resetDB(t)
 
 		// Create User 1
-		userOne := addUser(t, users.NewUserRequest{
+		userOne, _ := addUser(t, users.NewUserRequest{
 			Name:     "testNameOne",
 			Password: "testPass",
 		})
 
 		// Create User 2
-		userTwo := addUser(t, users.NewUserRequest{
+		userTwo, _ := addUser(t, users.NewUserRequest{
 			Name:     "testNameTwo",
 			Password: "testPass",
 		})
@@ -178,7 +178,7 @@ func TestGroupTitles(t *testing.T) {
 	resetDB(t)
 
 	// Create User 1
-	userOne := addUser(t, users.NewUserRequest{
+	userOne, _ := addUser(t, users.NewUserRequest{
 		Name:     "testNameOne",
 		Password: "testPass",
 	})

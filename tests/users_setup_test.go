@@ -7,13 +7,16 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-func addUser(t *testing.T, user users.NewUserRequest) users.UserResponse {
+func addUser(t *testing.T, user users.NewUserRequest) (users.UserResponse, string) {
+
+	// Add user
 	postBody, err := json.Marshal(user)
 	require.NoError(t, err)
 
@@ -27,7 +30,27 @@ func addUser(t *testing.T, user users.NewUserRequest) users.UserResponse {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	var respBody users.UserResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
-	return respBody
+
+	// Get token
+	authUser := auth.LoginRequest{
+		Username: user.Username,
+		Password: user.Password,
+	}
+	postBody, err = json.Marshal(authUser)
+	require.NoError(t, err)
+
+	resp, err = http.Post(
+		testServer.URL+"/login",
+		"application/json",
+		bytes.NewBuffer(postBody),
+	)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var respBodyAuth auth.LoginResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBodyAuth))
+
+	return respBody, respBodyAuth.AccessToken
 }
 
 // Check if a user exists directly in the database
