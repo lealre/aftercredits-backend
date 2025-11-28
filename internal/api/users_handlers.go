@@ -32,12 +32,6 @@ func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, users.AllUsersResponse{Users: allUsers})
 }
 
-/*
-TODO:
-  - handle invalid password
-  - validate email format
-  - handle duplicated email
-*/
 func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
@@ -59,9 +53,12 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	user, err := users.AddUser(api.Db, r.Context(), req)
 	if err != nil {
-		if errors.Is(err, users.ErrCredentialsAlreadyExists) {
-			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
-			return
+		// Check custom erros from fileds validations
+		for target, status := range users.ErrorMap {
+			if errors.Is(err, target) {
+				respondWithError(w, status, formatErrorMessage(err))
+				return
+			}
 		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to add user")
