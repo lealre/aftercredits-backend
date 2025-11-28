@@ -7,6 +7,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/mongodb"
 )
 
 const defaultExpiresAt = time.Second * 60 * 60
@@ -21,8 +22,8 @@ func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if authReq.User == "" {
-		respondWithError(w, http.StatusBadRequest, "Field user cannot be null")
+	if authReq.Username == "" && authReq.Email == "" {
+		respondWithError(w, http.StatusBadRequest, "One of the fields Username or Email cannot be null")
 		return
 	}
 	if authReq.Password == "" {
@@ -30,24 +31,28 @@ func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Next steps:
-	// 1 - Get user by email or some unique record (username?)
-	// 2 - Check passwordHash
-	// 3 - Send the token
+	userDb, err := api.Db.GetUserByUsernameOrEmail(r.Context(), authReq.Username, authReq.Email)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			respondWithError(w, http.StatusNotFound, "User not found")
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Error looking for User")
+		return
+	}
 
-	// err = auth.CheckPasswordHash(userDB.HashedPassword, userCreds.Password)
-	// if err != nil {
-	// 	fmt.Printf("Password mismatch for user: %s. Error: %v\n", userCreds.Email, err)
-	// 	respondWithError(w, http.StatusUnauthorized, "Credentials are not correct")
-	// 	return
-	// }
+	err = auth.CheckPasswordHash(userDb.PasswordHash, authReq.Password)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Credentials are not correct")
+		return
+	}
 
-	// token, err := auth.MakeJWT(userDB.ID, cfg.Secret, defaultExpiresAt)
-	// if err != nil {
-	// 	fmt.Printf("Error creatinf JWT: %s\n", err)
-	// 	respondWithError(w, http.StatusInternalServerError, "Something went wrong")
-	// 	return
-	// }
+	token, err := auth.MakeJWT(userDb.Id, *api.Secret, defaultExpiresAt)
+	if err != nil {
+		logger.Printf("EROOR: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Something went wrong")
+		return
+	}
 
-	respondWithJSON(w, http.StatusOK, auth.LoginResponse{AccessToken: "123"})
+	respondWithJSON(w, http.StatusOK, auth.LoginResponse{AccessToken: token})
 }

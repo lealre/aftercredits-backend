@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -20,12 +19,12 @@ func CheckPasswordHash(hash, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
-func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
+func MakeJWT(userID string, tokenSecret string, expiresIn time.Duration) (string, error) {
 	claim := jwt.RegisteredClaims{
 		Issuer:    "mytitles",
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn)),
-		Subject:   userID.String(),
+		Subject:   userID,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
 

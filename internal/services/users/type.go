@@ -25,7 +25,8 @@ type AllUsersResponse struct {
 }
 
 type NewUserRequest struct {
-	Name     string `json:"name"`
+	Username string `json:"username"`
+	Name     string `json:"name,omitempty"`
 	Email    string `json:"email,omitempty"`
 	Password string `json:"password"`
 }

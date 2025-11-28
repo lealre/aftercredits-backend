@@ -14,7 +14,8 @@ type DefaultResponse struct {
 }
 
 type API struct {
-	Db *mongodb.DB
+	Db     *mongodb.DB
+	Secret *string
 }
 
 func NewAPI(db *mongodb.DB) *API {

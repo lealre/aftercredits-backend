@@ -16,6 +16,12 @@ func NewServer(db *mongo.Client) http.Handler {
 	dbClient := mongodb.NewDB(db)
 	a := api.NewAPI(dbClient)
 
+	// TODO: Updated this
+	secret := "my-secret"
+	a.Secret = &secret
+
+	mux.HandleFunc("POST /login", a.LoginHandler)
+
 	mux.HandleFunc("GET /users", a.GetUsers)
 	mux.HandleFunc("POST /users", a.CreateUser)
 	mux.HandleFunc("DELETE /users/{id}", a.DeleteUserById)
@@ -44,7 +50,7 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("POST /comments", a.AddComment)
 	mux.HandleFunc("DELETE /comments/{id}", a.DeleteComment)
 
-	handler := AuthMiddleware("your-secret", dbClient)(mux)
+	handler := AuthMiddleware(*a.Secret, dbClient)(mux)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
 
 	return handler

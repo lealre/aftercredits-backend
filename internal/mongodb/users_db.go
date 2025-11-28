@@ -26,6 +26,7 @@ type UserDb struct {
 	Id           string     `json:"id" bson:"_id"`
 	Name         string     `json:"name" bson:"name"`
 	Email        string     `json:"email,omitempty" bson:"email,omitempty"`
+	Username     string     `json:"username" bson:"username,omitempty"`
 	PasswordHash string     `json:"passwordHash,omitempty" bson:"passwordHash,omitempty"`
 	AvatarURL    *string    `json:"avatarUrl,omitempty" bson:"avatarUrl,omitempty"`
 	Groups       []string   `json:"groups,omitempty" bson:"groups,omitempty"`
@@ -42,6 +43,28 @@ func (db *DB) GetUserById(ctx context.Context, id string) (UserDb, error) {
 	coll := db.Collection(UsersCollection)
 	var userDb UserDb
 	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&userDb); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return UserDb{}, ErrRecordNotFound
+		}
+		return UserDb{}, err
+	}
+
+	return userDb, nil
+}
+
+func (db *DB) GetUserByUsernameOrEmail(ctx context.Context, username, email string) (UserDb, error) {
+	coll := db.Collection(UsersCollection)
+
+	filter := bson.M{}
+	if username != "" {
+		filter["username"] = username
+	}
+	if email != "" {
+		filter["email"] = username
+	}
+
+	var userDb UserDb
+	if err := coll.FindOne(ctx, filter).Decode(&userDb); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return UserDb{}, ErrRecordNotFound
 		}

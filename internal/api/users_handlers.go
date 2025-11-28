@@ -40,8 +40,12 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.Name) == "" || req.Password == "" {
-		respondWithError(w, http.StatusBadRequest, "Username and Password fields are required.")
+	if strings.TrimSpace(req.Username) == "" && strings.TrimSpace(req.Email) == "" {
+		respondWithError(w, http.StatusBadRequest, "Username or Email fields are required.")
+		return
+	}
+	if req.Password == "" {
+		respondWithError(w, http.StatusBadRequest, "Password field is required.")
 		return
 	}
 

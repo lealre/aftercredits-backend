@@ -46,6 +46,7 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 	userDb := mongodb.UserDb{
 		Id:           primitive.NewObjectID().Hex(),
 		Name:         newUser.Name,
+		Username:     newUser.Username,
 		Email:        newUser.Email,
 		PasswordHash: passorHash,
 		Role:         mongodb.RoleUser,
