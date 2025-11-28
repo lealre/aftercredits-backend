@@ -83,16 +83,12 @@ func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.UserExists(r.Context(), userId); err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
-		return
-	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
-		return
-	}
-
 	if err := users.DeleteUserById(api.Db, r.Context(), userId); err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			logger.Printf("WARNING: Attempted deletion of own user ID failed because user was not found. ERROR: %v", err)
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting user")
 		return

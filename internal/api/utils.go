@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 )
+
+var ErrForbidden = errors.New("you do not have permission to perform this action")
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
 	response, err := json.Marshal(&payload)
@@ -30,7 +33,7 @@ func respondWithForbidden(w http.ResponseWriter) error {
 	statusCode := http.StatusForbidden
 	messageBody := ErrorResponse{
 		StatusCode:   statusCode,
-		ErrorMessage: "Not enough permissions",
+		ErrorMessage: formatErrorMessage(ErrForbidden),
 	}
 	return respondWithJSON(w, statusCode, messageBody)
 }
