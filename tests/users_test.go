@@ -184,10 +184,9 @@ func TestDeleteUser(t *testing.T) {
 		require.False(t, ok, "user should not exist after deletion")
 	})
 
-	t.Run("Deleting a user that does not exist", func(t *testing.T) {
+	t.Run("Attempting to delete another user's account returns 403 Forbidden", func(t *testing.T) {
 		resetDB(t)
 
-		// Create a user to be deleted
 		_, token := addUser(t, users.NewUserRequest{
 			Name:     "testname",
 			Username: "testuser",
@@ -204,7 +203,11 @@ func TestDeleteUser(t *testing.T) {
 		resp, err := client.Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
-		require.Equal(t, http.StatusNotFound, resp.StatusCode)
-	})
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 
+		var errorResponse api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&errorResponse))
+		require.Equal(t, http.StatusForbidden, errorResponse.StatusCode)
+		require.Contains(t, errorResponse.ErrorMessage, api.ErrForbidden.Error()[1:])
+	})
 }
