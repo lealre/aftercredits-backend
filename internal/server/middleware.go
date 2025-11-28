@@ -17,10 +17,7 @@ import (
 
 type contextKey string
 
-const (
-	requestIdKey contextKey = "requestId"
-	UserIdKey    contextKey = "userId"
-)
+const requestIdKey contextKey = "requestId"
 
 ////////////////////////////////////////////////////////////////////////////
 //  LOGGER MIDDLEWARE
@@ -108,15 +105,16 @@ func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.
 				return
 			}
 
-			// TODO: Check user permissions and if its active
-			_, err = db.GetUserById(context.TODO(), userId)
+			// TODO: Check if user is active
+			userDb, err := db.GetUserById(r.Context(), userId)
 			if err == mongodb.ErrRecordNotFound {
 				http.Error(w, "Invalid or inactive user", http.StatusUnauthorized)
 				return
 			}
 
 			// Put userId into context
-			ctx := context.WithValue(r.Context(), UserIdKey, userId)
+			ctx := auth.WithUser(r.Context(), userDb)
+			r = r.WithContext(ctx)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

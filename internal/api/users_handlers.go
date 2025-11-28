@@ -7,12 +7,20 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/users"
 )
 
 func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	user := auth.GetUserFromContext(r.Context())
+
+	if user.Role != mongodb.RoleAdmin {
+		respondWithForbidden(w)
+		return
+	}
 
 	allUsers, err := users.GetAllUsers(api.Db, r.Context())
 	if err != nil {
@@ -51,8 +59,8 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	user, err := users.AddUser(api.Db, r.Context(), req)
 	if err != nil {
-		if errors.Is(err, users.ErrUsernameAlreadyExists) {
-			respondWithError(w, http.StatusBadRequest, "Username already exists")
+		if errors.Is(err, users.ErrCredentialsAlreadyExists) {
+			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -65,10 +73,16 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	user := auth.GetUserFromContext(r.Context())
 
 	userId := r.PathValue("id")
 	if userId == "" {
 		respondWithError(w, http.StatusBadRequest, "User id is required")
+		return
+	}
+
+	if user.Id != userId {
+		respondWithForbidden(w)
 		return
 	}
 

@@ -11,7 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var ErrUsernameAlreadyExists = errors.New("username already exists")
+var ErrCredentialsAlreadyExists = errors.New("username or email already exists")
 
 func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
 	usersDb, err := db.GetAllUsers(ctx)
@@ -58,7 +58,7 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 	err = db.AddUser(ctx, userDb)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return UserResponse{}, ErrUsernameAlreadyExists
+			return UserResponse{}, ErrCredentialsAlreadyExists
 		}
 		return UserResponse{}, err
 	}

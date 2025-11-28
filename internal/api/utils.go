@@ -26,6 +26,15 @@ func respondWithError(w http.ResponseWriter, code int, msg string) error {
 	return respondWithJSON(w, code, messageBody)
 }
 
+func respondWithForbidden(w http.ResponseWriter) error {
+	statusCode := http.StatusForbidden
+	messageBody := ErrorResponse{
+		StatusCode:   statusCode,
+		ErrorMessage: "Not enough permissions",
+	}
+	return respondWithJSON(w, statusCode, messageBody)
+}
+
 func parseUrlQueryToBool(val string) *bool {
 	var parsedVal *bool
 	switch val {

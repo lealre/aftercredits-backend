@@ -1,14 +1,20 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"golang.org/x/crypto/bcrypt"
 )
+
+type contextKey string
+
+const UserKey contextKey = "user"
 
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -89,4 +95,15 @@ func GetBearerToken(headers http.Header) (string, error) {
 	}
 
 	return token, nil
+}
+
+func GetUserFromContext(ctx context.Context) *mongodb.UserDb {
+	if user, ok := ctx.Value(UserKey).(mongodb.UserDb); ok {
+		return &user
+	}
+	return nil
+}
+
+func WithUser(ctx context.Context, user mongodb.UserDb) context.Context {
+	return context.WithValue(ctx, UserKey, user)
 }
