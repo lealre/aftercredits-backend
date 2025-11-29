@@ -17,11 +17,11 @@ var ErrTitleAlreadyInGroup = errors.New("title is already in group")
 var ErrTitleNotInGroup = errors.New("title not found in group")
 var ErrUpdatingWatchedAtWhenWatchedIsFalse = errors.New("cannot update watchedAt when watched is set to false")
 
-func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (GroupResponse, error) {
+func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
 	group := mongodb.GroupDb{
 		Name:    req.Name,
-		OwnerId: req.OwnerId,
-		Users:   []string{req.OwnerId},
+		OwnerId: userId,
+		Users:   []string{userId},
 		Titles:  []mongodb.GroupTitleDb{},
 	}
 
