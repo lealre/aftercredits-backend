@@ -174,39 +174,13 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 	return MapDbTitleToApiTitle(title), nil
 }
 
-func UpdateTitleWatchedProperties(
-	db *mongodb.DB,
-	ctx context.Context,
-	titleId string,
-	req SetWatchedRequest,
-) (Title, error) {
-	titleUpdatedBd, err := db.UpdateTitleWatchedProperties(ctx, titleId, req.Watched, req.WatchedAt)
+func DeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) error {
+	_, err := db.DeleteTitle(ctx, titleId)
 	if err != nil {
-		return Title{}, err
+		return err
 	}
 
-	return MapDbTitleToApiTitle(*titleUpdatedBd), nil
-}
-
-// Deletes the title and its related ratings and comments
-func CascadeDeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) (int64, error) {
-	deletedRatingsCount, err := db.DeleteRatingsByTitleId(ctx, titleId)
-	if err != nil {
-		return 0, err
-	}
-
-	deletedCommentsCount, err := db.DeleteCommentsByTitleId(ctx, titleId)
-	if err != nil {
-		return 0, err
-	}
-
-	_, err = db.DeleteTitle(ctx, titleId)
-	if err != nil {
-		return 0, err
-	}
-
-	return deletedRatingsCount + deletedCommentsCount, nil
-
+	return nil
 }
 
 func GetTitleById(db *mongodb.DB, ctx context.Context, titleId string) (Title, error) {

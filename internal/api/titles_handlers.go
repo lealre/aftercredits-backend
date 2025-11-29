@@ -6,15 +6,21 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
-	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
 
 func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	if currentUser.Role != mongodb.RoleAdmin {
+		respondWithForbidden(w)
+		return
+	}
 
 	size := generics.StringToInt(r.URL.Query().Get("size"))
 	page := generics.StringToInt(r.URL.Query().Get("page"))
@@ -33,6 +39,12 @@ func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	if currentUser.Role != mongodb.RoleAdmin {
+		respondWithForbidden(w)
+		return
+	}
 
 	var req titles.AddTitleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -73,77 +85,18 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, title)
 }
 
-func (api *API) GetTitleRatings(w http.ResponseWriter, r *http.Request) {
-	logger := logx.FromContext(r.Context())
-	titleId := r.PathValue("id")
-	if titleId == "" {
-		respondWithError(w, http.StatusBadRequest, "Title id is required")
-		return
-	}
-
-	if ok, err := api.Db.TitleExists(r.Context(), titleId); err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Database error while checking title")
-		return
-	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
-		return
-	}
-
-	// Get all ratings for this title
-	titleRatings, err := ratings.GetRatingsByTitleId(api.Db, r.Context(), titleId)
-	if err != nil {
-		logger.Printf("ERROR: - %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Database error while getting ratings")
-		return
-	}
-
-	if len(titleRatings) == 0 {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("No ratings found for title with id %s", titleId))
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, ratings.AllRatingsFromTitle{Ratings: titleRatings})
-}
-
-func (api *API) SetWatched(w http.ResponseWriter, r *http.Request) {
-	logger := logx.FromContext(r.Context())
-
-	titleId := r.PathValue("id")
-	if titleId == "" {
-		respondWithError(w, http.StatusBadRequest, "Title id is required")
-		return
-	}
-
-	var req titles.SetWatchedRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
-		return
-	}
-
-	if ok, err := api.Db.TitleExists(r.Context(), titleId); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "database error while checking title")
-		return
-	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
-		return
-	}
-
-	updatedTitle, err := titles.UpdateTitleWatchedProperties(api.Db, r.Context(), titleId, req)
-	if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error while updating title")
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, updatedTitle)
-}
-
 func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
 	titleId := r.PathValue("id")
 	if titleId == "" {
 		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	if currentUser.Role != mongodb.RoleAdmin {
+		respondWithForbidden(w)
 		return
 	}
 
@@ -156,16 +109,12 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deletedRatingsCount, err := titles.CascadeDeleteTitle(api.Db, r.Context(), titleId)
+	err := titles.DeleteTitle(api.Db, r.Context(), titleId)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database error during cascade delete")
 		return
 	}
 
-	if deletedRatingsCount > 0 {
-		respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Title and %d ratings/comments deleted from database", deletedRatingsCount)})
-	} else {
-		respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Title deleted from database"})
-	}
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Title deleted from database"})
 }
