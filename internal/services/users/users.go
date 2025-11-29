@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/auth"
+	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -94,6 +96,50 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 	}
 
 	return MapDbUserToApiUserResponse(userDb), nil
+}
+
+func UpdateUserInfo(db *mongodb.DB, ctx context.Context, userId string, userUpdate UpdateUserRequest) (UserResponse, error) {
+	logger := logx.FromContext(ctx)
+	newEmail := strings.TrimSpace(userUpdate.Email)
+	newUsername := strings.TrimSpace(userUpdate.Username)
+	newName := strings.TrimSpace(userUpdate.Name)
+
+	userToUpdateDb, err := db.GetUserById(ctx, userId)
+	if err != nil {
+		return UserResponse{}, err
+	}
+
+	if newEmail != "" {
+		if !IsValidEmail(newEmail) {
+			return UserResponse{}, ErrInvalidEmail
+		}
+		userToUpdateDb.Email = newEmail
+	}
+
+	if newUsername != "" {
+		if len(newUsername) < 3 {
+			return UserResponse{}, ErrInvalidUsernameSize
+		}
+		if !IsValidUsername(newUsername) {
+			return UserResponse{}, ErrInvalidUsername
+		}
+		userToUpdateDb.Username = newUsername
+	}
+
+	if newName != "" {
+		userToUpdateDb.Name = newName
+	}
+
+	userUpdatedDb, err := db.UpdateUserInfo(ctx, userId, userToUpdateDb)
+	logger.Printf("returned from db: %v", userUpdatedDb)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return UserResponse{}, ErrCredentialsAlreadyExists
+		}
+		return UserResponse{}, err
+	}
+
+	return MapDbUserToApiUserResponse(userUpdatedDb), nil
 }
 
 func DeleteUserById(db *mongodb.DB, ctx context.Context, id string) error {

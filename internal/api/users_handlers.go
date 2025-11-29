@@ -32,6 +32,63 @@ func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, users.AllUsersResponse{Users: allUsers})
 }
 
+func (api *API) GetUserById(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currnetUser := auth.GetUserFromContext(r.Context())
+
+	userId := r.PathValue("id")
+	if userId == "" {
+		respondWithError(w, http.StatusBadRequest, "User id is required")
+		return
+	}
+
+	if currnetUser.Id != userId {
+		respondWithForbidden(w)
+		return
+	}
+
+	user, err := users.GetUserById(api.Db, r.Context(), userId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, user)
+}
+
+func (api *API) UpdateUserInfo(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currnetUser := auth.GetUserFromContext(r.Context())
+
+	userId := r.PathValue("id")
+	if userId == "" {
+		respondWithError(w, http.StatusBadRequest, "User id is required")
+		return
+	}
+
+	if currnetUser.Id != userId {
+		respondWithForbidden(w)
+		return
+	}
+
+	var req users.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	user, err := users.UpdateUserInfo(api.Db, r.Context(), userId, req)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, user)
+}
+
 func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 

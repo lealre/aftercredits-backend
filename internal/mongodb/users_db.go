@@ -122,3 +122,27 @@ func (db *DB) DeleteUserById(ctx context.Context, id string) error {
 	}
 	return err
 }
+
+func (db *DB) UpdateUserInfo(ctx context.Context, id string, user UserDb) (UserDb, error) {
+	coll := db.Collection(UsersCollection)
+
+	// Use FindOneAndUpdate to get the updated document
+	opts := options.FindOneAndUpdate()
+	opts.SetReturnDocument(options.After) // Return the document after update
+
+	now := time.Now()
+	user.UpdatedAt = now
+
+	var updatedUserDb UserDb
+	err := coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": id},
+		bson.M{"$set": user},
+		opts,
+	).Decode(&updatedUserDb)
+	if err != nil {
+		return UserDb{}, err
+	}
+
+	return updatedUserDb, nil
+}
