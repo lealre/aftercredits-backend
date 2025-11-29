@@ -2,8 +2,6 @@ package users
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"strings"
 	"time"
 
@@ -13,20 +11,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
-
-var ErrCredentialsAlreadyExists = errors.New("username or email already exists")
-var ErrInvalidEmail = errors.New("email format is not valid")
-var ErrInvalidUsernameSize = errors.New("username must have at least 3 charscters")
-var ErrInvalidUsername = errors.New("username must contains just letters, numbers, '-' or '_'")
-var ErrInvalidPassword = errors.New("invalid passsword")
-
-var ErrorMap = map[error]int{
-	ErrInvalidUsername:          http.StatusBadRequest,
-	ErrInvalidEmail:             http.StatusBadRequest,
-	ErrInvalidUsernameSize:      http.StatusBadRequest,
-	ErrInvalidPassword:          http.StatusBadRequest,
-	ErrCredentialsAlreadyExists: http.StatusConflict,
-}
 
 func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
 	usersDb, err := db.GetAllUsers(ctx)

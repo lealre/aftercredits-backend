@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -81,6 +80,11 @@ func (api *API) UpdateUserInfo(w http.ResponseWriter, r *http.Request) {
 
 	user, err := users.UpdateUserInfo(api.Db, r.Context(), userId, req)
 	if err != nil {
+		// Check custom erros from fileds validations
+		if statusCode, ok := users.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
 		return
@@ -111,11 +115,9 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 	user, err := users.AddUser(api.Db, r.Context(), req)
 	if err != nil {
 		// Check custom erros from fileds validations
-		for target, status := range users.ErrorMap {
-			if errors.Is(err, target) {
-				respondWithError(w, status, formatErrorMessage(err))
-				return
-			}
+		if statusCode, ok := users.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
 		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to add user")
