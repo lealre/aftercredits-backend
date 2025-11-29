@@ -21,23 +21,26 @@ func TestCreateGroup(t *testing.T) {
 		resetDB(t)
 
 		// Create a new user
-		user, _ := addUser(t, users.NewUserRequest{
-			Name:     "testname",
+		user, token := addUser(t, users.NewUserRequest{
+			Username: "testname",
 			Password: "testpass",
 		})
 
 		// Create a group with the user
 		newGroup := groups.CreateGroupRequest{
-			Name:    "testgroupname",
-			OwnerId: user.Id,
+			Name: "testgroupname",
 		}
 		jsonData, err := json.Marshal(newGroup)
 		require.NoError(t, err)
-		respGroup, err := http.Post(
+		req, err := http.NewRequest(http.MethodPost,
 			testServer.URL+"/groups",
-			"application/json",
 			bytes.NewBuffer(jsonData),
 		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroup, err := client.Do(req)
 		require.NoError(t, err)
 		defer respGroup.Body.Close()
 		require.Equal(t, http.StatusCreated, respGroup.StatusCode)
@@ -45,37 +48,12 @@ func TestCreateGroup(t *testing.T) {
 		var respGroupBody groups.GroupResponse
 		require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&respGroupBody))
 		require.Equal(t, newGroup.Name, respGroupBody.Name)
-		require.Equal(t, newGroup.OwnerId, respGroupBody.OwnerId)
+		require.Equal(t, user.Id, respGroupBody.OwnerId)
 		require.Len(t, respGroupBody.Users, 1)
 		require.Contains(t, respGroupBody.Users, user.Id)
 		require.Empty(t, respGroupBody.Titles, "titles should be empty")
 		require.NotEmpty(t, respGroupBody.CreatedAt, "createdAt should not be empty")
 		require.NotEmpty(t, respGroupBody.UpdatedAt, "updatedAt should not be empty")
-
-	})
-
-	t.Run("Create a group with wrong user id returns 404", func(t *testing.T) {
-		resetDB(t)
-
-		unknowId := "userId"
-		newGroup := groups.CreateGroupRequest{
-			Name:    "testgroupname",
-			OwnerId: unknowId,
-		}
-		jsonData, err := json.Marshal(newGroup)
-		require.NoError(t, err)
-		respGroup, err := http.Post(
-			testServer.URL+"/groups",
-			"application/json",
-			bytes.NewBuffer(jsonData),
-		)
-		require.NoError(t, err)
-		defer respGroup.Body.Close()
-		require.Equal(t, http.StatusNotFound, respGroup.StatusCode)
-
-		var resp api.ErrorResponse
-		require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&resp))
-		require.Contains(t, resp.ErrorMessage, fmt.Sprintf("id %s not found", unknowId))
 
 	})
 
@@ -87,29 +65,32 @@ func TestGroupUsers(t *testing.T) {
 		resetDB(t)
 
 		// Create User 1
-		userOne, _ := addUser(t, users.NewUserRequest{
-			Name:     "testNameOne",
+		userOne, tokenUserOne := addUser(t, users.NewUserRequest{
+			Username: "testNameOne",
 			Password: "testPass",
 		})
 
 		// Create User 2
 		userTwo, _ := addUser(t, users.NewUserRequest{
-			Name:     "testNameTwo",
+			Username: "testNameTwo",
 			Password: "testPass",
 		})
 
 		// Create a group for user one
 		newGroup := groups.CreateGroupRequest{
-			Name:    "testgroupname",
-			OwnerId: userOne.Id,
+			Name: "testgroupname",
 		}
 		jsonData, err := json.Marshal(newGroup)
 		require.NoError(t, err)
-		respGroup, err := http.Post(
+		req, err := http.NewRequest(http.MethodPost,
 			testServer.URL+"/groups",
-			"application/json",
 			bytes.NewBuffer(jsonData),
 		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroup, err := client.Do(req)
 		require.NoError(t, err)
 		defer respGroup.Body.Close()
 		require.Equal(t, http.StatusCreated, respGroup.StatusCode)
@@ -123,11 +104,15 @@ func TestGroupUsers(t *testing.T) {
 		}
 		jsonData, err = json.Marshal(addUserToGroup)
 		require.NoError(t, err)
-		respGroup, err = http.Post(
+		req, err = http.NewRequest(http.MethodPost,
 			testServer.URL+"/groups/"+respGroupBody.Id+"/users",
-			"application/json",
 			bytes.NewBuffer(jsonData),
 		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+		req.Header.Set("Content-Type", "application/json")
+		client = &http.Client{}
+		respGroup, err = client.Do(req)
 		require.NoError(t, err)
 		defer respGroup.Body.Close()
 		require.Equal(t, http.StatusOK, respGroup.StatusCode)
@@ -152,9 +137,15 @@ func TestGroupUsers(t *testing.T) {
 		require.True(t, isUserTwoInGroup, "user added to group not found in group users when querying database")
 
 		// get users from api
-		respGroupUsers, err := http.Get(
-			testServer.URL + "/groups/" + respGroupBody.Id + "/users",
+		req, err = http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+respGroupBody.Id+"/users",
+			nil,
 		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+		req.Header.Set("Content-Type", "application/json")
+		client = &http.Client{}
+		respGroupUsers, err := client.Do(req)
 		require.NoError(t, err)
 		defer respGroupUsers.Body.Close()
 		require.Equal(t, http.StatusOK, respGroupUsers.StatusCode)
@@ -178,23 +169,27 @@ func TestGroupTitles(t *testing.T) {
 	resetDB(t)
 
 	// Create User 1
-	userOne, _ := addUser(t, users.NewUserRequest{
-		Name:     "testNameOne",
+	_, token := addUser(t, users.NewUserRequest{
+		Username: "testNameOne",
 		Password: "testPass",
 	})
 
 	// Create a group for user
 	newGroup := groups.CreateGroupRequest{
-		Name:    "testgroupname",
-		OwnerId: userOne.Id,
+		Name: "testgroupname",
 	}
 	jsonData, err := json.Marshal(newGroup)
 	require.NoError(t, err)
-	respGroup, err := http.Post(
+	req, err := http.NewRequest(http.MethodPost,
 		testServer.URL+"/groups",
-		"application/json",
 		bytes.NewBuffer(jsonData),
 	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	respGroup, err := client.Do(req)
+
 	require.NoError(t, err)
 	defer respGroup.Body.Close()
 	require.Equal(t, http.StatusCreated, respGroup.StatusCode)
@@ -215,11 +210,17 @@ func TestGroupTitles(t *testing.T) {
 
 		jsonData, err := json.Marshal(newTitle)
 		require.NoError(t, err)
-		respGroupAddTitle, err := http.Post(
+
+		req, err := http.NewRequest(http.MethodPost,
 			testServer.URL+"/groups/titles",
-			"application/json",
 			bytes.NewBuffer(jsonData),
 		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupAddTitle, err := client.Do(req)
+
 		require.NoError(t, err)
 		defer respGroupAddTitle.Body.Close()
 		require.Equal(t, http.StatusOK, respGroupAddTitle.StatusCode)
@@ -247,10 +248,17 @@ func TestGroupTitles(t *testing.T) {
 	})
 
 	t.Run("Get title from a group with one record successfully", func(t *testing.T) {
-		respGroupTitles, err := http.Get(
-			testServer.URL + "/groups/" + group.Id + "/titles",
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			nil,
 		)
 		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupTitles, err := client.Do(req)
+		require.NoError(t, err)
+
 		defer respGroupTitles.Body.Close()
 		require.Equal(t, http.StatusOK, respGroupTitles.StatusCode)
 
@@ -276,6 +284,8 @@ func TestGroupTitles(t *testing.T) {
 			bytes.NewBuffer(pathBody),
 		)
 		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupSetWatched, err := client.Do(req)
 		require.NoError(t, err)
@@ -375,6 +385,8 @@ func TestGroupTitles(t *testing.T) {
 			bytes.NewBuffer(pathBody),
 		)
 		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupSetWatched, err := client.Do(req)
 		require.NoError(t, err)
@@ -392,6 +404,8 @@ func TestGroupTitles(t *testing.T) {
 			nil,
 		)
 		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupSetWatched, err := client.Do(req)
 		require.NoError(t, err)
