@@ -38,6 +38,15 @@ func respondWithForbidden(w http.ResponseWriter) error {
 	return respondWithJSON(w, statusCode, messageBody)
 }
 
+func RespondWithUnauthorized(w http.ResponseWriter, err error) error {
+	statusCode := http.StatusUnauthorized
+	messageBody := ErrorResponse{
+		StatusCode:   statusCode,
+		ErrorMessage: formatErrorMessage(err),
+	}
+	return respondWithJSON(w, statusCode, messageBody)
+}
+
 func parseUrlQueryToBool(val string) *bool {
 	var parsedVal *bool
 	switch val {

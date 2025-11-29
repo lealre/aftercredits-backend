@@ -94,6 +94,10 @@ func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.
 			// Extract token
 			tokenString, err := auth.GetBearerToken(r.Header)
 			if err != nil {
+				if _, ok := auth.ErrosMap[err]; ok {
+					api.RespondWithUnauthorized(w, err)
+					return
+				}
 				http.Error(w, "Missing or invalid token", http.StatusUnauthorized)
 				return
 			}
@@ -101,13 +105,16 @@ func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.
 			// Validate token
 			userId, err := auth.ValidateJWT(tokenString, tokenSecret)
 			if err != nil {
-				http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+				if _, ok := auth.ErrosMap[err]; ok {
+					api.RespondWithUnauthorized(w, err)
+					return
+				}
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
 
-			// TODO: Check if user is active
 			userDb, err := db.GetUserById(r.Context(), userId)
-			if err == mongodb.ErrRecordNotFound {
+			if err == mongodb.ErrRecordNotFound || !userDb.IsActive {
 				http.Error(w, "Invalid or inactive user", http.StatusUnauthorized)
 				return
 			}

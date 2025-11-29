@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -50,7 +49,7 @@ func ValidateJWT(tokenString, tokenSecret string) (string, error) {
 		claims,
 		func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, errors.New("unexpected signing method")
+				return nil, ErrTokenSigningMethod
 			}
 			return []byte(tokenSecret), nil
 		},
@@ -60,17 +59,15 @@ func ValidateJWT(tokenString, tokenSecret string) (string, error) {
 	}
 
 	if !token.Valid {
-		return "", errors.New("invalid token")
+		return "", ErrInvalidToken
 	}
 
-	// Check expiration
 	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
-		return "", errors.New("token has expired")
+		return "", ErrTokenExpired
 	}
 
-	// Subject *is already a string*
 	if claims.Subject == "" {
-		return "", errors.New("token has no subject")
+		return "", ErrTokenWithNoSubject
 	}
 
 	return claims.Subject, nil
@@ -80,18 +77,18 @@ func GetBearerToken(headers http.Header) (string, error) {
 	bearerToken := headers.Get("Authorization")
 
 	if bearerToken == "" {
-		return "", errors.New("no 'Authorization' header found")
+		return "", ErrNoAuthorizationHeader
 	}
 
 	if !strings.HasPrefix(bearerToken, "Bearer ") {
-		return "", errors.New("token must start with 'Bearer '")
+		return "", ErrMalformedAuthHeader
 	}
 
 	token := strings.TrimPrefix(bearerToken, "Bearer ")
 	token = strings.TrimSpace(token) // clean up any accidental space
 
 	if token == "" {
-		return "", errors.New("no token provided after 'Bearer '")
+		return "", ErrNoTokenInAuthHeader
 	}
 
 	return token, nil
