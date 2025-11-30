@@ -9,6 +9,8 @@ import (
 
 	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 const TILES_FIXTURES_PATH = "fixtures/titles.json"
@@ -49,4 +51,20 @@ func loadTitlesFixture(t *testing.T) []imdb.Title {
 	}
 
 	return docs
+}
+
+func getTitles(t *testing.T) []mongodb.TitleDb {
+	ctx := context.Background()
+	db := testClient.Database(TEST_DB_NAME)
+	coll := db.Collection(mongodb.TitlesCollection)
+
+	cursor, err := coll.Find(ctx, bson.M{})
+	require.NoError(t, err, "error querying titles from db")
+	defer cursor.Close(ctx)
+
+	var titles []mongodb.TitleDb
+	err = cursor.All(ctx, &titles)
+	require.NoError(t, err, "error decoding titles from db")
+
+	return titles
 }
