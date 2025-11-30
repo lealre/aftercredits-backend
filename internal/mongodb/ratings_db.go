@@ -53,10 +53,10 @@ func (db *DB) GetRatingsByTitleId(ctx context.Context, titleId string) ([]Rating
 	return ratingsDb, nil
 }
 
-func (db *DB) GetRatingById(ctx context.Context, ratingId string) (RatingDb, error) {
+func (db *DB) GetRatingById(ctx context.Context, ratingId, userId string) (RatingDb, error) {
 	coll := db.Collection(RatingsCollection)
 
-	filter := bson.M{"_id": ratingId}
+	filter := bson.M{"_id": ratingId, "userId": userId}
 
 	var rating RatingDb
 	err := coll.FindOne(ctx, filter).Decode(&rating)
@@ -84,10 +84,10 @@ func (db *DB) DeleteRatingsByTitleId(ctx context.Context, titleId string) (int64
 }
 
 // UpdateRating updates only the Note field of a rating
-func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb) error {
+func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string) error {
 	coll := db.Collection(RatingsCollection)
 
-	filter := bson.M{"_id": ratingDb.Id}
+	filter := bson.M{"_id": ratingDb.Id, "userId": userId}
 
 	now := time.Now()
 	update := bson.M{

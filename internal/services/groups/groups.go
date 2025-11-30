@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
@@ -46,6 +47,8 @@ func GetTitlesFromGroup(
 	watched *bool,
 	ascending *bool,
 ) (generics.Page[GroupTitleDetail], error) {
+	currentUser := auth.GetUserFromContext(ctx)
+
 	group, err := db.GetGroupById(ctx, groupId)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
@@ -110,7 +113,7 @@ func GetTitlesFromGroup(
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
-	ratings, err := ratings.GetRatingsBatch(db, ctx, allTitlesIds)
+	ratings, err := ratings.GetRatingsBatch(db, ctx, allTitlesIds, currentUser.Id)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}

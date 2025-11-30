@@ -21,8 +21,8 @@ func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([
 	return ratings, nil
 }
 
-func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId string) (Rating, error) {
-	ratingDb, err := db.GetRatingById(ctx, ratingId)
+func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string) (Rating, error) {
+	ratingDb, err := db.GetRatingById(ctx, ratingId, userId)
 	if err != nil {
 		return Rating{}, err
 	}
@@ -30,11 +30,11 @@ func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId string) (Rating
 	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (TitlesRatings, error) {
+func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string, userId string) (TitlesRatings, error) {
 
 	filter := bson.M{}
 	if len(titleIDs) > 0 {
-		filter["titleId"] = bson.M{"$in": titleIDs}
+		filter["titleId"] = bson.M{"$in": titleIDs, "userId": userId}
 	}
 
 	allRatingsDb, err := db.GetRatings(ctx, filter)
@@ -64,11 +64,10 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating Rating) error {
 	return db.AddRating(ctx, ratingDb)
 }
 
-func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId string, updateReq UpdateRatingRequest) error {
+func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) error {
 	ratingDb := mongodb.RatingDb{
 		Id:   ratingId,
 		Note: updateReq.Note,
 	}
-	return db.UpdateRating(ctx, ratingDb)
-
+	return db.UpdateRating(ctx, ratingDb, userId)
 }
