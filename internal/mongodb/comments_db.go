@@ -21,10 +21,10 @@ type CommentDb struct {
 
 // ----- Methods for the database -----
 
-func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId string) ([]CommentDb, error) {
+func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId, userId string) ([]CommentDb, error) {
 	coll := db.Collection(CommentsCollection)
 
-	filter := bson.M{"titleId": titleId}
+	filter := bson.M{"titleId": titleId, "userId": userId}
 
 	cursor, err := coll.Find(ctx, filter)
 	if err != nil {
@@ -70,10 +70,10 @@ func (db *DB) AddComment(ctx context.Context, comment CommentDb) (CommentDb, err
 	return comment, nil
 }
 
-func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb) error {
+func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb, userId string) error {
 	coll := db.Collection(CommentsCollection)
 
-	filter := bson.M{"_id": commentDb.Id}
+	filter := bson.M{"_id": commentDb.Id, "userId": userId}
 
 	now := time.Now()
 	update := bson.M{
@@ -95,10 +95,10 @@ func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb) error {
 	return nil
 }
 
-func (db *DB) DeleteComment(ctx context.Context, commentId string) (int64, error) {
+func (db *DB) DeleteComment(ctx context.Context, commentId, userId string) (int64, error) {
 	coll := db.Collection(CommentsCollection)
 
-	filter := bson.M{"_id": commentId}
+	filter := bson.M{"_id": commentId, "userId": userId}
 	result, err := coll.DeleteOne(ctx, filter)
 	if err != nil {
 		return 0, err

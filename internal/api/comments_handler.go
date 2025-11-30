@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/comments"
@@ -13,6 +14,7 @@ import (
 
 func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	titleId := r.PathValue("titleId")
 	if titleId == "" {
@@ -20,16 +22,7 @@ func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.TitleExists(r.Context(), titleId); !ok {
-		respondWithError(w, http.StatusBadRequest, "Title Id not found")
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error while searching Title in database")
-		return
-	}
-
-	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), titleId)
+	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), titleId, currentUser.Id)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusOK, "Error while seraching comments in Database")
@@ -41,6 +34,7 @@ func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	commentId := r.PathValue("id")
 	if commentId == "" {
@@ -55,7 +49,7 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := comments.UpdateComment(api.Db, r.Context(), commentId, updateReq); err != nil {
+	if err := comments.UpdateComment(api.Db, r.Context(), commentId, currentUser.Id, updateReq); err != nil {
 		if err == mongodb.ErrRecordNotFound {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Comment with id %s not found", commentId))
 			return
@@ -71,6 +65,7 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	var comment comments.Comment
 	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
@@ -79,12 +74,8 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.UserExists(r.Context(), comment.UserId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", comment.UserId))
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
+	if comment.UserId != currentUser.Id {
+		respondWithForbidden(w)
 		return
 	}
 
@@ -113,6 +104,7 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	commentId := r.PathValue("id")
 	if commentId == "" {
@@ -120,7 +112,7 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId); err != nil {
+	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting comment")
 		return
