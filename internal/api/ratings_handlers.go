@@ -122,7 +122,12 @@ func (api *API) GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	titlesRatingsMap, err := ratings.GetRatingsBatch(api.Db, r.Context(), req.Titles, currentuser.Id)
+	if currentuser.Role != mongodb.RoleAdmin {
+		respondWithForbidden(w)
+		return
+	}
+
+	titlesRatingsMap, err := ratings.GetRatingsBatch(api.Db, r.Context(), req.Titles)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error getting ratings from titles list")

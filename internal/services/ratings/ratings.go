@@ -30,11 +30,11 @@ func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string)
 	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string, userId string) (TitlesRatings, error) {
+func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (TitlesRatings, error) {
 
 	filter := bson.M{}
 	if len(titleIDs) > 0 {
-		filter["titleId"] = bson.M{"$in": titleIDs, "userId": userId}
+		filter["titleId"] = bson.M{"$in": titleIDs}
 	}
 
 	allRatingsDb, err := db.GetRatings(ctx, filter)

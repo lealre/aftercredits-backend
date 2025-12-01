@@ -6,7 +6,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
@@ -34,22 +33,20 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 	return MapDbGroupToApiGroupResponse(newGroup), nil
 }
 
-func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
-	return db.AddUserToGroup(ctx, groupId, userId)
+func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, onwertId, userId string) error {
+	return db.AddUserToGroup(ctx, groupId, onwertId, userId)
 }
 
 func GetTitlesFromGroup(
 	db *mongodb.DB,
 	ctx context.Context,
-	groupId string,
+	groupId, userId string,
 	size, page int,
 	orderBy string,
 	watched *bool,
 	ascending *bool,
 ) (generics.Page[GroupTitleDetail], error) {
-	currentUser := auth.GetUserFromContext(ctx)
-
-	group, err := db.GetGroupById(ctx, groupId)
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
@@ -113,7 +110,7 @@ func GetTitlesFromGroup(
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
-	ratings, err := ratings.GetRatingsBatch(db, ctx, allTitlesIds, currentUser.Id)
+	ratings, err := ratings.GetRatingsBatch(db, ctx, allTitlesIds)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
@@ -141,8 +138,8 @@ func GetTitlesFromGroup(
 	}, nil
 }
 
-func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]users.UserResponse, error) {
-	usersDb, err := db.GetUsersFromGroup(ctx, groupId)
+func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {
+	usersDb, err := db.GetUsersFromGroup(ctx, groupId, userId)
 	if err != nil {
 		return []users.UserResponse{}, err
 	}
@@ -155,8 +152,8 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]u
 	return usersResponse, nil
 }
 
-func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
-	group, err := db.GetGroupById(ctx, groupId)
+func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return err
 	}
@@ -174,8 +171,8 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleI
 	return nil
 }
 
-func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
-	groupDb, err := db.GetGroupById(ctx, groupId)
+func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
+	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return GroupTitle{}, err
 	}
@@ -207,8 +204,8 @@ func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string
 	return MapDbGroupTitleToApiGroupTitle(*groupTitle), nil
 }
 
-func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
-	group, err := db.GetGroupById(ctx, groupId)
+func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return err
 	}
