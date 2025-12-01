@@ -10,6 +10,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/generics"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
@@ -71,7 +72,7 @@ func TestGroupUsers(t *testing.T) {
 		})
 
 		// Create User 2
-		userTwo, _ := addUser(t, users.NewUserRequest{
+		userTwo, tokenUserTwo := addUser(t, users.NewUserRequest{
 			Username: "testNameTwo",
 			Password: "testPass",
 		})
@@ -136,7 +137,7 @@ func TestGroupUsers(t *testing.T) {
 		require.True(t, isUserOneInGroup, "group owner (userOne) is not in group struct when querying database")
 		require.True(t, isUserTwoInGroup, "user added to group not found in group users when querying database")
 
-		// get users from api
+		// Get users from api being user one (owner)
 		req, err = http.NewRequest(http.MethodGet,
 			testServer.URL+"/groups/"+respGroupBody.Id+"/users",
 			nil,
@@ -149,11 +150,37 @@ func TestGroupUsers(t *testing.T) {
 		require.NoError(t, err)
 		defer respGroupUsers.Body.Close()
 		require.Equal(t, http.StatusOK, respGroupUsers.StatusCode)
-		var respGroupUserBody users.AllUsersResponse
-		require.NoError(t, json.NewDecoder(respGroupUsers.Body).Decode(&respGroupUserBody))
 
-		allUsersIds := make([]string, len(respGroupUserBody.Users))
-		for _, user := range respGroupUserBody.Users {
+		var respGroupUserOneBody users.AllUsersResponse
+		require.NoError(t, json.NewDecoder(respGroupUsers.Body).Decode(&respGroupUserOneBody))
+
+		allUsersIds := make([]string, len(respGroupUserOneBody.Users))
+		for _, user := range respGroupUserOneBody.Users {
+			allUsersIds = append(allUsersIds, user.Id)
+		}
+
+		require.Contains(t, allUsersIds, userOne.Id, "group owner (userOne) is not in group response api after creation")
+		require.Contains(t, allUsersIds, userTwo.Id, "user added to group not found in group response after being added")
+
+		// Get users from api being user two
+		req, err = http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+respGroupBody.Id+"/users",
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserTwo)
+		req.Header.Set("Content-Type", "application/json")
+		client = &http.Client{}
+		respGroupUsers, err = client.Do(req)
+		require.NoError(t, err)
+		defer respGroupUsers.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupUsers.StatusCode)
+
+		var respGroupUserTwoBody users.AllUsersResponse
+		require.NoError(t, json.NewDecoder(respGroupUsers.Body).Decode(&respGroupUserTwoBody))
+
+		allUsersIds = make([]string, len(respGroupUserTwoBody.Users))
+		for _, user := range respGroupUserTwoBody.Users {
 			allUsersIds = append(allUsersIds, user.Id)
 		}
 
@@ -164,17 +191,21 @@ func TestGroupUsers(t *testing.T) {
 }
 
 func TestGroupTitles(t *testing.T) {
-
-	// --- TEST SETUP ----
 	resetDB(t)
 
-	// Create User 1
-	_, token := addUser(t, users.NewUserRequest{
+	// Create User One
+	_, tokenUserOne := addUser(t, users.NewUserRequest{
 		Username: "testNameOne",
 		Password: "testPass",
 	})
 
-	// Create a group for user
+	// Create User Two
+	userTwo, tokenUserTwo := addUser(t, users.NewUserRequest{
+		Username: "testNameTwo",
+		Password: "testPass",
+	})
+
+	// Create a group for user One (Owner)
 	newGroup := groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}
@@ -185,7 +216,7 @@ func TestGroupTitles(t *testing.T) {
 		bytes.NewBuffer(jsonData),
 	)
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+tokenUserOne)
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{}
 	respGroup, err := client.Do(req)
@@ -197,12 +228,46 @@ func TestGroupTitles(t *testing.T) {
 	var group groups.GroupResponse
 	require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&group))
 
+	// Add user Two to group owned by user One
+	addUserToGroup := groups.AddUserToGroupRequest{
+		UserId: userTwo.Id,
+	}
+	jsonData, err = json.Marshal(addUserToGroup)
+	require.NoError(t, err)
+	req, err = http.NewRequest(http.MethodPost,
+		testServer.URL+"/groups/"+group.Id+"/users",
+		bytes.NewBuffer(jsonData),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+	req.Header.Set("Content-Type", "application/json")
+	client = &http.Client{}
+	respGroup, err = client.Do(req)
+	require.NoError(t, err)
+	defer respGroup.Body.Close()
+	require.Equal(t, http.StatusOK, respGroup.StatusCode)
+
+	// User that is not part of the group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "usernotingroup",
+		Password: "#Usernotingroup123",
+	})
+
 	// Load titles in database
 	titles := loadTitlesFixture(t)
 	seedTitles(t, titles)
-	expectedTitle := titles[0]
+	expectedTitle := titles[0]         // Title for group owner to add
+	expectedTitleTwo := titles[1]      // Title for regular user to add
+	titleToUserNotInGroup := titles[2] // Different title to the user not in group to try to add
 
-	t.Run("Add one title to a group successfully", func(t *testing.T) {
+	/*
+		=================== [ADD/GET] TEST OWNER USER =============
+		- Test owner adding and getting one single title from group
+		- Titles in group after tests: 1
+		===========================================================
+	*/
+
+	t.Run("Add title to a group as group owner successfully", func(t *testing.T) {
 		newTitle := groups.AddTitleToGroupRequest{
 			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
 			GroupId: group.Id,
@@ -216,7 +281,7 @@ func TestGroupTitles(t *testing.T) {
 			bytes.NewBuffer(jsonData),
 		)
 		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupAddTitle, err := client.Do(req)
@@ -234,6 +299,7 @@ func TestGroupTitles(t *testing.T) {
 			"title id and/or group id not in message response after adding a title to a group",
 		)
 
+		// Check if title is added to group by querying database
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb)
 		require.NotEmpty(t, groupDb.Titles)
@@ -247,13 +313,13 @@ func TestGroupTitles(t *testing.T) {
 		require.Empty(t, groupTitleDb.WatchedAt, "WatchedAt should be empty by default when adding a title to a group")
 	})
 
-	t.Run("Get title from a group with one record successfully", func(t *testing.T) {
+	t.Run("Get title from a group as owner successfully", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodGet,
 			testServer.URL+"/groups/"+group.Id+"/titles",
 			nil,
 		)
 		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupTitles, err := client.Do(req)
@@ -277,6 +343,168 @@ func TestGroupTitles(t *testing.T) {
 
 	})
 
+	/*
+		=================== [ADD/GET] TEST REGULAR USER FROM GROUP =================
+		- Test group participant adding and getting another title in same the group
+		- Titles in group after tests: 2
+		============================================================================
+	*/
+
+	t.Run("Add title to a group as participant and not being group owner successfully", func(t *testing.T) {
+		newTitle := groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitleTwo.ID),
+			GroupId: group.Id,
+		}
+
+		jsonData, err := json.Marshal(newTitle)
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost,
+			testServer.URL+"/groups/titles",
+			bytes.NewBuffer(jsonData),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserTwo)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupAddTitle, err := client.Do(req)
+
+		require.NoError(t, err)
+		defer respGroupAddTitle.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupAddTitle.StatusCode)
+
+		var respGroupTitlesBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respGroupAddTitle.Body).Decode(&respGroupTitlesBody))
+		require.Contains(
+			t,
+			respGroupTitlesBody.Message,
+			fmt.Sprintf("Title %s added to group %s", expectedTitleTwo.ID, group.Id),
+			"title id and/or group id not in message response after adding a title to a group",
+		)
+
+		// Check if title is added to group by querying database
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb)
+		require.NotEmpty(t, groupDb.Titles)
+		require.Equal(t, len(groupDb.Titles), 2)
+
+		var allTitlesIdsInGroup []string
+		for _, title := range groupDb.Titles {
+			allTitlesIdsInGroup = append(allTitlesIdsInGroup, title.Id)
+		}
+		require.Contains(t, allTitlesIdsInGroup, expectedTitle.ID)
+		require.Contains(t, allTitlesIdsInGroup, expectedTitleTwo.ID)
+
+	})
+
+	t.Run("Get titles from a group as participant and not being the owner successfully", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserTwo)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupTitles, err := client.Do(req)
+		require.NoError(t, err)
+
+		defer respGroupTitles.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupTitles.StatusCode)
+
+		var respGroupTitlesBody generics.Page[groups.GroupTitleDetail]
+		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesBody))
+		require.Equal(t, respGroupTitlesBody.Page, 1, "Expected Page to be 1, got %d", respGroupTitlesBody.Page)
+		require.Equal(t, respGroupTitlesBody.Size, 20, "Expected Size to be 20, got %d", respGroupTitlesBody.Size)
+		require.Equal(t, respGroupTitlesBody.TotalPages, 1, "Expected TotalPages to be 1, got %d", respGroupTitlesBody.TotalPages)
+		require.Equal(t, respGroupTitlesBody.TotalResults, 2, "Expected TotalResults to be 2, got %d", respGroupTitlesBody.TotalResults)
+		require.NotEmpty(t, respGroupTitlesBody.Content, "Expected Content to not be empty")
+		require.Equal(t, 2, len(respGroupTitlesBody.Content), "Expected length of Content to be 2, got %d", len(respGroupTitlesBody.Content))
+
+		var allTitlesIds []string
+		for _, title := range respGroupTitlesBody.Content {
+			allTitlesIds = append(allTitlesIds, title.Id)
+		}
+		require.Contains(t, allTitlesIds, expectedTitle.ID)
+		require.Contains(t, allTitlesIds, expectedTitleTwo.ID)
+	})
+
+	/*
+		=================== [ADD/GET] TEST USER NOT FROM GROUP =====================
+		- Test a user that is not from the group trying to get/add titles
+		- Titles in group after tests: 2
+		============================================================================
+	*/
+
+	t.Run("Add title to a group not being a participant returns 404", func(t *testing.T) {
+		newTitle := groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", titleToUserNotInGroup.ID),
+			GroupId: group.Id,
+		}
+
+		jsonData, err := json.Marshal(newTitle)
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost,
+			testServer.URL+"/groups/titles",
+			bytes.NewBuffer(jsonData),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserNotInGroup)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupAddTitle, err := client.Do(req)
+
+		require.NoError(t, err)
+		defer respGroupAddTitle.Body.Close()
+		require.Equal(t, http.StatusNotFound, respGroupAddTitle.StatusCode)
+
+		var respGroupTitlesBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respGroupAddTitle.Body).Decode(&respGroupTitlesBody))
+		require.Contains(t, fmt.Sprintf("Group with id %s not found", group.Id), respGroupTitlesBody.Message)
+
+		// Check that title is not added to group by querying database
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb)
+		require.NotEmpty(t, groupDb.Titles)
+		require.Equal(t, len(groupDb.Titles), 2) // Should remain size two
+
+		var allTitlesIdsInGroup []string
+		for _, title := range groupDb.Titles {
+			allTitlesIdsInGroup = append(allTitlesIdsInGroup, title.Id)
+		}
+		require.Contains(t, allTitlesIdsInGroup, expectedTitle.ID)
+		require.Contains(t, allTitlesIdsInGroup, expectedTitleTwo.ID)
+		require.NotContains(t, allTitlesIdsInGroup, titleToUserNotInGroup.ID)
+	})
+
+	t.Run("Get titles from a group not being a participant should return 404", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserNotInGroup)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupTitles, err := client.Do(req)
+		require.NoError(t, err)
+
+		defer respGroupTitles.Body.Close()
+		require.Equal(t, http.StatusNotFound, respGroupTitles.StatusCode)
+
+		var respGroupTitlesBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesBody))
+		require.Contains(t, fmt.Sprintf("Group with id %s not found", group.Id), respGroupTitlesBody.Message)
+	})
+
+	/*
+		=================== [PATCH - Watched] TEST OWNER USER =====================
+		- Test a owner user to set watched titles
+		- Titles in group after tests: 2
+		===========================================================================
+	*/
+
 	// Setup patch api call to be used on the next tests
 	sendPatchApiCall := func(pathBody []byte) groups.GroupTitle {
 		req, err := http.NewRequest(http.MethodPatch,
@@ -284,7 +512,7 @@ func TestGroupTitles(t *testing.T) {
 			bytes.NewBuffer(pathBody),
 		)
 		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupSetWatched, err := client.Do(req)
@@ -310,14 +538,19 @@ func TestGroupTitles(t *testing.T) {
 		require.Empty(t, respGroupSetWatchedBody.WatchedAt, "Expected WatchedAt to be empty when just setting watched: true")
 
 		// Database assertion
-		grouDb := getGroup(t, group.Id)
-		require.NotEmpty(t, grouDb, "Expected group to not be empty")
-		require.Equal(t, len(grouDb.Titles), 1, "Expected group should have 1 title, got %d", len(grouDb.Titles))
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		titleDb := grouDb.Titles[0]
-		require.Equal(t, titleDb.Id, respGroupSetWatchedBody.Id, "Expected title ID in db to match response, got %s vs %s", titleDb.Id, respGroupSetWatchedBody.Id)
-		require.True(t, titleDb.Watched, "Expected title Watched in db to be true")
-		require.Empty(t, titleDb.WatchedAt, "Expected title WatchedAt in db to be empty")
+		var titleToassert mongodb.GroupTitleDb
+		for _, title := range groupDb.Titles {
+			if title.Id == expectedTitle.ID {
+				titleToassert = title
+			}
+		}
+		require.NotEmpty(t, titleToassert, "Expected title to be in group titles db")
+		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true")
+		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty")
 	})
 
 	t.Run("Set watchedAt field from a title group with watched already set as true successfully", func(t *testing.T) {
@@ -336,14 +569,19 @@ func TestGroupTitles(t *testing.T) {
 		require.Equal(t, respGroupSetWatchedBody.WatchedAt, &testDate, "Expected WatchedAt to be empty when just setting watched: true")
 
 		// Database assertion
-		grouDb := getGroup(t, group.Id)
-		require.NotEmpty(t, grouDb, "Expected group to not be empty")
-		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		titleDb := grouDb.Titles[0]
-		require.Equal(t, respGroupSetWatchedBody.Id, titleDb.Id, "Expected title ID in db to match response, expected: %s, got: %s", respGroupSetWatchedBody.Id, titleDb.Id)
-		require.True(t, titleDb.Watched, "Expected title Watched in db to be true, got: %v", titleDb.Watched)
-		require.Equal(t, &testDate, titleDb.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleDb.WatchedAt)
+		var titleToassert mongodb.GroupTitleDb
+		for _, title := range groupDb.Titles {
+			if title.Id == expectedTitle.ID {
+				titleToassert = title
+			}
+		}
+		require.NotEmpty(t, titleToassert, "Expected title %s to be in group titles db", titleToassert.Id)
+		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true, got: %v", titleToassert.Watched)
+		require.Equal(t, &testDate, titleToassert.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleToassert.WatchedAt)
 	})
 
 	t.Run("Set watched as false should set watchedAt as empty successfully", func(t *testing.T) {
@@ -360,14 +598,19 @@ func TestGroupTitles(t *testing.T) {
 		require.Empty(t, respGroupSetWatchedBody.WatchedAt, "Expected WatchedAt to be empty when watched is false")
 
 		// Database assertion
-		grouDb := getGroup(t, group.Id)
-		require.NotEmpty(t, grouDb, "Expected group to not be empty")
-		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		titleDb := grouDb.Titles[0]
-		require.Equal(t, respGroupSetWatchedBody.Id, titleDb.Id, "Expected title ID in db to match response, expected: %s, got: %s", respGroupSetWatchedBody.Id, titleDb.Id)
-		require.False(t, titleDb.Watched, "Expected title Watched in db to be false, got: %v", titleDb.Watched)
-		require.Empty(t, titleDb.WatchedAt, "Expected title WatchedAt in db to be empty when watched is false")
+		var titleToassert mongodb.GroupTitleDb
+		for _, title := range groupDb.Titles {
+			if title.Id == expectedTitle.ID {
+				titleToassert = title
+			}
+		}
+		require.NotEmpty(t, titleToassert, "Expected title %s to be in group titles db", titleToassert.Id)
+		require.False(t, titleToassert.Watched, "Expected title Watched in db to be false, got: %v", titleToassert.Watched)
+		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty when watched is false")
 	})
 
 	t.Run("Setting watchedAt when watched is false in db should return 400", func(t *testing.T) {
@@ -385,7 +628,7 @@ func TestGroupTitles(t *testing.T) {
 			bytes.NewBuffer(pathBody),
 		)
 		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupSetWatched, err := client.Do(req)
@@ -398,13 +641,29 @@ func TestGroupTitles(t *testing.T) {
 		require.Contains(t, respGroupSetWatchedBody.ErrorMessage, groups.ErrUpdatingWatchedAtWhenWatchedIsFalse.Error()[1:])
 	})
 
-	t.Run("Remove title from a group successfully", func(t *testing.T) {
+	/*
+		=================== [PATCH - Watched] TEST REGULAR USER FROM GROUP ======
+		- Test a regular user to set watched titles
+		- Titles in group after tests: 2
+		=========================================================================
+	*/
+
+	// TODO
+
+	/*
+		=================== [DELETE] TEST OWNER USER ============================
+		- Test a owner user to delete a title from group
+		- Titles in group after tests: 1
+		=========================================================================
+	*/
+
+	t.Run("Remove title from a group as a owner successfully", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodDelete,
 			testServer.URL+"/groups/"+group.Id+"/titles/"+expectedTitle.ID,
 			nil,
 		)
 		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupSetWatched, err := client.Do(req)
@@ -419,7 +678,72 @@ func TestGroupTitles(t *testing.T) {
 		// Database assertion
 		grouDb := getGroup(t, group.Id)
 		require.NotEmpty(t, grouDb, "Expected group to not be empty")
-		require.Equal(t, 0, len(grouDb.Titles), "Expected group should have 0 title, got %d", len(grouDb.Titles))
+		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
+	})
+
+	/*
+		=================== [DELETE] TEST USER NOT FROM GROUP ===================
+		- Test a user not from the group to delete a title that exists in group
+		- Titles in group after tests: 1
+		=========================================================================
+	*/
+
+	t.Run("Remove title from a group not being from group should return 404", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodDelete,
+			testServer.URL+"/groups/"+group.Id+"/titles/"+expectedTitleTwo.ID,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserNotInGroup)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respRemoveTitle, err := client.Do(req)
+		require.NoError(t, err)
+		defer respRemoveTitle.Body.Close()
+		require.Equal(t, http.StatusNotFound, respRemoveTitle.StatusCode)
+
+		var respGroupTitlesBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respRemoveTitle.Body).Decode(&respGroupTitlesBody))
+		require.Contains(t, fmt.Sprintf("Group with id %s not found", group.Id), respGroupTitlesBody.Message)
+
+		// Database assertion (Title should still be there)
+		grouDb := getGroup(t, group.Id)
+		require.NotEmpty(t, grouDb, "Expected group to not be empty")
+		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
+
+		titleToAssert := grouDb.Titles[0]
+		require.Equal(t, titleToAssert.Id, expectedTitleTwo.ID)
+	})
+
+	/*
+		=================== [DELETE] TEST REGULAR USER FROM GROUP ===============
+		- Test a regular user deleting a title from group
+		- Titles in group after tests: 0
+		=========================================================================
+	*/
+
+	t.Run("Remove title from a group successfully", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodDelete,
+			testServer.URL+"/groups/"+group.Id+"/titles/"+expectedTitleTwo.ID,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserTwo)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupSetWatched, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupSetWatched.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupSetWatched.StatusCode)
+
+		var resp api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&resp))
+		require.Contains(t, resp.Message, fmt.Sprintf("Title %s deleted from group %s", expectedTitleTwo.ID, group.Id))
+
+		// Database assertion
+		grouDb := getGroup(t, group.Id)
+		require.NotEmpty(t, grouDb, "Expected group to not be empty")
+		require.Equal(t, 0, len(grouDb.Titles), "Expected group should have 0 title(s), got %d", len(grouDb.Titles))
 	})
 
 }
