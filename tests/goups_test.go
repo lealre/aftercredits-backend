@@ -506,13 +506,13 @@ func TestGroupTitles(t *testing.T) {
 	*/
 
 	// Setup patch api call to be used on the next tests
-	sendPatchApiCall := func(pathBody []byte) groups.GroupTitle {
+	sendPatchApiCall := func(pathBody []byte, innerToken string) groups.GroupTitle {
 		req, err := http.NewRequest(http.MethodPatch,
 			testServer.URL+"/groups/"+group.Id+"/titles",
 			bytes.NewBuffer(pathBody),
 		)
 		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+		req.Header.Set("Authorization", "Bearer "+innerToken)
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroupSetWatched, err := client.Do(req)
@@ -524,14 +524,14 @@ func TestGroupTitles(t *testing.T) {
 		return resp
 	}
 
-	t.Run("Set title from a group as watched with watchedAt empty successfully", func(t *testing.T) {
+	t.Run("Set title from a group as watched with watchedAt empty as a group owner successfully", func(t *testing.T) {
 		watched := true
 		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
 			TitleId: expectedTitle.ID,
 			Watched: &watched,
 		})
 		require.NoError(t, err)
-		respGroupSetWatchedBody := sendPatchApiCall(pathBody)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitle.ID, "Expected Id to be %s, got %s", expectedTitle.ID, respGroupSetWatchedBody.Id)
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected Watched to be true, got %v", respGroupSetWatchedBody.Watched)
 		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
@@ -553,7 +553,7 @@ func TestGroupTitles(t *testing.T) {
 		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty")
 	})
 
-	t.Run("Set watchedAt field from a title group with watched already set as true successfully", func(t *testing.T) {
+	t.Run("Set watchedAt field from a title group with watched already set as true as a group owner successfully", func(t *testing.T) {
 		testDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
 			TitleId: expectedTitle.ID,
@@ -562,7 +562,7 @@ func TestGroupTitles(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		respGroupSetWatchedBody := sendPatchApiCall(pathBody)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitle.ID, "Expected Id to be %s, got %s", expectedTitle.ID, respGroupSetWatchedBody.Id)
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected Watched to be true, got %v", respGroupSetWatchedBody.Watched)
 		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
@@ -591,7 +591,7 @@ func TestGroupTitles(t *testing.T) {
 			Watched: &watched,
 		})
 		require.NoError(t, err)
-		respGroupSetWatchedBody := sendPatchApiCall(pathBody)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitle.ID, "Expected Id to be %s, got %s", expectedTitle.ID, respGroupSetWatchedBody.Id)
 		require.False(t, respGroupSetWatchedBody.Watched, "Expected Watched to be false, got %v", respGroupSetWatchedBody.Watched)
 		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
@@ -648,7 +648,100 @@ func TestGroupTitles(t *testing.T) {
 		=========================================================================
 	*/
 
-	// TODO
+	t.Run("Set title from a group as watched with watchedAt empty not being the group owner successfully", func(t *testing.T) {
+		watched := true
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitleTwo.ID,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody, tokenUserTwo)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitleTwo.ID, "Expected Id to be %s, got %s", expectedTitleTwo.ID, respGroupSetWatchedBody.Id)
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected Watched to be true, got %v", respGroupSetWatchedBody.Watched)
+		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
+		require.Empty(t, respGroupSetWatchedBody.WatchedAt, "Expected WatchedAt to be empty when just setting watched: true")
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
+
+		var titleToassert mongodb.GroupTitleDb
+		for _, title := range groupDb.Titles {
+			if title.Id == expectedTitleTwo.ID {
+				titleToassert = title
+			}
+		}
+		require.NotEmpty(t, titleToassert, "Expected title to be in group titles db")
+		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true")
+		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty")
+	})
+
+	t.Run("Set watchedAt field from a title group with watched already set as true not being the group owner successfully", func(t *testing.T) {
+		testDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitleTwo.ID,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate,
+			},
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := sendPatchApiCall(pathBody, tokenUserTwo)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTitleTwo.ID, "Expected Id to be %s, got %s", expectedTitleTwo.ID, respGroupSetWatchedBody.Id)
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected Watched to be true, got %v", respGroupSetWatchedBody.Watched)
+		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
+		require.Equal(t, respGroupSetWatchedBody.WatchedAt, &testDate, "Expected WatchedAt to be empty when just setting watched: true")
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
+
+		var titleToassert mongodb.GroupTitleDb
+		for _, title := range groupDb.Titles {
+			if title.Id == expectedTitleTwo.ID {
+				titleToassert = title
+			}
+		}
+		require.NotEmpty(t, titleToassert, "Expected title %s to be in group titles db", titleToassert.Id)
+		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true, got: %v", titleToassert.Watched)
+		require.Equal(t, &testDate, titleToassert.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleToassert.WatchedAt)
+	})
+
+	/*
+		=================== [PATCH - Watched] TEST USER NOT FROM GROUP ======
+		- Test a user not from goup to set watched titles
+		- Titles in group after tests: 2
+		=========================================================================
+	*/
+
+	t.Run("Set a title group as watched not being from the group should return 404", func(t *testing.T) {
+		testDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitle.ID,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate,
+			},
+		})
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPatch,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			bytes.NewBuffer(pathBody),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserNotInGroup)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupSetWatched, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupSetWatched.Body.Close()
+		require.Equal(t, http.StatusNotFound, respGroupSetWatched.StatusCode)
+
+		var respGroupSetWatchedBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&respGroupSetWatchedBody))
+		require.Contains(t, fmt.Sprintf("Group with id %s not found", group.Id), respGroupSetWatchedBody.Message)
+	})
 
 	/*
 		=================== [DELETE] TEST OWNER USER ============================
