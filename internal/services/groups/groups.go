@@ -223,5 +223,5 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 		return ErrTitleNotInGroup
 	}
 
-	return db.RemoveTitleFromGroup(ctx, groupId, titleId)
+	return db.RemoveTitleFromGroup(ctx, groupId, titleId, userId)
 }

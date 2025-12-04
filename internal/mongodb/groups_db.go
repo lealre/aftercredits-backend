@@ -248,12 +248,12 @@ func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, title
 	return nil, ErrRecordNotFound
 }
 
-func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId string, titleId string) error {
+func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
 	coll := db.Collection(GroupsCollection)
 
 	result, err := coll.UpdateOne(
 		ctx,
-		bson.M{"_id": groupId},
+		bson.M{"_id": groupId, "users": bson.M{"$in": []string{userId}}},
 		bson.M{"$pull": bson.M{"titles": bson.M{"titleId": titleId}}},
 	)
 	if err != nil {

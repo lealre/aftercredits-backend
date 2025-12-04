@@ -186,19 +186,12 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupId := req.GroupId
-	groupDb, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
-	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-			return
-		}
+	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		return
+	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
-		return
-	}
-
-	if groupDb.OwnerId != currentUser.Id {
-		respondWithForbidden(w)
 		return
 	}
 
@@ -261,19 +254,12 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	groupDb, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
-	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-			return
-		}
+	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		return
+	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
-		return
-	}
-
-	if groupDb.OwnerId != currentUser.Id {
-		respondWithForbidden(w)
 		return
 	}
 
@@ -326,19 +312,12 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	groupDb, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
-	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-			return
-		}
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
+	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
-	}
-
-	if groupDb.OwnerId != currentUser.Id {
-		respondWithForbidden(w)
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "An unexpected error occurred")
 		return
 	}
 
@@ -351,7 +330,7 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId, currentUser.Id)
+	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if err != nil {
 		if errors.Is(err, groups.ErrTitleNotInGroup) {
 			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
