@@ -209,43 +209,13 @@ func TestGroupTitles(t *testing.T) {
 	newGroup := groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}
-	jsonData, err := json.Marshal(newGroup)
-	require.NoError(t, err)
-	req, err := http.NewRequest(http.MethodPost,
-		testServer.URL+"/groups",
-		bytes.NewBuffer(jsonData),
-	)
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+tokenUserOne)
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{}
-	respGroup, err := client.Do(req)
-
-	require.NoError(t, err)
-	defer respGroup.Body.Close()
-	require.Equal(t, http.StatusCreated, respGroup.StatusCode)
-
-	var group groups.GroupResponse
-	require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&group))
+	group := createGroup(t, newGroup, tokenUserOne)
 
 	// Add user Two to group owned by user One
-	addUserToGroup := groups.AddUserToGroupRequest{
+	userToGroup := groups.AddUserToGroupRequest{
 		UserId: userTwo.Id,
 	}
-	jsonData, err = json.Marshal(addUserToGroup)
-	require.NoError(t, err)
-	req, err = http.NewRequest(http.MethodPost,
-		testServer.URL+"/groups/"+group.Id+"/users",
-		bytes.NewBuffer(jsonData),
-	)
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+tokenUserOne)
-	req.Header.Set("Content-Type", "application/json")
-	client = &http.Client{}
-	respGroup, err = client.Do(req)
-	require.NoError(t, err)
-	defer respGroup.Body.Close()
-	require.Equal(t, http.StatusOK, respGroup.StatusCode)
+	addUserToGroup(t, userToGroup, group.Id, tokenUserOne)
 
 	// User that is not part of the group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
