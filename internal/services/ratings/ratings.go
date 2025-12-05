@@ -5,6 +5,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([]Rating, error) {
@@ -55,13 +56,34 @@ func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (Ti
 	return titleRatingsMap, nil
 }
 
-func AddRating(db *mongodb.DB, ctx context.Context, rating Rating) error {
+func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+	// Check if rating already exists
+	_, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
+	if err == nil {
+		// Rating already exists
+		return Rating{}, ErrRatingAlreadyExists
+	}
+	if err != mongodb.ErrRecordNotFound {
+		// Some other error occurred
+		return Rating{}, err
+	}
+
 	ratingDb := mongodb.RatingDb{
 		TitleId: rating.TitleId,
-		UserId:  rating.UserId,
+		UserId:  userId,
 		Note:    rating.Note,
 	}
-	return db.AddRating(ctx, ratingDb)
+
+	ratingDb, err = db.AddRating(ctx, ratingDb)
+	if err != nil {
+		// Fallback: check for duplicate key error in case the check above missed it
+		if mongo.IsDuplicateKeyError(err) {
+			return Rating{}, ErrRatingAlreadyExists
+		}
+		return Rating{}, err
+	}
+
+	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
 func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) error {

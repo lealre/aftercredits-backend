@@ -74,6 +74,29 @@ func (db *DB) GroupExists(ctx context.Context, groupId, userId string) (bool, er
 	return true, nil
 }
 
+func (db *DB) GroupContainsTitle(ctx context.Context, groupId, titleId, userId string) (bool, error) {
+	coll := db.Collection(GroupsCollection)
+
+	// Only ask MongoDB for the _id field
+	opts := options.FindOne().SetProjection(bson.M{"_id": 1})
+
+	err := coll.FindOne(
+		ctx,
+		bson.M{
+			"_id":            groupId,
+			"users":          bson.M{"$in": []string{userId}},
+			"titles.titleId": titleId,
+		},
+		opts).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (db *DB) GetGroupById(ctx context.Context, groupId, userId string) (GroupDb, error) {
 	coll := db.Collection(GroupsCollection)
 

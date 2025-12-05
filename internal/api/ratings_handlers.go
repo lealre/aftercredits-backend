@@ -10,7 +10,6 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func (api *API) GetRatingById(w http.ResponseWriter, r *http.Request) {
@@ -42,38 +41,34 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentuser := auth.GetUserFromContext(r.Context())
 
-	var req ratings.Rating
+	var req ratings.NewRating
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
 		return
 	}
 
-	if currentuser.Id != req.UserId {
-		respondWithForbidden(w)
+	if ok, err := api.Db.GroupContainsTitle(r.Context(), req.GroupId, req.TitleId, currentuser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", req.GroupId, req.TitleId))
 		return
-	}
-
-	if ok, err := api.Db.TitleExists(r.Context(), req.TitleId); err != nil {
+	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
-		return
-	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", req.TitleId))
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	if err := ratings.AddRating(api.Db, r.Context(), req); err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			respondWithError(w, http.StatusBadRequest, "Rating already exists for this user and title")
+	newRating, err := ratings.AddRating(api.Db, r.Context(), req, currentuser.Id)
+	if err != nil {
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while adding rating")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	respondWithJSON(w, http.StatusCreated, req)
+	respondWithJSON(w, http.StatusCreated, newRating)
 }
 
 func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
