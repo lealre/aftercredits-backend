@@ -86,10 +86,18 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId str
 	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) error {
+func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
 	ratingDb := mongodb.RatingDb{
 		Id:   ratingId,
 		Note: updateReq.Note,
 	}
-	return db.UpdateRating(ctx, ratingDb, userId)
+
+	updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Rating{}, ErrRatingNotFound
+		}
+		return Rating{}, err
+	}
+	return MapDbRatingDbToApiRating(updatedRatingDb), nil
 }

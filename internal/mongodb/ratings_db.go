@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // ----- Types for the database -----
@@ -104,8 +105,7 @@ func (db *DB) DeleteRatingsByTitleId(ctx context.Context, titleId string) (int64
 	return result.DeletedCount, nil
 }
 
-// UpdateRating updates only the Note field of a rating
-func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string) error {
+func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string) (RatingDb, error) {
 	coll := db.Collection(RatingsCollection)
 
 	filter := bson.M{"_id": ratingDb.Id, "userId": userId}
@@ -118,16 +118,20 @@ func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string
 		},
 	}
 
-	result, err := coll.UpdateOne(ctx, filter, update)
+	// Use FindOneAndUpdate to get the updated document
+	opts := options.FindOneAndUpdate()
+	opts.SetReturnDocument(options.After) // Return the document after update
+
+	var updatedRating RatingDb
+	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedRating)
 	if err != nil {
-		return err
+		if err == mongo.ErrNoDocuments {
+			return RatingDb{}, ErrRecordNotFound
+		}
+		return RatingDb{}, err
 	}
 
-	if result.MatchedCount == 0 {
-		return ErrRecordNotFound
-	}
-
-	return nil
+	return updatedRating, nil
 }
 
 func (db *DB) GetRatings(ctx context.Context, args ...any) ([]RatingDb, error) {

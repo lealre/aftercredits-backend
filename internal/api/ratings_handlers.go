@@ -93,9 +93,10 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ratings.UpdateRating(api.Db, r.Context(), ratingId, currentuser.Id, updateReq); err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
+	updatedRating, err := ratings.UpdateRating(api.Db, r.Context(), ratingId, currentuser.Id, updateReq)
+	if err != nil {
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -103,7 +104,7 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Rating updated successfully"})
+	respondWithJSON(w, http.StatusOK, updatedRating)
 }
 
 func (api *API) GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
