@@ -41,3 +41,21 @@ func addRating(t *testing.T, newRating ratings.NewRating, innerToken string) *ht
 
 	return resp
 }
+
+func updateRating(t *testing.T, ratingUppdate ratings.UpdateRatingRequest, ratingId, innerToken string) *http.Response {
+	jsonData, err := json.Marshal(ratingUppdate)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPatch,
+		testServer.URL+"/ratings/"+ratingId,
+		bytes.NewBuffer(jsonData),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+innerToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	return resp
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/services/groups"
@@ -13,10 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAddRating(t *testing.T) {
+func TestRatings(t *testing.T) {
 	resetDB(t)
 
-	// ============ TEST SETUP ============
+	// ===================================
+	// 		TEST SETUP
+	// ===================================
 
 	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
@@ -33,11 +36,18 @@ func TestAddRating(t *testing.T) {
 	titles := loadTitlesFixture(t)
 	seedTitles(t, titles)
 	expectedTitle := titles[0]
-	titleNotIngroup := titles[1]
+	expectedTitleToUpdate := titles[1]
+	titleNotIngroup := titles[2]
 
 	// Add expected title to group
 	addTitleToGroup(t, groups.AddTitleToGroupRequest{
 		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// Add expected title to update to group
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitleToUpdate.ID),
 		GroupId: group.Id,
 	}, tokenOwnerUser)
 
@@ -46,6 +56,10 @@ func TestAddRating(t *testing.T) {
 		Username: "othertestname",
 		Password: "testpass",
 	})
+
+	// ===================================
+	// 		TEST ADDING RATINGS
+	// ===================================
 
 	t.Run("Adding a rating sucessfully", func(t *testing.T) {
 		expectedNote := float32(5)
@@ -125,6 +139,56 @@ func TestAddRating(t *testing.T) {
 		var respNewRatingBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respNewRating.Body).Decode(&respNewRatingBody))
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", newRating.GroupId, newRating.TitleId), respNewRatingBody.ErrorMessage)
+	})
+
+	// ===================================
+	// 		TEST UPDATE RATINGS
+	// ===================================
+
+	// Add a rating to the designed title in test setup to be updated
+	expectedNote := float32(5)
+	newRating := ratings.NewRating{
+		GroupId: group.Id,
+		TitleId: expectedTitleToUpdate.ID,
+		Note:    expectedNote,
+	}
+
+	respNewRating := addRating(t, newRating, tokenOwnerUser)
+	defer respNewRating.Body.Close()
+	require.Equal(t, http.StatusCreated, respNewRating.StatusCode)
+	var ratingToUpdate ratings.Rating
+	require.NoError(t, json.NewDecoder(respNewRating.Body).Decode(&ratingToUpdate))
+
+	// Add delay to ensure UpdatedAt will be different from CreatedAt
+	time.Sleep(1 * time.Second)
+
+	t.Run("Update a rating sucessfully", func(t *testing.T) {
+		expectedNewNote := float32(10)
+		updateRequestRating := ratings.UpdateRatingRequest{
+			Note: expectedNewNote,
+		}
+
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdate.Id, tokenOwnerUser)
+		defer respUpdatedRating.Body.Close()
+		require.Equal(t, http.StatusOK, respUpdatedRating.StatusCode)
+
+		var respUpdatedRatingBody ratings.Rating
+		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+		require.Equal(t, user.Id, respUpdatedRatingBody.UserId)
+		require.Equal(t, expectedTitleToUpdate.ID, respUpdatedRatingBody.TitleId)
+		require.Equal(t, expectedNewNote, respUpdatedRatingBody.Note)
+		require.NotEmpty(t, respUpdatedRatingBody.CreatedAt)
+		require.NotEqual(t, respUpdatedRatingBody.CreatedAt, respUpdatedRatingBody.UpdatedAt)
+		require.True(t, respUpdatedRatingBody.UpdatedAt.After(respUpdatedRatingBody.CreatedAt))
+
+		// Database assertion
+		ratingDb := getRating(t, respUpdatedRatingBody.Id)
+		require.Equal(t, user.Id, ratingDb.UserId)
+		require.Equal(t, expectedTitleToUpdate.ID, ratingDb.TitleId)
+		require.Equal(t, expectedNewNote, ratingDb.Note)
+		require.NotEmpty(t, ratingDb.CreatedAt)
+		require.NotEqual(t, ratingDb.CreatedAt, ratingDb.UpdatedAt)
+		require.True(t, ratingDb.UpdatedAt.After(ratingDb.CreatedAt))
 	})
 
 }
