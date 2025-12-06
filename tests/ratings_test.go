@@ -141,6 +141,26 @@ func TestRatings(t *testing.T) {
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", newRating.GroupId, newRating.TitleId), respNewRatingBody.ErrorMessage)
 	})
 
+	t.Run("Add a rating with notes not between 0 and 10 should return 400", func(t *testing.T) {
+		expectedNotes := []float32{-5, 11}
+
+		for _, note := range expectedNotes {
+			newRating := ratings.NewRating{
+				GroupId: group.Id,
+				TitleId: expectedTitle.ID,
+				Note:    note,
+			}
+
+			respUpdatedRating := addRating(t, newRating, tokenOwnerUser)
+			defer respUpdatedRating.Body.Close()
+			require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
+
+			var respUpdatedRatingBody api.ErrorResponse
+			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidNoteValue.Error()[1:])
+		}
+	})
+
 	// ===================================
 	// 		TEST UPDATE RATINGS
 	// ===================================
@@ -223,7 +243,6 @@ func TestRatings(t *testing.T) {
 			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
 			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidNoteValue.Error()[1:])
 		}
-
 	})
 
 }
