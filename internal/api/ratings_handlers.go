@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,8 +21,7 @@ func (api *API) GetRatingById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	rating, err := ratings.GetRatingById(api.Db, ctx, ratingId, currentuser.Id)
+	rating, err := ratings.GetRatingById(api.Db, r.Context(), ratingId, currentuser.Id)
 	if err != nil {
 		if err == mongodb.ErrRecordNotFound {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
@@ -45,6 +43,11 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
+		return
+	}
+
+	if req.Note < 0 || req.Note > 10 {
+		respondWithError(w, http.StatusBadRequest, "Note must be between 0 and 10")
 		return
 	}
 
@@ -105,31 +108,4 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, updatedRating)
-}
-
-func (api *API) GetRatingsBatchByTitleIDs(w http.ResponseWriter, r *http.Request) {
-	logger := logx.FromContext(r.Context())
-	currentuser := auth.GetUserFromContext(r.Context())
-
-	var req ratings.GetRatingsBatchRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
-		return
-	}
-
-	if currentuser.Role != mongodb.RoleAdmin {
-		respondWithForbidden(w)
-		return
-	}
-
-	titlesRatingsMap, err := ratings.GetRatingsBatch(api.Db, r.Context(), req.Titles)
-	if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error getting ratings from titles list")
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, titlesRatingsMap)
-
 }
