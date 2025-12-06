@@ -191,4 +191,39 @@ func TestRatings(t *testing.T) {
 		require.True(t, ratingDb.UpdatedAt.After(ratingDb.CreatedAt))
 	})
 
+	t.Run("Update a rating from other user should return 404", func(t *testing.T) {
+		expectedNewNote := float32(10)
+		updateRequestRating := ratings.UpdateRatingRequest{
+			Note: expectedNewNote,
+		}
+
+		// This user is not the owner of the rating. Here we are testing only the rating permissions, unrelated to the group.
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdate.Id, tokenUserNotInGroup)
+		defer respUpdatedRating.Body.Close()
+		require.Equal(t, http.StatusNotFound, respUpdatedRating.StatusCode)
+
+		var respUpdatedRatingBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrRatingNotFound.Error()[1:])
+	})
+
+	t.Run("Update a rating with notes not between 0 and 10 should return 400", func(t *testing.T) {
+		expectedNotes := []float32{-5, 11}
+
+		for _, note := range expectedNotes {
+			updateRequestRating := ratings.UpdateRatingRequest{
+				Note: note,
+			}
+
+			respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdate.Id, tokenOwnerUser)
+			defer respUpdatedRating.Body.Close()
+			require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
+
+			var respUpdatedRatingBody api.ErrorResponse
+			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidNoteValue.Error()[1:])
+		}
+
+	})
+
 }
