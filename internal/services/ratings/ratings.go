@@ -57,6 +57,11 @@ func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (Ti
 }
 
 func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+
+	if rating.Note < 0 || rating.Note > 10 {
+		return Rating{}, ErrInvalidNoteValue
+	}
+
 	// Check if rating already exists
 	_, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
 	if err == nil {
@@ -87,6 +92,11 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId str
 }
 
 func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+
+	if updateReq.Note < 0 || updateReq.Note > 10 {
+		return Rating{}, ErrInvalidNoteValue
+	}
+
 	ratingDb := mongodb.RatingDb{
 		Id:   ratingId,
 		Note: updateReq.Note,

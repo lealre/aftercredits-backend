@@ -46,11 +46,6 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Note < 0 || req.Note > 10 {
-		respondWithError(w, http.StatusBadRequest, "Note must be between 0 and 10")
-		return
-	}
-
 	if ok, err := api.Db.GroupContainsTitle(r.Context(), req.GroupId, req.TitleId, currentuser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", req.GroupId, req.TitleId))
 		return
@@ -88,11 +83,6 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
-		return
-	}
-
-	if updateReq.Note < 0 || updateReq.Note > 10 {
-		respondWithError(w, http.StatusBadRequest, "Note must be between 0 and 10")
 		return
 	}
 
