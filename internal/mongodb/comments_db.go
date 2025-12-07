@@ -21,10 +21,10 @@ type CommentDb struct {
 
 // ----- Methods for the database -----
 
-func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId, userId string) ([]CommentDb, error) {
+func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId string, usersFromGroup []string) ([]CommentDb, error) {
 	coll := db.Collection(CommentsCollection)
 
-	filter := bson.M{"titleId": titleId, "userId": userId}
+	filter := bson.M{"titleId": titleId, "userId": bson.M{"$in": usersFromGroup}}
 
 	cursor, err := coll.Find(ctx, filter)
 	if err != nil {
@@ -35,10 +35,6 @@ func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId, userId string) 
 	var comments []CommentDb
 	if err = cursor.All(ctx, &comments); err != nil {
 		return []CommentDb{}, err
-	}
-
-	if comments == nil {
-		return []CommentDb{}, ErrRecordNotFound
 	}
 
 	return comments, nil

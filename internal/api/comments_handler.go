@@ -11,9 +11,15 @@ import (
 	"github.com/lealre/movies-backend/internal/services/comments"
 )
 
-func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetCommentsByTitleIDFromGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group Id is required")
+		return
+	}
 
 	titleId := r.PathValue("titleId")
 	if titleId == "" {
@@ -21,10 +27,21 @@ func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), titleId, currentUser.Id)
+	// This checks if the group exists, if the title is in the group and if the user is in the group
+	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	if !ok && err == nil {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusOK, "Error while seraching comments in Database")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 

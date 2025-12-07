@@ -8,12 +8,21 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, titleId, userId string) ([]Comment, error) {
-	commentsDb, err := db.GetCommentsByTitleId(ctx, titleId, userId)
+/*
+* Gets all comments from a title in a specific group, including all users that are in the group.
+* Assumes that the caller already checked that:
+* - The group exists
+* - The title is in the group
+* - The user is in the group
+ */
+func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) ([]Comment, error) {
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			return []Comment{}, nil
-		}
+		return []Comment{}, err
+	}
+
+	commentsDb, err := db.GetCommentsByTitleId(ctx, titleId, group.Users)
+	if err != nil {
 		return []Comment{}, err
 	}
 
