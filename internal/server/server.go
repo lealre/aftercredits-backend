@@ -45,8 +45,8 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("PATCH /ratings/{id}", a.UpdateRating)
 
 	mux.HandleFunc("GET /comments/{titleId}", a.GetCommentsByTitleID)
-	mux.HandleFunc("PATCH /comments/{id}", a.UpdateComment)
 	mux.HandleFunc("POST /comments", a.AddComment)
+	mux.HandleFunc("PATCH /comments/{id}", a.UpdateComment)
 	mux.HandleFunc("DELETE /comments/{id}", a.DeleteComment)
 
 	handler := AuthMiddleware(*a.Secret, dbClient)(mux)

@@ -48,21 +48,11 @@ func (db *DB) AddComment(ctx context.Context, comment CommentDb) (CommentDb, err
 	coll := db.Collection(CommentsCollection)
 
 	comment.Id = primitive.NewObjectID().Hex()
-
 	now := time.Now()
 	comment.CreatedAt = now
 	comment.UpdatedAt = now
 
-	doc := map[string]any{
-		"_id":       comment.Id,
-		"titleId":   comment.TitleId,
-		"userId":    comment.UserId,
-		"comment":   comment.Comment,
-		"createdAt": comment.CreatedAt,
-		"updatedAt": comment.UpdatedAt,
-	}
-
-	_, err := coll.InsertOne(ctx, doc)
+	_, err := coll.InsertOne(ctx, comment)
 	if err != nil {
 		return CommentDb{}, err
 	}

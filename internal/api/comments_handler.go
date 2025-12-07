@@ -9,7 +9,6 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/comments"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
@@ -67,31 +66,26 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
 
-	var comment comments.Comment
-	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
+	var newComment comments.NewComment
+	if err := json.NewDecoder(r.Body).Decode(&newComment); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
 		return
 	}
 
-	if comment.UserId != currentUser.Id {
-		respondWithForbidden(w)
-		return
-	}
-
-	if ok, err := api.Db.TitleExists(r.Context(), comment.TitleId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", comment.TitleId))
+	if ok, err := api.Db.GroupContainsTitle(r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId))
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	createdComment, err := comments.AddComment(api.Db, r.Context(), comment)
+	createdComment, err := comments.AddComment(api.Db, r.Context(), newComment, currentUser.Id)
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			respondWithError(w, http.StatusBadRequest, "Comment already exists for this user and title")
+		if statusCode, ok := comments.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -111,6 +105,8 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Comment id is required")
 		return
 	}
+
+	// TODO: Add authorization
 
 	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)

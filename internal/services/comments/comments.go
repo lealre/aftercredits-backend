@@ -2,8 +2,10 @@ package comments
 
 import (
 	"context"
+	"strings"
 
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, titleId, userId string) ([]Comment, error) {
@@ -23,15 +25,22 @@ func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, titleId, userId s
 	return comments, nil
 }
 
-func AddComment(db *mongodb.DB, ctx context.Context, comment Comment) (Comment, error) {
+func AddComment(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string) (Comment, error) {
+	if strings.TrimSpace(newComment.Comment) == "" {
+		return Comment{}, ErrCommentIsNull
+	}
+
 	commentDb := mongodb.CommentDb{
-		TitleId: comment.TitleId,
-		UserId:  comment.UserId,
-		Comment: comment.Comment,
+		TitleId: newComment.TitleId,
+		UserId:  userId,
+		Comment: newComment.Comment,
 	}
 
 	commentDb, err := db.AddComment(ctx, commentDb)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return Comment{}, ErrCommentAlreadyExists
+		}
 		return Comment{}, err
 	}
 

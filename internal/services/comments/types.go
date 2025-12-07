@@ -11,6 +11,12 @@ type Comment struct {
 	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
 }
 
+type NewComment struct {
+	TitleId string `json:"titleId" bson:"titleId"`
+	GroupId string `json:"userId" bson:"userId"`
+	Comment string `json:"comment" bson:"comment"`
+}
+
 type AllCommentsFromTitle struct {
 	Comments []Comment `json:"comments"`
 }
