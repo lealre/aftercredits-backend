@@ -31,7 +31,22 @@ func addComment(t *testing.T, newComment comments.NewComment, innerToken string)
 	return resp
 }
 
-func getComment(t *testing.T, commentId string) mongodb.CommentDb {
+func getCommentsFromApi(t *testing.T, groupId, titleId, innerToken string) *http.Response {
+	req, err := http.NewRequest(http.MethodGet,
+		testServer.URL+"/groups/"+groupId+"/comments/"+titleId+"/comments",
+		nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+innerToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	return resp
+}
+
+func getCommentFromDB(t *testing.T, commentId string) mongodb.CommentDb {
 	ctx := context.Background()
 	db := testClient.Database(TEST_DB_NAME)
 	coll := db.Collection(mongodb.CommentsCollection)
@@ -41,4 +56,20 @@ func getComment(t *testing.T, commentId string) mongodb.CommentDb {
 	require.NoError(t, err, "error querying a comment from db")
 
 	return comment
+}
+
+func getCommentsFromDB(t *testing.T, titleId string) []mongodb.CommentDb {
+	ctx := context.Background()
+	db := testClient.Database(TEST_DB_NAME)
+	coll := db.Collection(mongodb.CommentsCollection)
+
+	var comments []mongodb.CommentDb
+	cursor, err := coll.Find(ctx, bson.M{"titleId": titleId})
+	require.NoError(t, err, "error querying comments from db")
+	defer cursor.Close(ctx)
+
+	err = cursor.All(ctx, &comments)
+	require.NoError(t, err, "error decoding comments from db")
+
+	return comments
 }

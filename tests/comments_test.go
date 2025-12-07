@@ -16,9 +16,9 @@ import (
 func TestAddComment(t *testing.T) {
 	resetDB(t)
 
-	// ===================================
+	// ======================================================================
 	// 		TEST SETUP
-	// ===================================
+	// ======================================================================
 
 	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
@@ -35,8 +35,7 @@ func TestAddComment(t *testing.T) {
 	titles := loadTitlesFixture(t)
 	seedTitles(t, titles)
 	expectedTitle := titles[0]
-	expectedTitleToUpdate := titles[1]
-	titleNotIngroup := titles[2]
+	titleNotIngroup := titles[1]
 
 	// Add expected title to group
 	addTitleToGroup(t, groups.AddTitleToGroupRequest{
@@ -44,13 +43,7 @@ func TestAddComment(t *testing.T) {
 		GroupId: group.Id,
 	}, tokenOwnerUser)
 
-	// Add expected title to update to group
-	addTitleToGroup(t, groups.AddTitleToGroupRequest{
-		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitleToUpdate.ID),
-		GroupId: group.Id,
-	}, tokenOwnerUser)
-
-	// Users not in group
+	// User that is not in the group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
 		Username: "othertestname",
 		Password: "testpass",
@@ -59,9 +52,9 @@ func TestAddComment(t *testing.T) {
 	// Expected comment to be used in tests
 	expectedComment := "This is a test comment"
 
-	// ===================================
+	// ======================================================================
 	// 		TEST ADDING COMMENTS
-	// ===================================
+	// ======================================================================
 
 	t.Run("Adding a comment sucessfully", func(t *testing.T) {
 
@@ -84,7 +77,7 @@ func TestAddComment(t *testing.T) {
 		require.Equal(t, respNewCommentBody.CreatedAt, respNewCommentBody.UpdatedAt)
 
 		// Database assertion
-		commentDb := getComment(t, respNewCommentBody.Id)
+		commentDb := getCommentFromDB(t, respNewCommentBody.Id)
 		require.Equal(t, user.Id, commentDb.UserId)
 		require.Equal(t, expectedTitle.ID, commentDb.TitleId)
 		require.Equal(t, expectedComment, commentDb.Comment)
@@ -153,5 +146,112 @@ func TestAddComment(t *testing.T) {
 		var respNewCommentBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId), respNewCommentBody.ErrorMessage)
+	})
+}
+
+func TestGetComments(t *testing.T) {
+	resetDB(t)
+
+	// ======================================================================
+	// 		TEST SETUP
+	// ======================================================================
+
+	// Create a new user
+	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add titles to database
+	titles := loadTitlesFixture(t)
+	seedTitles(t, titles)
+	expectedTitle := titles[0]
+	titleNotIngroup := titles[1]
+
+	// Add expected title to group
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// User that is not in the group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// ======================================================================
+	// 		TEST GETTING COMMENTS
+	// ======================================================================
+
+	t.Run("Getting comments from a title with no comments should return 200 and an empty array", func(t *testing.T) {
+		respComments := getCommentsFromApi(t, group.Id, expectedTitle.ID, tokenOwnerUser)
+		defer respComments.Body.Close()
+		require.Equal(t, http.StatusOK, respComments.StatusCode)
+
+		var respGetCommentsBody comments.AllCommentsFromTitle
+		require.NoError(t, json.NewDecoder(respComments.Body).Decode(&respGetCommentsBody))
+		require.Equal(t, 0, len(respGetCommentsBody.Comments))
+
+		// Database assertion
+		commentDb := getCommentsFromDB(t, expectedTitle.ID)
+		require.Equal(t, 0, len(commentDb))
+	})
+
+	// Add comment to title as group owner
+	expectedComment := "This is a test comment"
+	addComment(t, comments.NewComment{
+		GroupId: group.Id,
+		TitleId: expectedTitle.ID,
+		Comment: expectedComment,
+	}, tokenOwnerUser)
+
+	t.Run("Getting comments from a title sucessfully", func(t *testing.T) {
+		respComments := getCommentsFromApi(t, group.Id, expectedTitle.ID, tokenOwnerUser)
+		defer respComments.Body.Close()
+		require.Equal(t, http.StatusOK, respComments.StatusCode)
+
+		var respGetCommentsBody comments.AllCommentsFromTitle
+		require.NoError(t, json.NewDecoder(respComments.Body).Decode(&respGetCommentsBody))
+		require.Equal(t, 1, len(respGetCommentsBody.Comments))
+		require.Equal(t, user.Id, respGetCommentsBody.Comments[0].UserId)
+		require.Equal(t, expectedTitle.ID, respGetCommentsBody.Comments[0].TitleId)
+		require.Equal(t, expectedComment, respGetCommentsBody.Comments[0].Comment)
+		require.NotEmpty(t, respGetCommentsBody.Comments[0].CreatedAt)
+		require.Equal(t, respGetCommentsBody.Comments[0].CreatedAt, respGetCommentsBody.Comments[0].UpdatedAt)
+
+		// Database assertion
+		commentDb := getCommentsFromDB(t, expectedTitle.ID)
+		require.Equal(t, 1, len(commentDb))
+		require.Equal(t, user.Id, commentDb[0].UserId)
+		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
+		require.Equal(t, expectedComment, commentDb[0].Comment)
+		require.NotEmpty(t, commentDb[0].CreatedAt)
+		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
+	})
+
+	t.Run("Getting comments from a title as user that is not in the group should return 404", func(t *testing.T) {
+		respComments := getCommentsFromApi(t, group.Id, expectedTitle.ID, tokenUserNotInGroup)
+		defer respComments.Body.Close()
+		require.Equal(t, http.StatusNotFound, respComments.StatusCode)
+
+		var respGetCommentsBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respComments.Body).Decode(&respGetCommentsBody))
+		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", group.Id, expectedTitle.ID), respGetCommentsBody.ErrorMessage)
+	})
+
+	t.Run("Getting comments from a title that is not in the group should return 404", func(t *testing.T) {
+		respComments := getCommentsFromApi(t, group.Id, titleNotIngroup.ID, tokenOwnerUser)
+		defer respComments.Body.Close()
+		require.Equal(t, http.StatusNotFound, respComments.StatusCode)
+
+		var respGetCommentsBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respComments.Body).Decode(&respGetCommentsBody))
+		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", group.Id, titleNotIngroup.ID), respGetCommentsBody.ErrorMessage)
 	})
 }
