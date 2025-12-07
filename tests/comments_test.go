@@ -255,3 +255,100 @@ func TestGetComments(t *testing.T) {
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", group.Id, titleNotIngroup.ID), respGetCommentsBody.ErrorMessage)
 	})
 }
+
+func TestUpdateComment(t *testing.T) {
+	resetDB(t)
+
+	// ======================================================================
+	// 		TEST SETUP
+	// ======================================================================
+
+	// Create a new user
+	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add titles to database
+	titles := loadTitlesFixture(t)
+	seedTitles(t, titles)
+	expectedTitle := titles[0]
+	// titleNotIngroup := titles[1]
+
+	// Add expected title to group
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// User that is not in the group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// Add comment to title as group owner
+	comment := addComment(t, comments.NewComment{
+		GroupId: group.Id,
+		TitleId: expectedTitle.ID,
+		Comment: "This is a test comment",
+	}, tokenOwnerUser)
+	defer comment.Body.Close()
+	require.Equal(t, http.StatusCreated, comment.StatusCode)
+	var commentCreated comments.Comment
+	require.NoError(t, json.NewDecoder(comment.Body).Decode(&commentCreated))
+
+	// ======================================================================
+	// 		TEST UPDATING COMMENTS
+	// ======================================================================
+
+	t.Run("Updating a comment sucessfully", func(t *testing.T) {
+		expectedUpdatedComment := "This is a test comment updated"
+		respUpdatedComment := updateCommentFromApi(t, group.Id, expectedTitle.ID, commentCreated.Id, expectedUpdatedComment, tokenOwnerUser)
+		defer respUpdatedComment.Body.Close()
+		require.Equal(t, http.StatusOK, respUpdatedComment.StatusCode)
+
+		var respUpdatedCommentBody comments.Comment
+		require.NoError(t, json.NewDecoder(respUpdatedComment.Body).Decode(&respUpdatedCommentBody))
+		require.Equal(t, user.Id, respUpdatedCommentBody.UserId)
+		require.Equal(t, expectedTitle.ID, respUpdatedCommentBody.TitleId)
+		require.Equal(t, expectedUpdatedComment, respUpdatedCommentBody.Comment)
+		require.NotEmpty(t, respUpdatedCommentBody.CreatedAt)
+		require.NotEqual(t, respUpdatedCommentBody.CreatedAt, respUpdatedCommentBody.UpdatedAt)
+		require.True(t, respUpdatedCommentBody.UpdatedAt.After(respUpdatedCommentBody.CreatedAt))
+
+		// Database assertion
+		commentDb := getCommentFromDB(t, respUpdatedCommentBody.Id)
+		require.Equal(t, user.Id, commentDb.UserId)
+		require.Equal(t, expectedTitle.ID, commentDb.TitleId)
+		require.Equal(t, expectedUpdatedComment, commentDb.Comment)
+		require.NotEmpty(t, commentDb.CreatedAt)
+		require.NotEqual(t, commentDb.CreatedAt, commentDb.UpdatedAt)
+		require.True(t, commentDb.UpdatedAt.After(commentDb.CreatedAt))
+	})
+
+	t.Run("Updating a comment that is not from the user should return 404", func(t *testing.T) {
+		respUpdatedComment := updateCommentFromApi(t, group.Id, expectedTitle.ID, commentCreated.Id, "This is a test comment updated", tokenUserNotInGroup)
+		defer respUpdatedComment.Body.Close()
+		require.Equal(t, http.StatusNotFound, respUpdatedComment.StatusCode)
+
+		var respUpdatedCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respUpdatedComment.Body).Decode(&respUpdatedCommentBody))
+		require.Contains(t, respUpdatedCommentBody.ErrorMessage, fmt.Sprintf("Group %s do not have title %s or do not exist.", group.Id, expectedTitle.ID))
+	})
+
+	t.Run("Updating a comment with a empty comment should return 400", func(t *testing.T) {
+		respUpdatedComment := updateCommentFromApi(t, group.Id, expectedTitle.ID, commentCreated.Id, "   ", tokenOwnerUser)
+		defer respUpdatedComment.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respUpdatedComment.StatusCode)
+
+		var respUpdatedCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respUpdatedComment.Body).Decode(&respUpdatedCommentBody))
+		require.Contains(t, respUpdatedCommentBody.ErrorMessage, comments.ErrCommentIsNull.Error()[1:])
+	})
+}

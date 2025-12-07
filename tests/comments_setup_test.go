@@ -46,6 +46,26 @@ func getCommentsFromApi(t *testing.T, groupId, titleId, innerToken string) *http
 	return resp
 }
 
+func updateCommentFromApi(t *testing.T, groupId, titleId, commentId, comment, innerToken string) *http.Response {
+	jsonData, err := json.Marshal(comments.UpdateCommentRequest{
+		Comment: comment,
+	})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPatch,
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId+"/comments/"+commentId,
+		bytes.NewBuffer(jsonData),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+innerToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	return resp
+}
+
 func getCommentFromDB(t *testing.T, commentId string) mongodb.CommentDb {
 	ctx := context.Background()
 	db := testClient.Database(TEST_DB_NAME)
