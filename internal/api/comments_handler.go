@@ -7,7 +7,6 @@ import (
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/comments"
 )
 
@@ -52,7 +51,19 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
 
-	commentId := r.PathValue("id")
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	commentId := r.PathValue("commentId")
 	if commentId == "" {
 		respondWithError(w, http.StatusBadRequest, "Comment id is required")
 		return
@@ -65,17 +76,29 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := comments.UpdateComment(api.Db, r.Context(), commentId, currentUser.Id, updateReq); err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Comment with id %s not found", commentId))
-			return
-		}
+	// This checks if the group exists, if the title is in the group and if the user is in the group
+	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	if !ok && err == nil {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to update comment")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Comment updated successfully"})
+	updatedComment, err := comments.UpdateComment(api.Db, r.Context(), commentId, currentUser.Id, updateReq)
+	if err != nil {
+		if statusCode, ok := comments.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, updatedComment)
 
 }
 

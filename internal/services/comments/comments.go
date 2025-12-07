@@ -56,12 +56,23 @@ func AddComment(db *mongodb.DB, ctx context.Context, newComment NewComment, user
 	return MapDbCommentToApiComment(commentDb), nil
 }
 
-func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) error {
+func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
+	if strings.TrimSpace(updateReq.Comment) == "" {
+		return Comment{}, ErrCommentIsNull
+	}
+
 	commentDb := mongodb.CommentDb{
 		Id:      commentId,
 		Comment: updateReq.Comment,
 	}
-	return db.UpdateComment(ctx, commentDb, userId)
+	updatedCommentDb, err := db.UpdateComment(ctx, commentDb, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Comment{}, ErrCommentNotFound
+		}
+		return Comment{}, err
+	}
+	return MapDbCommentToApiComment(updatedCommentDb), nil
 }
 
 func DeleteComment(db *mongodb.DB, ctx context.Context, commentId, userId string) (int64, error) {

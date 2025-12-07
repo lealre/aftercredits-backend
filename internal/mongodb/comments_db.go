@@ -6,6 +6,8 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // ----- Types for the database -----
@@ -56,7 +58,7 @@ func (db *DB) AddComment(ctx context.Context, comment CommentDb) (CommentDb, err
 	return comment, nil
 }
 
-func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb, userId string) error {
+func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb, userId string) (CommentDb, error) {
 	coll := db.Collection(CommentsCollection)
 
 	filter := bson.M{"_id": commentDb.Id, "userId": userId}
@@ -69,16 +71,19 @@ func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb, userId str
 		},
 	}
 
-	result, err := coll.UpdateOne(ctx, filter, update)
+	// Use FindOneAndUpdate to get the updated document
+	opts := options.FindOneAndUpdate()
+	opts.SetReturnDocument(options.After) // Return the document after update
+
+	var updatedComment CommentDb
+	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedComment)
 	if err != nil {
-		return err
+		if err == mongo.ErrNoDocuments {
+			return CommentDb{}, ErrRecordNotFound
+		}
+		return CommentDb{}, err
 	}
-
-	if result.MatchedCount == 0 {
-		return ErrRecordNotFound
-	}
-
-	return nil
+	return updatedComment, nil
 }
 
 func (db *DB) DeleteComment(ctx context.Context, commentId, userId string) (int64, error) {
