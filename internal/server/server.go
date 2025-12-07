@@ -38,7 +38,7 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("PATCH /groups/{id}/titles", a.UpdateGroupTitleWatched)
 	mux.HandleFunc("DELETE /groups/{groupId}/titles/{titleId}", a.DeleteTitleFromGroup)
 	// Group - Comments
-	mux.HandleFunc("GET /groups/{groupId}/comments/{titleId}/comments", a.GetCommentsByTitleIDFromGroup)
+	mux.HandleFunc("GET /groups/{groupId}/titles/{titleId}/comments", a.GetCommentsByTitleIDFromGroup)
 
 	mux.HandleFunc("GET /titles", a.GetTitles)
 	mux.HandleFunc("POST /titles", a.AddTitle)

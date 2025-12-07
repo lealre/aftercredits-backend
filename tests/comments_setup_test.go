@@ -33,7 +33,7 @@ func addComment(t *testing.T, newComment comments.NewComment, innerToken string)
 
 func getCommentsFromApi(t *testing.T, groupId, titleId, innerToken string) *http.Response {
 	req, err := http.NewRequest(http.MethodGet,
-		testServer.URL+"/groups/"+groupId+"/comments/"+titleId+"/comments",
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId+"/comments",
 		nil,
 	)
 	require.NoError(t, err)
