@@ -1,5 +1,7 @@
 package auth
 
+import "time"
+
 type LoginRequest struct {
 	Username string `json:"username"`
 	Email    string `json:"email" `
@@ -7,5 +9,12 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	AccessToken string `json:"access_token"`
+	Id          string     `json:"id"`
+	Email       string     `json:"email"`
+	Username    string     `json:"username"`
+	Name        string     `json:"name,omitempty"`
+	AvatarURL   *string    `json:"avatarUrl,omitempty"`
+	Groups      []string   `json:"groups"`
+	LastLoginAt *time.Time `json:"lastLoginAt"`
+	AccessToken string     `json:"accessToken"`
 }

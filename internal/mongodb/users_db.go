@@ -59,8 +59,9 @@ func (db *DB) GetUserByUsernameOrEmail(ctx context.Context, username, email stri
 	if username != "" {
 		filter["username"] = username
 	}
+
 	if email != "" {
-		filter["email"] = username
+		filter["email"] = email
 	}
 
 	var userDb UserDb
@@ -145,4 +146,27 @@ func (db *DB) UpdateUserInfo(ctx context.Context, id string, user UserDb) (UserD
 	}
 
 	return updatedUserDb, nil
+}
+
+func (db *DB) UpdateUserLastLoginAt(ctx context.Context, userId string) (UserDb, error) {
+	coll := db.Collection(UsersCollection)
+
+	now := time.Now()
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+	var updatedUser UserDb
+	err := coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": userId},
+		bson.M{"$set": bson.M{"lastLoginAt": now}},
+		opts,
+	).Decode(&updatedUser)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return UserDb{}, ErrRecordNotFound
+		}
+		return UserDb{}, err
+	}
+
+	return updatedUser, nil
 }

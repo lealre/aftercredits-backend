@@ -11,7 +11,8 @@ var (
 	ErrInvalidEmail             = errors.New("email format is not valid")
 	ErrInvalidUsernameSize      = errors.New("username must have at least 3 charscters")
 	ErrInvalidUsername          = errors.New("username must contains just letters, numbers, '-' or '_'")
-	ErrInvalidPassword          = errors.New("invalid passsword")
+	ErrInvalidPassword          = errors.New("invalid password")
+	ErrUserNotFound             = errors.New("user not found")
 )
 
 var ErrorMap = map[error]int{
@@ -20,6 +21,7 @@ var ErrorMap = map[error]int{
 	ErrInvalidUsernameSize:      http.StatusBadRequest,
 	ErrInvalidPassword:          http.StatusBadRequest,
 	ErrCredentialsAlreadyExists: http.StatusConflict,
+	ErrUserNotFound:             http.StatusNotFound,
 }
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)

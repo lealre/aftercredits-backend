@@ -5,8 +5,8 @@ import (
 )
 
 type ErrorResponse struct {
-	StatusCode   int    `json:"status_code"`
-	ErrorMessage string `json:"error_message"`
+	StatusCode   int    `json:"statusCode"`
+	ErrorMessage string `json:"errorMessage"`
 }
 
 type DefaultResponse struct {

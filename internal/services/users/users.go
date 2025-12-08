@@ -25,6 +25,18 @@ func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
 	return users, nil
 }
 
+func GetUserDbByUsernameOrEmail(db *mongodb.DB, ctx context.Context, username, email string) (mongodb.UserDb, error) {
+	userDb, err := db.GetUserByUsernameOrEmail(ctx, username, email)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return mongodb.UserDb{}, ErrUserNotFound
+		}
+		return mongodb.UserDb{}, err
+	}
+
+	return userDb, nil
+}
+
 func GetUserById(db *mongodb.DB, ctx context.Context, id string) (UserResponse, error) {
 	userDb, err := db.GetUserById(ctx, id)
 	if err != nil {
@@ -125,4 +137,24 @@ func UpdateUserInfo(db *mongodb.DB, ctx context.Context, userId string, userUpda
 
 func DeleteUserById(db *mongodb.DB, ctx context.Context, id string) error {
 	return db.DeleteUserById(ctx, id)
+}
+
+func UpdateUserLastLoginAt(db *mongodb.DB, ctx context.Context, userId string) (UserResponse, error) {
+	userDb, err := db.UpdateUserLastLoginAt(ctx, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return UserResponse{}, ErrUserNotFound
+		}
+		return UserResponse{}, err
+	}
+
+	return MapDbUserToApiUserResponse(userDb), nil
+}
+
+func BuildLoginResponse(db *mongodb.DB, ctx context.Context, user mongodb.UserDb, token string) (auth.LoginResponse, error) {
+	userResponse, err := UpdateUserLastLoginAt(db, ctx, user.Id)
+	if err != nil {
+		return auth.LoginResponse{}, err
+	}
+	return MapDbUserToApiLoginResponse(userResponse, token), nil
 }

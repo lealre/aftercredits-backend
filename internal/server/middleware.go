@@ -94,7 +94,7 @@ func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.
 			// Extract token
 			tokenString, err := auth.GetBearerToken(r.Header)
 			if err != nil {
-				if _, ok := auth.ErrosMap[err]; ok {
+				if _, ok := auth.ErrorsMap[err]; ok {
 					api.RespondWithUnauthorized(w, err)
 					return
 				}
@@ -105,7 +105,7 @@ func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.
 			// Validate token
 			userId, err := auth.ValidateJWT(tokenString, tokenSecret)
 			if err != nil {
-				if _, ok := auth.ErrosMap[err]; ok {
+				if _, ok := auth.ErrorsMap[err]; ok {
 					api.RespondWithUnauthorized(w, err)
 					return
 				}

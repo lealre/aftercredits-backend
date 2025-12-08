@@ -13,9 +13,10 @@ var (
 	ErrNoAuthorizationHeader = errors.New("no 'Authorization' header found")
 	ErrMalformedAuthHeader   = errors.New("token must start with 'Bearer '")
 	ErrNoTokenInAuthHeader   = errors.New("token must start with 'Bearer '")
+	ErrInvalidCredentials    = errors.New("invalid credentials")
 )
 
-var ErrosMap = map[error]int{
+var ErrorsMap = map[error]int{
 	ErrTokenSigningMethod:    http.StatusUnauthorized,
 	ErrInvalidToken:          http.StatusUnauthorized,
 	ErrTokenExpired:          http.StatusUnauthorized,
@@ -23,4 +24,5 @@ var ErrosMap = map[error]int{
 	ErrNoAuthorizationHeader: http.StatusUnauthorized,
 	ErrMalformedAuthHeader:   http.StatusUnauthorized,
 	ErrNoTokenInAuthHeader:   http.StatusUnauthorized,
+	ErrInvalidCredentials:    http.StatusUnauthorized,
 }
