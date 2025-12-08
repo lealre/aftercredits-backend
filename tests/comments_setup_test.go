@@ -66,6 +66,21 @@ func updateCommentFromApi(t *testing.T, groupId, titleId, commentId, comment, in
 	return resp
 }
 
+func deleteCommentFromApi(t *testing.T, groupId, titleId, commentId, innerToken string) *http.Response {
+	req, err := http.NewRequest(http.MethodDelete,
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId+"/comments/"+commentId,
+		nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+innerToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	return resp
+}
+
 func getCommentFromDB(t *testing.T, commentId string) mongodb.CommentDb {
 	ctx := context.Background()
 	db := testClient.Database(TEST_DB_NAME)

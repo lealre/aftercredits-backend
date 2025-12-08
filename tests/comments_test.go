@@ -352,3 +352,137 @@ func TestUpdateComment(t *testing.T) {
 		require.Contains(t, respUpdatedCommentBody.ErrorMessage, comments.ErrCommentIsNull.Error()[1:])
 	})
 }
+
+func TestDeleteComment(t *testing.T) {
+	resetDB(t)
+
+	// ======================================================================
+	// 		TEST SETUP
+	// ======================================================================
+
+	// Create a new user (group owner)
+	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a new user (group user that will be added to the group)
+	userFromGroup, tokenUserFromGroup := addUser(t, users.NewUserRequest{
+		Username: "testname2",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add user to group
+	addUserToGroup(t, groups.AddUserToGroupRequest{
+		UserId: userFromGroup.Id,
+	}, group.Id, tokenOwnerUser)
+
+	// Add titles to database
+	titles := loadTitlesFixture(t)
+	seedTitles(t, titles)
+	expectedTitle := titles[0]
+	// titleNotIngroup := titles[1]
+
+	// Add expected title to group
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// User that is not in the group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// Add comment to title as group owner
+	expectedOwnerComment := "This is a test comment"
+	comment := addComment(t, comments.NewComment{
+		GroupId: group.Id,
+		TitleId: expectedTitle.ID,
+		Comment: expectedOwnerComment,
+	}, tokenOwnerUser)
+	defer comment.Body.Close()
+	require.Equal(t, http.StatusCreated, comment.StatusCode)
+	var commentCreatedOwner comments.Comment
+	require.NoError(t, json.NewDecoder(comment.Body).Decode(&commentCreatedOwner))
+
+	// Add comment to title as group user
+	expectedGroupComment := "This is a test comment"
+	commentFromGroup := addComment(t, comments.NewComment{
+		GroupId: group.Id,
+		TitleId: expectedTitle.ID,
+		Comment: expectedGroupComment,
+	}, tokenUserFromGroup)
+	defer commentFromGroup.Body.Close()
+	require.Equal(t, http.StatusCreated, commentFromGroup.StatusCode)
+	var commentCreatedGroup comments.Comment
+	require.NoError(t, json.NewDecoder(commentFromGroup.Body).Decode(&commentCreatedGroup))
+
+	// ======================================================================
+	// 		TEST DELETING COMMENTS
+	// ======================================================================
+
+	t.Run("Deleting a comment sucessfully", func(t *testing.T) {
+		// Delete owner's comment
+		respDeletedComment := deleteCommentFromApi(t, group.Id, expectedTitle.ID, commentCreatedOwner.Id, tokenOwnerUser)
+		defer respDeletedComment.Body.Close()
+		require.Equal(t, http.StatusOK, respDeletedComment.StatusCode)
+
+		var respDeletedCommentBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respDeletedComment.Body).Decode(&respDeletedCommentBody))
+		require.Equal(t, fmt.Sprintf("Comment with id %s deleted successfully", commentCreatedOwner.Id), respDeletedCommentBody.Message)
+
+		// Database assertion - Should remain just the comment from the group user, not the owner's comment
+		commentDb := getCommentsFromDB(t, expectedTitle.ID)
+		require.Equal(t, 1, len(commentDb))
+		require.Equal(t, userFromGroup.Id, commentDb[0].UserId)
+		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
+		require.Equal(t, expectedGroupComment, commentDb[0].Comment)
+		require.NotEmpty(t, commentDb[0].CreatedAt)
+		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
+	})
+
+	t.Run("Deleting a comment that is not from the user but is from the group should return 404", func(t *testing.T) {
+		// Try to delete the comment from the group user as the owner
+		respDeletedComment := deleteCommentFromApi(t, group.Id, expectedTitle.ID, commentCreatedGroup.Id, tokenOwnerUser)
+		defer respDeletedComment.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeletedComment.StatusCode)
+		var respDeletedCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeletedComment.Body).Decode(&respDeletedCommentBody))
+		require.Contains(t, respDeletedCommentBody.ErrorMessage, fmt.Sprintf("Comment with id %s not found", commentCreatedGroup.Id))
+
+		// Database assertion - Should remain just the comment from the group user, not the owner's comment
+		commentDb := getCommentsFromDB(t, expectedTitle.ID)
+		require.Equal(t, 1, len(commentDb))
+		require.Equal(t, userFromGroup.Id, commentDb[0].UserId)
+		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
+		require.Equal(t, expectedGroupComment, commentDb[0].Comment)
+		require.NotEmpty(t, commentDb[0].CreatedAt)
+		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
+	})
+
+	t.Run("Deleting a comment that is not from the user and not from the group should return 404", func(t *testing.T) {
+		// Try to delete the comment from the group user as a user that is not in the group
+		respDeletedComment := deleteCommentFromApi(t, group.Id, expectedTitle.ID, commentCreatedGroup.Id, tokenUserNotInGroup)
+		defer respDeletedComment.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeletedComment.StatusCode)
+		var respDeletedCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeletedComment.Body).Decode(&respDeletedCommentBody))
+		require.Contains(t, respDeletedCommentBody.ErrorMessage, fmt.Sprintf("Group %s do not have title %s or do not exist.", group.Id, expectedTitle.ID))
+
+		// Database assertion - Should remain just the comment from the group user, not the owner's comment
+		commentDb := getCommentsFromDB(t, expectedTitle.ID)
+		require.Equal(t, 1, len(commentDb))
+		require.Equal(t, userFromGroup.Id, commentDb[0].UserId)
+		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
+		require.Equal(t, expectedGroupComment, commentDb[0].Comment)
+		require.NotEmpty(t, commentDb[0].CreatedAt)
+		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
+	})
+}
