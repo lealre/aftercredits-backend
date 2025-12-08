@@ -107,3 +107,13 @@ func addUserAdminInDb(t *testing.T, user users.NewUserRequest) (mongodb.UserDb, 
 
 	return userDb, token
 }
+
+func getUserFromDb(t *testing.T, userId string) mongodb.UserDb {
+	ctx := context.Background()
+	db := testClient.Database(TEST_DB_NAME)
+	coll := db.Collection(mongodb.UsersCollection)
+	var userDb mongodb.UserDb
+	err := coll.FindOne(ctx, bson.M{"_id": userId}).Decode(&userDb)
+	require.NoError(t, err, "error querying a user from db")
+	return userDb
+}

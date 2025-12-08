@@ -56,6 +56,13 @@ func TestCreateGroup(t *testing.T) {
 		require.NotEmpty(t, respGroupBody.CreatedAt, "createdAt should not be empty")
 		require.NotEmpty(t, respGroupBody.UpdatedAt, "updatedAt should not be empty")
 
+		// Database assertion to check if user is added to group
+		userDb := getUserFromDb(t, user.Id)
+		require.NotEmpty(t, userDb, "Expected user to not be empty")
+		require.NotEmpty(t, userDb.Groups, "Expected user groups to not be empty")
+		require.Equal(t, 1, len(userDb.Groups), "Expected user groups to be 1, got %d", len(userDb.Groups))
+		require.Contains(t, userDb.Groups, respGroupBody.Id, "Expected user groups to contain the group id")
+
 	})
 
 }
@@ -65,26 +72,33 @@ func TestGroupUsers(t *testing.T) {
 	t.Run("Add users to a group and retrieve them successfully", func(t *testing.T) {
 		resetDB(t)
 
-		// Create User 1
+		// Create User 1 (Owner)
 		userOne, tokenUserOne := addUser(t, users.NewUserRequest{
 			Username: "testNameOne",
 			Password: "testPass",
 		})
 
-		// Create User 2
+		// Create User 2 (Participant)
 		userTwo, tokenUserTwo := addUser(t, users.NewUserRequest{
 			Username: "testNameTwo",
 			Password: "testPass",
 		})
 
-		// Create a group for user one
+		// Create a group for user one (Owner)
 		newGroup := groups.CreateGroupRequest{
 			Name: "testgroupname",
 		}
-		jsonData, err := json.Marshal(newGroup)
+		respGroupBody := createGroup(t, newGroup, tokenUserOne)
+
+		// Add User 2 (Participant) to group
+		addUserToGroup := groups.AddUserToGroupRequest{
+			UserId: userTwo.Id,
+		}
+
+		jsonData, err := json.Marshal(addUserToGroup)
 		require.NoError(t, err)
 		req, err := http.NewRequest(http.MethodPost,
-			testServer.URL+"/groups",
+			testServer.URL+"/groups/"+respGroupBody.Id+"/users",
 			bytes.NewBuffer(jsonData),
 		)
 		require.NoError(t, err)
@@ -92,28 +106,6 @@ func TestGroupUsers(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroup, err := client.Do(req)
-		require.NoError(t, err)
-		defer respGroup.Body.Close()
-		require.Equal(t, http.StatusCreated, respGroup.StatusCode)
-
-		var respGroupBody groups.GroupResponse
-		require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&respGroupBody))
-
-		// Add User 2 to group
-		addUserToGroup := groups.AddUserToGroupRequest{
-			UserId: userTwo.Id,
-		}
-		jsonData, err = json.Marshal(addUserToGroup)
-		require.NoError(t, err)
-		req, err = http.NewRequest(http.MethodPost,
-			testServer.URL+"/groups/"+respGroupBody.Id+"/users",
-			bytes.NewBuffer(jsonData),
-		)
-		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
-		req.Header.Set("Content-Type", "application/json")
-		client = &http.Client{}
-		respGroup, err = client.Do(req)
 		require.NoError(t, err)
 		defer respGroup.Body.Close()
 		require.Equal(t, http.StatusOK, respGroup.StatusCode)
@@ -186,6 +178,19 @@ func TestGroupUsers(t *testing.T) {
 
 		require.Contains(t, allUsersIds, userOne.Id, "group owner (userOne) is not in group response api after creation")
 		require.Contains(t, allUsersIds, userTwo.Id, "user added to group not found in group response after being added")
+
+		// Database assertion to check if users are in the group
+		userOneDb := getUserFromDb(t, userOne.Id)
+		require.NotEmpty(t, userOneDb, "Expected user to not be empty")
+		require.NotEmpty(t, userOneDb.Groups, "Expected user groups to not be empty")
+		require.Equal(t, 1, len(userOneDb.Groups), "Expected user groups to be 1, got %d", len(userOneDb.Groups))
+		require.Contains(t, userOneDb.Groups, respGroupBody.Id, "Expected user groups to contain the group id")
+
+		userTwoDb := getUserFromDb(t, userTwo.Id)
+		require.NotEmpty(t, userTwoDb, "Expected user to not be empty")
+		require.NotEmpty(t, userTwoDb.Groups, "Expected user groups to not be empty")
+		require.Equal(t, 1, len(userTwoDb.Groups), "Expected user groups to be 1, got %d", len(userTwoDb.Groups))
+		require.Contains(t, userTwoDb.Groups, respGroupBody.Id, "Expected user groups to contain the group id")
 	})
 
 }
