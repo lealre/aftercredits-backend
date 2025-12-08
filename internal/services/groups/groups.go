@@ -30,11 +30,39 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 		return GroupResponse{}, err
 	}
 
+	_, err = users.UpdateUserGroup(db, ctx, userId, newGroup.Id)
+	if err != nil {
+		return GroupResponse{}, err
+	}
+
 	return MapDbGroupToApiGroupResponse(newGroup), nil
 }
 
-func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, onwertId, userId string) error {
-	return db.AddUserToGroup(ctx, groupId, onwertId, userId)
+func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, ownerId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+
+	// Just the owner of the group can add users to it
+	if group.OwnerId != ownerId {
+		return ErrGroupNotOwnedByUser
+	}
+
+	err = db.AddUserToGroup(ctx, groupId, ownerId, userId)
+	if err != nil {
+		return err
+	}
+
+	_, err = users.UpdateUserGroup(db, ctx, userId, groupId)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func GetTitlesFromGroup(

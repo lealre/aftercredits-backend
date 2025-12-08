@@ -43,7 +43,6 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, group)
 }
 
-// TODO: Juts owners can add users to a group
 func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
@@ -86,11 +85,11 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3 - Add user to group
+	// 3 - Add user to group and update user group list
 	err := groups.AddUserToGroup(api.Db, r.Context(), groupId, currentUser.Id, req.UserId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)

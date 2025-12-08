@@ -158,3 +158,16 @@ func BuildLoginResponse(db *mongodb.DB, ctx context.Context, user mongodb.UserDb
 	}
 	return MapDbUserToApiLoginResponse(userResponse, token), nil
 }
+
+func UpdateUserGroup(db *mongodb.DB, ctx context.Context, userId string, groupId string) (UserResponse, error) {
+	userDb, err := db.UpdateUserGroup(ctx, userId, groupId)
+
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return UserResponse{}, ErrUserNotFound
+		}
+		return UserResponse{}, err
+	}
+
+	return MapDbUserToApiUserResponse(userDb), nil
+}

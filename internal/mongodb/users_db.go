@@ -170,3 +170,27 @@ func (db *DB) UpdateUserLastLoginAt(ctx context.Context, userId string) (UserDb,
 
 	return updatedUser, nil
 }
+
+func (db *DB) UpdateUserGroup(ctx context.Context, userId string, groupId string) (UserDb, error) {
+	coll := db.Collection(UsersCollection)
+
+	now := time.Now()
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+	var updatedUser UserDb
+	err := coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": userId},
+		bson.M{"$addToSet": bson.M{"groups": groupId}, "$set": bson.M{"updatedAt": now}},
+		opts,
+	).Decode(&updatedUser)
+
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return UserDb{}, ErrRecordNotFound
+		}
+		return UserDb{}, err
+	}
+
+	return updatedUser, nil
+}
