@@ -12,8 +12,8 @@ type Comment struct {
 }
 
 type NewComment struct {
+	GroupId string `json:"groupId"`
 	TitleId string `json:"titleId"`
-	GroupId string `json:"userId"`
 	Comment string `json:"comment"`
 }
 
