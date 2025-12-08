@@ -140,13 +140,34 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
 
-	commentId := r.PathValue("id")
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	commentId := r.PathValue("commentId")
 	if commentId == "" {
 		respondWithError(w, http.StatusBadRequest, "Comment id is required")
 		return
 	}
 
-	// TODO: Add authorization
+	// This checks if the group exists, if the title is in the group and if the user is in the group
+	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	if !ok && err == nil {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
 
 	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)

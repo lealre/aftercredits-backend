@@ -40,6 +40,7 @@ func NewServer(db *mongo.Client) http.Handler {
 	// Group - Comments
 	mux.HandleFunc("GET /groups/{groupId}/titles/{titleId}/comments", a.GetCommentsByTitleIDFromGroup)
 	mux.HandleFunc("PATCH /groups/{groupId}/titles/{titleId}/comments/{commentId}", a.UpdateComment)
+	mux.HandleFunc("DELETE /groups/{groupId}/titles/{titleId}/comments/{commentId}", a.DeleteComment)
 
 	mux.HandleFunc("GET /titles", a.GetTitles)
 	mux.HandleFunc("POST /titles", a.AddTitle)
@@ -50,7 +51,6 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("PATCH /ratings/{id}", a.UpdateRating)
 
 	mux.HandleFunc("POST /comments", a.AddComment)
-	mux.HandleFunc("DELETE /comments/{id}", a.DeleteComment)
 
 	handler := AuthMiddleware(*a.Secret, dbClient)(mux)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
