@@ -310,6 +310,7 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		if err == groups.ErrUpdatingWatchedAtWhenWatchedIsFalse {
 			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
+			return
 		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error updating group title watched")
