@@ -1,7 +1,72 @@
 
-<a name="v0.0.2"></a>
-## [v0.0.2](https://github.com/lealre/fs-mcp/compare/v0.0.1...v0.0.2) (2025-11-18)
+<a name="v0.0.3"></a>
+## [v0.0.3](https://github.com/lealre/fs-mcp/compare/v0.0.2...v0.0.3) (2025-12-13)
 
+* Add basic authentication and authorization ([#3](https://github.com/lealre/fs-mcp/issues/3))
+* Add missing return statment
+* Remove cmd folder from git track
+* Add endpoint to get a group
+* fix: Json fields to add a comment
+* test: Extend group tests to check the user update when creating/adding a user
+* Update groups enpoints to when creating a group or adding a user, also updating the user groups records in user collections. Just group owners can add new users to a group
+* Update login response to send user info with token and json fields in api ErrorResponse to be camelCase
+* test: Add basic tests to delete comments
+* Update endpoint to delete comments
+* test: Add basic tests to update comments
+* Update endpoint to update comments
+* fix: Group endpoint name to get comments form a title
+* test: Add basic tests to get comments
+* Update endpoint to get comments
+* test: Add basic tests to add comments
+* Update endpoint to add comments
+* Update packages versions and rebase
+* Refactor note ranghe validation for rating endpoint
+* test: Add test to note validation when adding a note
+* test: Extend tests to update ratings
+* Remove endpoit to get batch of ratings
+* test: Start tests for updating a rating
+* Update enpoint to update a rating
+* test: Add tests for adding ratings
+* Update method to add rating to check group/title combination
+* test: Refactor test setup in new reusable methods
+* test: Add tests to setting a movie as watched related to auth
+* fix: Groups endpoints related to permissions
+* test: Extend groups endpoints test to auth
+* Update groups and ratings endpoints based on auht
+* Update comments endpoints to use auth
+* Update ratings endpoints to use auth
+* test: Update admin titles enpoints tests to use token
+* Refactor titles endpoints to be used just for admin role
+* Refactor auth workflow
+* Update users errors lookup
+* test: Update groups enpoints tests to use token
+* test: Update database migration in test setup
+* Add authorization checks in groups endpoints
+* test: Add minimal tests to get and update users
+* Add endpoint to get user and a very simple for update fields for now
+* test: Fix test to delete a user
+* Update endpoint to delete a user
+* test: User creation validation and deletion with auth
+* Add minimal fields validation for user creation
+* Add user to context and authorizarion to users endpoints
+* Add username on user response
+* Update mongo migration scripts
+* Base auth login handler
+* Apply base global auth middleware to handlers
+* Update packages versions
+* test: Add test to new group watched fix
+* fix(groups): Setting whatchedAt date when watched is false returns 400
+* test: Add more tests to group titles api
+* fix(groups): Setting a title as unwatched should always clear watchedAt field in database
+* test: Start test to goup titles endpoints
+* test: Add setup folder to each goroup and extend test to get users from a group
+* test: Endpoint to add a user to a group
+* Add endpoint to add a user to a group
+
+<a name="v0.0.2"></a>
+## [v0.0.2](https://github.com/lealre/fs-mcp/compare/v0.0.1...v0.0.2) (2025-11-19)
+
+* Update changelog for version `0.0.2`
 * Add groups management for users/titles ([#2](https://github.com/lealre/fs-mcp/issues/2))
 * test: update titles test
 * refactor: add default response in api for messages
