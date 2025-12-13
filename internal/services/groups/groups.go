@@ -38,6 +38,15 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 	return MapDbGroupToApiGroupResponse(newGroup), nil
 }
 
+func GetGroupById(db *mongodb.DB, ctx context.Context, groupId, userId string) (GroupResponse, error) {
+	groupDb, err := db.GetGroupById(ctx, groupId, userId)
+	if err != nil {
+		return GroupResponse{}, err
+	}
+
+	return MapDbGroupToApiGroupResponse(groupDb), nil
+}
+
 func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {

@@ -43,6 +43,30 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, group)
 }
 
+func (api *API) GetGroupById(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("id")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	group, err := groups.GetGroupById(api.Db, r.Context(), groupId, currentUser.Id)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to get group")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, group)
+}
+
 func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
