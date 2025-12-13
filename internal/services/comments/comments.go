@@ -2,16 +2,27 @@ package comments
 
 import (
 	"context"
+	"strings"
 
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([]Comment, error) {
-	commentsDb, err := db.GetCommentsByTitleId(ctx, titleId)
+/*
+* Gets all comments from a title in a specific group, including all users that are in the group.
+* Assumes that the caller already checked that:
+* - The group exists
+* - The title is in the group
+* - The user is in the group
+ */
+func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) ([]Comment, error) {
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			return []Comment{}, nil
-		}
+		return []Comment{}, err
+	}
+
+	commentsDb, err := db.GetCommentsByTitleId(ctx, titleId, group.Users)
+	if err != nil {
 		return []Comment{}, err
 	}
 
@@ -23,31 +34,49 @@ func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) (
 	return comments, nil
 }
 
-func AddComment(db *mongodb.DB, ctx context.Context, comment Comment) (Comment, error) {
+func AddComment(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string) (Comment, error) {
+	if strings.TrimSpace(newComment.Comment) == "" {
+		return Comment{}, ErrCommentIsNull
+	}
+
 	commentDb := mongodb.CommentDb{
-		TitleId: comment.TitleId,
-		UserId:  comment.UserId,
-		Comment: comment.Comment,
+		TitleId: newComment.TitleId,
+		UserId:  userId,
+		Comment: newComment.Comment,
 	}
 
 	commentDb, err := db.AddComment(ctx, commentDb)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return Comment{}, ErrCommentAlreadyExists
+		}
 		return Comment{}, err
 	}
 
 	return MapDbCommentToApiComment(commentDb), nil
 }
 
-func UpdateComment(db *mongodb.DB, ctx context.Context, commentId string, updateReq UpdateCommentRequest) error {
+func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
+	if strings.TrimSpace(updateReq.Comment) == "" {
+		return Comment{}, ErrCommentIsNull
+	}
+
 	commentDb := mongodb.CommentDb{
 		Id:      commentId,
 		Comment: updateReq.Comment,
 	}
-	return db.UpdateComment(ctx, commentDb)
+	updatedCommentDb, err := db.UpdateComment(ctx, commentDb, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Comment{}, ErrCommentNotFound
+		}
+		return Comment{}, err
+	}
+	return MapDbCommentToApiComment(updatedCommentDb), nil
 }
 
-func DeleteComment(db *mongodb.DB, ctx context.Context, commentId string) (int64, error) {
-	deletedCount, err := db.DeleteComment(ctx, commentId)
+func DeleteComment(db *mongodb.DB, ctx context.Context, commentId, userId string) (int64, error) {
+	deletedCount, err := db.DeleteComment(ctx, commentId, userId)
 	if err != nil {
 		return 0, err
 	}

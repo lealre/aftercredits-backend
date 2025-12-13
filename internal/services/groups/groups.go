@@ -17,11 +17,11 @@ var ErrTitleAlreadyInGroup = errors.New("title is already in group")
 var ErrTitleNotInGroup = errors.New("title not found in group")
 var ErrUpdatingWatchedAtWhenWatchedIsFalse = errors.New("cannot update watchedAt when watched is set to false")
 
-func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (GroupResponse, error) {
+func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
 	group := mongodb.GroupDb{
 		Name:    req.Name,
-		OwnerId: req.OwnerId,
-		Users:   []string{req.OwnerId},
+		OwnerId: userId,
+		Users:   []string{userId},
 		Titles:  []mongodb.GroupTitleDb{},
 	}
 
@@ -30,23 +30,60 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest) (G
 		return GroupResponse{}, err
 	}
 
+	_, err = users.UpdateUserGroup(db, ctx, userId, newGroup.Id)
+	if err != nil {
+		return GroupResponse{}, err
+	}
+
 	return MapDbGroupToApiGroupResponse(newGroup), nil
 }
 
-func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
-	return db.AddUserToGroup(ctx, groupId, userId)
+func GetGroupById(db *mongodb.DB, ctx context.Context, groupId, userId string) (GroupResponse, error) {
+	groupDb, err := db.GetGroupById(ctx, groupId, userId)
+	if err != nil {
+		return GroupResponse{}, err
+	}
+
+	return MapDbGroupToApiGroupResponse(groupDb), nil
+}
+
+func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, ownerId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+
+	// Just the owner of the group can add users to it
+	if group.OwnerId != ownerId {
+		return ErrGroupNotOwnedByUser
+	}
+
+	err = db.AddUserToGroup(ctx, groupId, ownerId, userId)
+	if err != nil {
+		return err
+	}
+
+	_, err = users.UpdateUserGroup(db, ctx, userId, groupId)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func GetTitlesFromGroup(
 	db *mongodb.DB,
 	ctx context.Context,
-	groupId string,
+	groupId, userId string,
 	size, page int,
 	orderBy string,
 	watched *bool,
 	ascending *bool,
 ) (generics.Page[GroupTitleDetail], error) {
-	group, err := db.GetGroupById(ctx, groupId)
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
@@ -138,8 +175,8 @@ func GetTitlesFromGroup(
 	}, nil
 }
 
-func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]users.UserResponse, error) {
-	usersDb, err := db.GetUsersFromGroup(ctx, groupId)
+func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {
+	usersDb, err := db.GetUsersFromGroup(ctx, groupId, userId)
 	if err != nil {
 		return []users.UserResponse{}, err
 	}
@@ -152,8 +189,8 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId string) ([]u
 	return usersResponse, nil
 }
 
-func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
-	group, err := db.GetGroupById(ctx, groupId)
+func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return err
 	}
@@ -171,8 +208,8 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId string, titleI
 	return nil
 }
 
-func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
-	groupDb, err := db.GetGroupById(ctx, groupId)
+func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
+	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return GroupTitle{}, err
 	}
@@ -204,8 +241,8 @@ func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId string
 	return MapDbGroupTitleToApiGroupTitle(*groupTitle), nil
 }
 
-func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId string, titleId string) error {
-	group, err := db.GetGroupById(ctx, groupId)
+func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return err
 	}
@@ -223,5 +260,5 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId string, t
 		return ErrTitleNotInGroup
 	}
 
-	return db.RemoveTitleFromGroup(ctx, groupId, titleId)
+	return db.RemoveTitleFromGroup(ctx, groupId, titleId, userId)
 }

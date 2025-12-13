@@ -1,15 +1,19 @@
 package auth
 
 import (
-	"errors"
+	"context"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"golang.org/x/crypto/bcrypt"
 )
+
+type contextKey string
+
+const UserKey contextKey = "user"
 
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -17,15 +21,19 @@ func HashPassword(password string) (string, error) {
 }
 
 func CheckPasswordHash(hash, password string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	if err != nil {
+		return ErrInvalidCredentials
+	}
+	return nil
 }
 
-func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
+func MakeJWT(userID string, tokenSecret string, expiresIn time.Duration) (string, error) {
 	claim := jwt.RegisteredClaims{
 		Issuer:    "mytitles",
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn)),
-		Subject:   userID.String(),
+		Subject:   userID,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
 
@@ -37,54 +45,66 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 	return string(signedToken), nil
 }
 
-func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-		return []byte(tokenSecret), nil
-	})
+func ValidateJWT(tokenString, tokenSecret string) (string, error) {
+	claims := &jwt.RegisteredClaims{}
+
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		claims,
+		func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, ErrTokenSigningMethod
+			}
+			return []byte(tokenSecret), nil
+		},
+	)
 	if err != nil {
-		return uuid.Nil, err
+		return "", err
 	}
 
-	// Extract claims
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
-	if !ok || !token.Valid {
-		return uuid.Nil, errors.New("invalid token claims")
+	if !token.Valid {
+		return "", ErrInvalidToken
 	}
 
-	// Check for expiration
 	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
-		return uuid.Nil, errors.New("token has expired")
+		return "", ErrTokenExpired
 	}
 
-	// Parse the Subject (user ID) as UUID
-	userID, err := uuid.Parse(claims.Subject)
-	if err != nil {
-		return uuid.Nil, errors.New("invalid user ID in token")
+	if claims.Subject == "" {
+		return "", ErrTokenWithNoSubject
 	}
 
-	return userID, nil
+	return claims.Subject, nil
 }
 
 func GetBearerToken(headers http.Header) (string, error) {
 	bearerToken := headers.Get("Authorization")
 
 	if bearerToken == "" {
-		return "", errors.New("no 'Authorization' header found")
+		return "", ErrNoAuthorizationHeader
 	}
 
 	if !strings.HasPrefix(bearerToken, "Bearer ") {
-		return "", errors.New("token must start with 'Bearer '")
+		return "", ErrMalformedAuthHeader
 	}
 
 	token := strings.TrimPrefix(bearerToken, "Bearer ")
 	token = strings.TrimSpace(token) // clean up any accidental space
 
 	if token == "" {
-		return "", errors.New("no token provided after 'Bearer '")
+		return "", ErrNoTokenInAuthHeader
 	}
 
 	return token, nil
+}
+
+func GetUserFromContext(ctx context.Context) *mongodb.UserDb {
+	if user, ok := ctx.Value(UserKey).(mongodb.UserDb); ok {
+		return &user
+	}
+	return nil
+}
+
+func WithUser(ctx context.Context, user mongodb.UserDb) context.Context {
+	return context.WithValue(ctx, UserKey, user)
 }

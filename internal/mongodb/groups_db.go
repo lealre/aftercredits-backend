@@ -53,13 +53,18 @@ func (db *DB) CreateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
 	return group, nil
 }
 
-func (db *DB) GroupExists(ctx context.Context, id string) (bool, error) {
+func (db *DB) GroupExists(ctx context.Context, groupId, userId string) (bool, error) {
 	coll := db.Collection(GroupsCollection)
 
 	// Only ask MongoDB for the _id field
 	opts := options.FindOne().SetProjection(bson.M{"_id": 1})
 
-	err := coll.FindOne(ctx, bson.M{"_id": id}, opts).Err()
+	err := coll.FindOne(
+		ctx,
+		bson.M{
+			"_id":   groupId,
+			"users": bson.M{"$in": []string{userId}}},
+		opts).Err()
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return false, nil
@@ -69,11 +74,37 @@ func (db *DB) GroupExists(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-func (db *DB) GetGroupById(ctx context.Context, id string) (GroupDb, error) {
+func (db *DB) GroupContainsTitle(ctx context.Context, groupId, titleId, userId string) (bool, error) {
+	coll := db.Collection(GroupsCollection)
+
+	// Only ask MongoDB for the _id field
+	opts := options.FindOne().SetProjection(bson.M{"_id": 1})
+
+	err := coll.FindOne(
+		ctx,
+		bson.M{
+			"_id":            groupId,
+			"users":          bson.M{"$in": []string{userId}},
+			"titles.titleId": titleId,
+		},
+		opts).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (db *DB) GetGroupById(ctx context.Context, groupId, userId string) (GroupDb, error) {
 	coll := db.Collection(GroupsCollection)
 
 	var group GroupDb
-	err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&group)
+	err := coll.FindOne(ctx, bson.M{
+		"_id":   groupId,
+		"users": bson.M{"$in": []string{userId}},
+	}).Decode(&group)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return GroupDb{}, ErrRecordNotFound
@@ -83,14 +114,14 @@ func (db *DB) GetGroupById(ctx context.Context, id string) (GroupDb, error) {
 	return group, nil
 }
 
-func (db *DB) AddUserToGroup(ctx context.Context, groupId string, userId string) error {
+func (db *DB) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddId string) error {
 	coll := db.Collection(GroupsCollection)
 
 	result, err := coll.UpdateOne(
 		ctx,
-		bson.M{"_id": groupId},
+		bson.M{"_id": groupId, "users": bson.M{"$in": []string{ownerId}}},
 		bson.M{
-			"$addToSet": bson.M{"users": userId},
+			"$addToSet": bson.M{"users": userToAddId},
 			"$set":      bson.M{"updatedAt": time.Now()},
 		},
 	)
@@ -106,9 +137,9 @@ func (db *DB) AddUserToGroup(ctx context.Context, groupId string, userId string)
 	return nil
 }
 
-func (db *DB) GetUsersFromGroup(ctx context.Context, groupId string) ([]UserDb, error) {
+func (db *DB) GetUsersFromGroup(ctx context.Context, groupId, userId string) ([]UserDb, error) {
 	// First, get the group to find user IDs
-	group, err := db.GetGroupById(ctx, groupId)
+	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return []UserDb{}, err
 	}
@@ -240,12 +271,12 @@ func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, title
 	return nil, ErrRecordNotFound
 }
 
-func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId string, titleId string) error {
+func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
 	coll := db.Collection(GroupsCollection)
 
 	result, err := coll.UpdateOne(
 		ctx,
-		bson.M{"_id": groupId},
+		bson.M{"_id": groupId, "users": bson.M{"$in": []string{userId}}},
 		bson.M{"$pull": bson.M{"titles": bson.M{"titleId": titleId}}},
 	)
 	if err != nil {

@@ -5,8 +5,8 @@ import (
 )
 
 type ErrorResponse struct {
-	StatusCode   int    `json:"status_code"`
-	ErrorMessage string `json:"error_message"`
+	StatusCode   int    `json:"statusCode"`
+	ErrorMessage string `json:"errorMessage"`
 }
 
 type DefaultResponse struct {
@@ -14,9 +14,15 @@ type DefaultResponse struct {
 }
 
 type API struct {
-	Db *mongodb.DB
+	Db     *mongodb.DB
+	Secret *string
 }
 
 func NewAPI(db *mongodb.DB) *API {
 	return &API{Db: db}
+}
+
+var PublicPaths = map[string]bool{
+	"POST /login": true,
+	"POST /users": true,
 }

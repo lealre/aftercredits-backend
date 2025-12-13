@@ -5,14 +5,20 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/comments"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
+func (api *API) GetCommentsByTitleIDFromGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group Id is required")
+		return
+	}
 
 	titleId := r.PathValue("titleId")
 	if titleId == "" {
@@ -20,19 +26,21 @@ func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.TitleExists(r.Context(), titleId); !ok {
-		respondWithError(w, http.StatusBadRequest, "Title Id not found")
+	// This checks if the group exists, if the title is in the group and if the user is in the group
+	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	if !ok && err == nil {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error while searching Title in database")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), titleId)
+	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusOK, "Error while seraching comments in Database")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -41,8 +49,21 @@ func (api *API) GetCommentsByTitleID(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
-	commentId := r.PathValue("id")
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	commentId := r.PathValue("commentId")
 	if commentId == "" {
 		respondWithError(w, http.StatusBadRequest, "Comment id is required")
 		return
@@ -55,52 +76,56 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := comments.UpdateComment(api.Db, r.Context(), commentId, updateReq); err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Comment with id %s not found", commentId))
-			return
-		}
+	// This checks if the group exists, if the title is in the group and if the user is in the group
+	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	if !ok && err == nil {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to update comment")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Comment updated successfully"})
+	updatedComment, err := comments.UpdateComment(api.Db, r.Context(), commentId, currentUser.Id, updateReq)
+	if err != nil {
+		if statusCode, ok := comments.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, updatedComment)
 
 }
 
 func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
-	var comment comments.Comment
-	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
+	var newComment comments.NewComment
+	if err := json.NewDecoder(r.Body).Decode(&newComment); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
 		return
 	}
 
-	if ok, err := api.Db.UserExists(r.Context(), comment.UserId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", comment.UserId))
+	if ok, err := api.Db.GroupContainsTitle(r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId))
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	if ok, err := api.Db.TitleExists(r.Context(), comment.TitleId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", comment.TitleId))
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
-		return
-	}
-
-	createdComment, err := comments.AddComment(api.Db, r.Context(), comment)
+	createdComment, err := comments.AddComment(api.Db, r.Context(), newComment, currentUser.Id)
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			respondWithError(w, http.StatusBadRequest, "Comment already exists for this user and title")
+		if statusCode, ok := comments.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -113,14 +138,38 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
-	commentId := r.PathValue("id")
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	commentId := r.PathValue("commentId")
 	if commentId == "" {
 		respondWithError(w, http.StatusBadRequest, "Comment id is required")
 		return
 	}
 
-	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId); err != nil {
+	// This checks if the group exists, if the title is in the group and if the user is in the group
+	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	if !ok && err == nil {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting comment")
 		return

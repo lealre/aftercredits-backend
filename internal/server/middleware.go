@@ -9,18 +9,22 @@ import (
 	"os"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/mongodb"
 )
 
-// Define a custom type for context keys
 type contextKey string
 
-const (
-	requestIDKey contextKey = "requestID"
-)
+const requestIdKey contextKey = "requestId"
 
-// generateRequestID creates a unique 5-character identifier
-func generateRequestID() string {
+////////////////////////////////////////////////////////////////////////////
+//  LOGGER MIDDLEWARE
+////////////////////////////////////////////////////////////////////////////
+
+// Creates a unique 5-character identifier
+func generateRequestId() string {
 	bytes := make([]byte, 3) // 3 bytes = 6 hex chars, we'll take first 5
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)[:5]
@@ -37,18 +41,26 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	rr.ResponseWriter.WriteHeader(statusCode)
 }
 
-func RequestIDMiddleware(next http.Handler) http.Handler {
+/*
+RequestIdMiddleware creates a unique request ID for each request and stores it in the context.
+Creates a logger with the request ID prefixed to all log messages and stores it in the context.
+- Log prefix format: [RequestId][Method:Endpoint]
+- Logs when recive a request
+- Logs when returns the response with time the request take and status code
+
+Handlers can retrieve the logger using logx.FromContext(r.Context()).
+Returns an http.Handler that wraps the next handler.
+*/
+func RequestIdMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := generateRequestID()
+		requestId := generateRequestId()
 		startTime := time.Now()
 
-		// Create a request-specific logger (not global)
-		logger := log.New(os.Stdout, "["+requestID+"]["+r.Method+":"+r.URL.Path+"] - ", log.LstdFlags)
+		logger := log.New(os.Stdout, "["+requestId+"]["+r.Method+":"+r.URL.Path+"] - ", log.LstdFlags)
 
 		logger.Printf("Request received...")
 
-		// Store logger and requestID in context
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		ctx := context.WithValue(r.Context(), requestIdKey, requestId)
 		ctx = logx.WithLogger(ctx, logger)
 		r = r.WithContext(ctx)
 
@@ -63,4 +75,55 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 			logger.Printf("Request completed in %dms (status %d)", duration.Milliseconds(), recorder.statusCode)
 		}
 	})
+}
+
+////////////////////////////////////////////////////////////////////////////
+//  AUTHENTICATION MIDDLEWARE
+////////////////////////////////////////////////////////////////////////////
+
+func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			// Skip authentication for public endpoints
+			if api.PublicPaths[r.Method+" "+r.URL.Path] {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Extract token
+			tokenString, err := auth.GetBearerToken(r.Header)
+			if err != nil {
+				if _, ok := auth.ErrorsMap[err]; ok {
+					api.RespondWithUnauthorized(w, err)
+					return
+				}
+				http.Error(w, "Missing or invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			// Validate token
+			userId, err := auth.ValidateJWT(tokenString, tokenSecret)
+			if err != nil {
+				if _, ok := auth.ErrorsMap[err]; ok {
+					api.RespondWithUnauthorized(w, err)
+					return
+				}
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			userDb, err := db.GetUserById(r.Context(), userId)
+			if err == mongodb.ErrRecordNotFound || !userDb.IsActive {
+				http.Error(w, "Invalid or inactive user", http.StatusUnauthorized)
+				return
+			}
+
+			// Put userId into context
+			ctx := auth.WithUser(r.Context(), userDb)
+			r = r.WithContext(ctx)
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }

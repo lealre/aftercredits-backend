@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // ----- Types for the database -----
@@ -22,7 +23,7 @@ type RatingDb struct {
 
 // ----- Methods for the database -----
 
-func (db *DB) AddRating(ctx context.Context, rating RatingDb) error {
+func (db *DB) AddRating(ctx context.Context, rating RatingDb) (RatingDb, error) {
 	coll := db.Collection(RatingsCollection)
 
 	rating.Id = primitive.NewObjectID().Hex()
@@ -31,7 +32,11 @@ func (db *DB) AddRating(ctx context.Context, rating RatingDb) error {
 	rating.UpdatedAt = now
 
 	_, err := coll.InsertOne(ctx, rating)
-	return err
+	if err != nil {
+		return RatingDb{}, err
+	}
+
+	return rating, nil
 }
 
 func (db *DB) GetRatingsByTitleId(ctx context.Context, titleId string) ([]RatingDb, error) {
@@ -53,10 +58,27 @@ func (db *DB) GetRatingsByTitleId(ctx context.Context, titleId string) ([]Rating
 	return ratingsDb, nil
 }
 
-func (db *DB) GetRatingById(ctx context.Context, ratingId string) (RatingDb, error) {
+func (db *DB) GetRatingById(ctx context.Context, ratingId, userId string) (RatingDb, error) {
 	coll := db.Collection(RatingsCollection)
 
-	filter := bson.M{"_id": ratingId}
+	filter := bson.M{"_id": ratingId, "userId": userId}
+
+	var rating RatingDb
+	err := coll.FindOne(ctx, filter).Decode(&rating)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return RatingDb{}, ErrRecordNotFound
+		}
+		return RatingDb{}, err
+	}
+
+	return rating, nil
+}
+
+func (db *DB) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId string) (RatingDb, error) {
+	coll := db.Collection(RatingsCollection)
+
+	filter := bson.M{"userId": userId, "titleId": titleId}
 
 	var rating RatingDb
 	err := coll.FindOne(ctx, filter).Decode(&rating)
@@ -83,11 +105,10 @@ func (db *DB) DeleteRatingsByTitleId(ctx context.Context, titleId string) (int64
 	return result.DeletedCount, nil
 }
 
-// UpdateRating updates only the Note field of a rating
-func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb) error {
+func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string) (RatingDb, error) {
 	coll := db.Collection(RatingsCollection)
 
-	filter := bson.M{"_id": ratingDb.Id}
+	filter := bson.M{"_id": ratingDb.Id, "userId": userId}
 
 	now := time.Now()
 	update := bson.M{
@@ -97,16 +118,20 @@ func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb) error {
 		},
 	}
 
-	result, err := coll.UpdateOne(ctx, filter, update)
+	// Use FindOneAndUpdate to get the updated document
+	opts := options.FindOneAndUpdate()
+	opts.SetReturnDocument(options.After) // Return the document after update
+
+	var updatedRating RatingDb
+	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedRating)
 	if err != nil {
-		return err
+		if err == mongo.ErrNoDocuments {
+			return RatingDb{}, ErrRecordNotFound
+		}
+		return RatingDb{}, err
 	}
 
-	if result.MatchedCount == 0 {
-		return ErrRecordNotFound
-	}
-
-	return nil
+	return updatedRating, nil
 }
 
 func (db *DB) GetRatings(ctx context.Context, args ...any) ([]RatingDb, error) {

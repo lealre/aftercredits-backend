@@ -90,14 +90,24 @@ func createIndexes(t *testing.T, db *mongo.Database) {
 
 	ctx := context.Background()
 
-	// Create unique index on users collection (case-insensitive)
-	usersIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "name", Value: 1}},
-		Options: options.Index().SetUnique(true).SetCollation(&options.Collation{Locale: "en", Strength: 2}),
+	// Create unique index on username (sparse to allow null values)
+	usernameIndexModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "username", Value: 1}},
+		Options: options.Index().SetUnique(true).SetSparse(true),
 	}
-	_, err := db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, usersIndexModel)
+	_, err := db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, usernameIndexModel)
 	if err != nil {
-		t.Fatalf("failed to create unique index on users collection: %v", err)
+		t.Fatalf("failed to create unique index on username: %v", err)
+	}
+
+	// Create unique index on email (sparse to allow null values)
+	emailIndexModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "email", Value: 1}},
+		Options: options.Index().SetUnique(true).SetSparse(true),
+	}
+	_, err = db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, emailIndexModel)
+	if err != nil {
+		t.Fatalf("failed to create unique index on email: %v", err)
 	}
 
 	// Create unique index on ratings collection

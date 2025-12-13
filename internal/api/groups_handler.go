@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -18,6 +19,7 @@ import (
 
 func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	var req groups.CreateGroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -31,21 +33,7 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.OwnerId == "" {
-		respondWithError(w, http.StatusBadRequest, "Owner id is required")
-		return
-	}
-
-	if ok, err := api.Db.UserExists(r.Context(), req.OwnerId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.OwnerId))
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
-		return
-	}
-
-	group, err := groups.CreateGroup(api.Db, r.Context(), req)
+	group, err := groups.CreateGroup(api.Db, r.Context(), req, currentUser.Id)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to create group")
@@ -55,8 +43,33 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, group)
 }
 
+func (api *API) GetGroupById(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("id")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	group, err := groups.GetGroupById(api.Db, r.Context(), groupId, currentUser.Id)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to get group")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, group)
+}
+
 func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	groupId := r.PathValue("id")
 	if groupId == "" {
@@ -76,6 +89,17 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1 - Get group (TODO: Call the service to do this instead of the db directly)
+	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
+		return
+	}
+
+	// 2 - Check if user to be added to group exists
 	if ok, err := api.Db.UserExists(r.Context(), req.UserId); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.UserId))
 		return
@@ -85,19 +109,11 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
-		return
-	}
-
-	err := groups.AddUserToGroup(api.Db, r.Context(), groupId, req.UserId)
+	// 3 - Add user to group and update user group list
+	err := groups.AddUserToGroup(api.Db, r.Context(), groupId, currentUser.Id, req.UserId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -110,6 +126,8 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
 	groupId := r.PathValue("id")
 	if groupId == "" {
 		respondWithError(w, http.StatusBadRequest, "Group id is required")
@@ -122,16 +140,18 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 	ascending := parseUrlQueryToBool(r.URL.Query().Get("ascending"))
 	watched := parseUrlQueryToBool(r.URL.Query().Get("watched"))
 
-	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-		return
-	} else if err != nil {
+	_, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	titles, err := groups.GetTitlesFromGroup(api.Db, r.Context(), groupId, size, page, orderBy, watched, ascending)
+	titles, err := groups.GetTitlesFromGroup(api.Db, r.Context(), groupId, currentUser.Id, size, page, orderBy, watched, ascending)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while getting titles from group")
@@ -143,22 +163,27 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
 	groupId := r.PathValue("id")
 	if groupId == "" {
 		respondWithError(w, http.StatusBadRequest, "Group id is required")
 		return
 	}
 
-	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+	_, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			logger.Printf("Group with id %s not found", groupId)
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+			return
+		}
+		logger.Printf("ERROR : %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
 		return
 	}
 
-	groupUsers, err := groups.GetUsersFromGroup(api.Db, r.Context(), groupId)
+	groupUsers, err := groups.GetUsersFromGroup(api.Db, r.Context(), groupId, currentUser.Id)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while getting users from group")
@@ -170,6 +195,7 @@ func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	var req groups.AddTitleToGroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -183,12 +209,12 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupId := req.GroupId
-	if ok, err := api.Db.GroupExists(r.Context(), req.GroupId); !ok {
+	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
 		return
 	}
 
@@ -227,7 +253,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = groups.AddTitleToGroup(api.Db, r.Context(), groupId, titleID)
+	err = groups.AddTitleToGroup(api.Db, r.Context(), groupId, titleID, currentUser.Id)
 	if err != nil {
 		if errors.Is(err, groups.ErrTitleAlreadyInGroup) {
 			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
@@ -243,18 +269,20 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
 	groupId := r.PathValue("id")
 	if groupId == "" {
 		respondWithError(w, http.StatusBadRequest, "Group id is required")
 		return
 	}
 
-	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
+	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
+		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
 		return
 	}
 
@@ -278,10 +306,11 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, req.TitleId, req.Watched, req.WatchedAt)
+	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, req.TitleId, currentUser.Id, req.Watched, req.WatchedAt)
 	if err != nil {
 		if err == groups.ErrUpdatingWatchedAtWhenWatchedIsFalse {
 			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
+			return
 		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error updating group title watched")
@@ -293,24 +322,26 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 
 func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
 	groupId := r.PathValue("groupId")
 	if groupId == "" {
 		respondWithError(w, http.StatusBadRequest, "Group id is required")
 		return
 	}
 
-	if ok, err := api.Db.GroupExists(r.Context(), groupId); !ok {
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking group")
-		return
-	}
-
-	titleId := r.PathValue("titleId")
-	if titleId == "" {
-		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		respondWithError(w, http.StatusInternalServerError, "An unexpected error occurred")
 		return
 	}
 
@@ -323,7 +354,7 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId)
+	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if err != nil {
 		if errors.Is(err, groups.ErrTitleNotInGroup) {
 			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))

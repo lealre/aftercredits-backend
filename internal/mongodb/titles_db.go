@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lealre/movies-backend/internal/generics"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -133,63 +132,6 @@ func (db *DB) CountTotalTitles(ctx context.Context, args ...any) (int, error) {
 	}
 
 	return int(totalTitles), nil
-}
-
-/*
-Update the watched properties of a title in the database.
-
-If the watchedAt is provided but watchedAt.Time is nil,
-or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
-
-TODO: If watchedAt is provided but whatched is false or nil, do not proceed with the update.
-*/
-func (db *DB) UpdateTitleWatchedProperties(ctx context.Context, id string, watched *bool, watchedAt *generics.FlexibleDate) (*TitleDb, error) {
-	coll := db.Collection(TitlesCollection)
-
-	// Use FindOneAndUpdate to get the updated document
-	opts := options.FindOneAndUpdate()
-	opts.SetReturnDocument(options.After) // Return the document after update
-
-	updateDoc := bson.M{}
-
-	if watched != nil {
-		updateDoc["watched"] = *watched
-	}
-
-	if watchedAt != nil {
-		if watchedAt.Time != nil {
-			updateDoc["watchedAt"] = *watchedAt.Time
-		} else {
-			// If watchedAt is provided but Time is nil, set it to null in database
-			updateDoc["watchedAt"] = nil
-		}
-	}
-
-	if len(updateDoc) > 0 {
-		now := time.Now()
-		updateDoc["updatedAt"] = now
-	}
-
-	if len(updateDoc) == 0 {
-		return nil, fmt.Errorf("no fields to update")
-	}
-
-	var updatedTitleDb TitleDb
-	err := coll.FindOneAndUpdate(
-		ctx,
-		bson.M{"_id": id},
-		bson.M{"$set": updateDoc},
-		opts,
-	).Decode(&updatedTitleDb)
-
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrRecordNotFound
-		}
-		return nil, err
-	}
-
-	return &updatedTitleDb, nil
 }
 
 func (db *DB) TitleExists(ctx context.Context, id string) (bool, error) {

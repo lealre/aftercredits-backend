@@ -3,16 +3,22 @@ package ratings
 import "time"
 
 type Rating struct {
-	Id        string    `json:"id" bson:"_id"`
-	TitleId   string    `json:"titleId" bson:"titleId"`
-	UserId    string    `json:"userId" bson:"userId"`
-	Note      float32   `json:"note" bson:"note"`
-	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+	Id        string    `json:"id"`
+	TitleId   string    `json:"titleId"`
+	UserId    string    `json:"userId"`
+	Note      float32   `json:"note"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type NewRating struct {
+	GroupId string  `json:"groupId"`
+	TitleId string  `json:"titleId"`
+	Note    float32 `json:"note"`
 }
 
 type UpdateRatingRequest struct {
-	Note float32 `json:"note" bson:"note"`
+	Note float32 `json:"note"`
 }
 
 type AllRatingsFromTitle struct {

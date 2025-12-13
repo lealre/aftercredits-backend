@@ -5,6 +5,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([]Rating, error) {
@@ -21,8 +22,8 @@ func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([
 	return ratings, nil
 }
 
-func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId string) (Rating, error) {
-	ratingDb, err := db.GetRatingById(ctx, ratingId)
+func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string) (Rating, error) {
+	ratingDb, err := db.GetRatingById(ctx, ratingId, userId)
 	if err != nil {
 		return Rating{}, err
 	}
@@ -55,20 +56,58 @@ func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (Ti
 	return titleRatingsMap, nil
 }
 
-func AddRating(db *mongodb.DB, ctx context.Context, rating Rating) error {
+func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+
+	if rating.Note < 0 || rating.Note > 10 {
+		return Rating{}, ErrInvalidNoteValue
+	}
+
+	// Check if rating already exists
+	_, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
+	if err == nil {
+		// Rating already exists
+		return Rating{}, ErrRatingAlreadyExists
+	}
+	if err != mongodb.ErrRecordNotFound {
+		// Some other error occurred
+		return Rating{}, err
+	}
+
 	ratingDb := mongodb.RatingDb{
 		TitleId: rating.TitleId,
-		UserId:  rating.UserId,
+		UserId:  userId,
 		Note:    rating.Note,
 	}
-	return db.AddRating(ctx, ratingDb)
+
+	ratingDb, err = db.AddRating(ctx, ratingDb)
+	if err != nil {
+		// Fallback: check for duplicate key error in case the check above missed it
+		if mongo.IsDuplicateKeyError(err) {
+			return Rating{}, ErrRatingAlreadyExists
+		}
+		return Rating{}, err
+	}
+
+	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId string, updateReq UpdateRatingRequest) error {
+func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+
+	if updateReq.Note < 0 || updateReq.Note > 10 {
+		return Rating{}, ErrInvalidNoteValue
+	}
+
 	ratingDb := mongodb.RatingDb{
 		Id:   ratingId,
 		Note: updateReq.Note,
 	}
-	return db.UpdateRating(ctx, ratingDb)
 
+	updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Rating{}, ErrRatingNotFound
+		}
+		return Rating{}, err
+	}
+	return MapDbRatingDbToApiRating(updatedRatingDb), nil
 }

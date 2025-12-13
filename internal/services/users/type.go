@@ -25,18 +25,26 @@ type AllUsersResponse struct {
 }
 
 type NewUserRequest struct {
+	Username string `json:"username"`
 	Name     string `json:"name"`
-	Email    string `json:"email,omitempty"`
+	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
 type UserResponse struct {
 	Id          string     `json:"id"`
-	Name        string     `json:"name"`
+	Username    string     `json:"username"`
 	Email       string     `json:"email"`
+	Name        string     `json:"name,omitempty"`
 	AvatarURL   *string    `json:"avatarUrl,omitempty"`
 	Groups      []string   `json:"groups,omitempty"`
 	LastLoginAt *time.Time `json:"lastLoginAt,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
+}
+
+type UpdateUserRequest struct {
+	Username string `json:"username"`
+	Name     string `json:"name,omitempty"`
+	Email    string `json:"email,omitempty"`
 }

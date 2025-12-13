@@ -29,8 +29,7 @@ type GroupTitle struct {
 }
 
 type CreateGroupRequest struct {
-	Name    string `json:"name"`
-	OwnerId string `json:"ownerId"`
+	Name string `json:"name"`
 }
 
 type AddUserToGroupRequest struct {

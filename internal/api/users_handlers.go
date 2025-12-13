@@ -2,17 +2,24 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/users"
 )
 
 func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	user := auth.GetUserFromContext(r.Context())
+
+	if user.Role != mongodb.RoleAdmin {
+		respondWithForbidden(w)
+		return
+	}
 
 	allUsers, err := users.GetAllUsers(api.Db, r.Context())
 	if err != nil {
@@ -24,12 +31,68 @@ func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, users.AllUsersResponse{Users: allUsers})
 }
 
-/*
-TODO:
-  - handle invalid password
-  - validate email format
-  - handle duplicated email
-*/
+func (api *API) GetUserById(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currnetUser := auth.GetUserFromContext(r.Context())
+
+	userId := r.PathValue("id")
+	if userId == "" {
+		respondWithError(w, http.StatusBadRequest, "User id is required")
+		return
+	}
+
+	if currnetUser.Id != userId {
+		respondWithForbidden(w)
+		return
+	}
+
+	user, err := users.GetUserById(api.Db, r.Context(), userId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, user)
+}
+
+func (api *API) UpdateUserInfo(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currnetUser := auth.GetUserFromContext(r.Context())
+
+	userId := r.PathValue("id")
+	if userId == "" {
+		respondWithError(w, http.StatusBadRequest, "User id is required")
+		return
+	}
+
+	if currnetUser.Id != userId {
+		respondWithForbidden(w)
+		return
+	}
+
+	var req users.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	user, err := users.UpdateUserInfo(api.Db, r.Context(), userId, req)
+	if err != nil {
+		// Check custom erros from fileds validations
+		if statusCode, ok := users.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, user)
+}
+
 func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
@@ -40,15 +103,20 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.Name) == "" || req.Password == "" {
-		respondWithError(w, http.StatusBadRequest, "Username and Password fields are required.")
+	if strings.TrimSpace(req.Username) == "" && strings.TrimSpace(req.Email) == "" {
+		respondWithError(w, http.StatusBadRequest, "Username or Email fields are required.")
+		return
+	}
+	if req.Password == "" {
+		respondWithError(w, http.StatusBadRequest, "Password field is required.")
 		return
 	}
 
 	user, err := users.AddUser(api.Db, r.Context(), req)
 	if err != nil {
-		if errors.Is(err, users.ErrUsernameAlreadyExists) {
-			respondWithError(w, http.StatusBadRequest, "Username already exists")
+		// Check custom erros from fileds validations
+		if statusCode, ok := users.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -61,6 +129,7 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	user := auth.GetUserFromContext(r.Context())
 
 	userId := r.PathValue("id")
 	if userId == "" {
@@ -68,16 +137,17 @@ func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.UserExists(r.Context(), userId); err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
-		return
-	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
+	if user.Id != userId {
+		respondWithForbidden(w)
 		return
 	}
 
 	if err := users.DeleteUserById(api.Db, r.Context(), userId); err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			logger.Printf("WARNING: Attempted deletion of own user ID failed because user was not found. ERROR: %v", err)
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting user")
 		return
