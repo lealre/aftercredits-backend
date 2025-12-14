@@ -1,4 +1,4 @@
-# movies-backend
+# aftercredits-backend
 
 ## MongoDB Data Backup & Restore
 
@@ -7,32 +7,22 @@
 Create a backup of your MongoDB data:
 
 ```bash
-./scripts/backup-volume.sh
+./scripts/backup.sh
 ```
 
 This script:
-- Stores backup in `./backups/` directory
-- Automatically cleans up old backups (older than 30 days)
+- Creates a logical backup using `mongodump`
+- Stores backup in `./backups/` directory as a compressed tar.gz file
 
 ### 2. Restore MongoDB Data
 
 To restore data from a backup:
 
-1. **Set the environment variable:**
-   ```bash
-   export MONGO_DATA_DIR="/path/to/your/data/directory"
-   ```
+```bash
+./scripts/restore.sh backups/mongo_dump_YYYYMMDD_HHMMSS.tar.gz
+```
 
-2. **Extract the backup:**
-   ```bash
-   # Create data directory
-   mkdir -p ${MONGO_DATA_DIR}/mongodb
-   
-   # Extract backup
-   tar -xzf backups/mongo_volume_backup_YYYYMMDD_HHMMSS.tar.gz -C ${MONGO_DATA_DIR}/mongodb
-   ```
-
-3. **Start MongoDB:**
-   ```bash
-   docker compose up -d mongo
-   ```
+This script:
+- Extracts the backup file
+- Restores data using `mongorestore`
+- Automatically cleans up temporary files
