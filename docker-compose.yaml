@@ -1,4 +1,3 @@
-version: "3.9"
 
 services:
   mongo:
@@ -6,16 +5,17 @@ services:
     container_name: movies-mongo
     restart: unless-stopped
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-root}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-example}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-example}
     ports:
       - "27017:27017"
     volumes:
-      - ${MONGO_DATA_DIR}/mongodb:/data/db
-      - ${MONGO_DATA_DIR}/mongodb/config:/data/configdb
+      - mongo_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "mongosh -u \"$MONGO_INITDB_ROOT_USERNAME\" -p \"$MONGO_INITDB_ROOT_PASSWORD\" --eval 'db.adminCommand(\"ping\")'"]
+      test: ["CMD-SHELL", "mongosh -u \"${MONGO_INITDB_ROOT_USERNAME:-root}\" -p \"${MONGO_INITDB_ROOT_PASSWORD:-example}\" --authenticationDatabase admin --eval 'db.adminCommand(\"ping\")'"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+volumes:
+  mongo_data:
