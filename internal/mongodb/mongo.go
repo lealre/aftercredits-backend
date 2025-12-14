@@ -36,11 +36,12 @@ func (db *DB) Collection(name string) *mongo.Collection {
 	return db.client.Database(db.dbName).Collection(name)
 }
 
+func (db *DB) GetDatabaseName() string {
+	return db.dbName
+}
+
 func Connect(ctx context.Context) (*mongo.Client, error) {
-	uri := os.Getenv("MONGODB_URI")
-	if uri == "" {
-		return nil, fmt.Errorf("MONGODB_URI is required (e.g. mongodb://localhost:27017)")
-	}
+	uri := getMongoURI()
 
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
 	if err != nil {
@@ -53,6 +54,29 @@ func Connect(ctx context.Context) (*mongo.Client, error) {
 	}
 
 	return client, nil
+}
+
+func getMongoURI() string {
+	user := os.Getenv("MONGO_USER")
+	password := os.Getenv("MONGO_PASSWORD")
+	host := os.Getenv("MONGO_HOST")
+	port := os.Getenv("MONGO_PORT")
+
+	if host == "" {
+		host = "localhost"
+	}
+
+	if port == "" {
+		port = "27017"
+	}
+
+	// If credentials are provided, use them with authSource=admin
+	// Otherwise, connect without authentication
+	if user != "" && password != "" {
+		return fmt.Sprintf("mongodb://%s:%s@%s:%s/?authSource=admin", user, password, host, port)
+	}
+
+	return fmt.Sprintf("mongodb://%s:%s", host, port)
 }
 
 func getDatabaseName() string {
