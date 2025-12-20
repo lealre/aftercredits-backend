@@ -100,6 +100,17 @@ func GetTitlesFromGroup(
 		allTitlesIds = append(allTitlesIds, title.Id)
 	}
 
+	// Check this after the watched/unwatched filter, to include that case as well
+	if len(allTitlesIds) == 0 {
+		return generics.Page[GroupTitleDetail]{
+			TotalResults: 0,
+			Size:         size,
+			Page:         page,
+			TotalPages:   0,
+			Content:      []GroupTitleDetail{},
+		}, nil
+	}
+
 	if len(allTitlesIds) > 1 && (orderBy == "watchedAt" || orderBy == "addedAt") {
 		isAscending := true
 		if ascending != nil {

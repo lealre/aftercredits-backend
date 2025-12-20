@@ -16,6 +16,9 @@ import (
 /*
 This can filter by the native titles fields from titles Ids or by the group fields sorting.
 
+IMPORTANT: Using this method with titleIds set to nil is specifically intended to return all
+titles from the titles collection, for use in the admin scenario.
+
 🟦 CASE 1: Filter by the fields in group titles, by preserving the order in titleIds list
   - watched
   - watchedAt
@@ -47,6 +50,17 @@ func GetPageOfTitles(
 	ascendingValue := 1
 	if ascending != nil && !*ascending {
 		ascendingValue = -1
+	}
+
+	if titleIds != nil && len(titleIds) == 0 {
+		// Empty list provided explicitly - return no results
+		return generics.Page[Title]{
+			TotalResults: 0,
+			Size:         size,
+			Page:         page,
+			TotalPages:   0,
+			Content:      []Title{},
+		}, nil
 	}
 
 	filter := bson.M{}
