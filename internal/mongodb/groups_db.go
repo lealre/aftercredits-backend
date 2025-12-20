@@ -151,12 +151,8 @@ func (db *DB) GetUsersFromGroup(ctx context.Context, groupId, userId string) ([]
 	// Query users collection with only _id and name fields
 	usersColl := db.Collection(UsersCollection)
 	filter := bson.M{"_id": bson.M{"$in": group.Users}}
-	opts := options.Find().SetProjection(bson.M{
-		"_id":  1,
-		"name": 1,
-	})
 
-	cursor, err := usersColl.Find(ctx, filter, opts)
+	cursor, err := usersColl.Find(ctx, filter)
 	if err != nil {
 		return []UserDb{}, err
 	}
