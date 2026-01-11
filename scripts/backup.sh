@@ -17,15 +17,15 @@ mkdir -p "${BACKUP_DIR}"
 
 echo "📦 Starting MongoDB logical backup..."
 
-docker exec movies-mongo mongodump \
+docker exec aftercredits-mongo mongodump \
   -u "${MONGO_USER}" \
   -p "${MONGO_PASSWORD}" \
   --authenticationDatabase admin \
   --out "/tmp/${BACKUP_NAME}"
 
-docker cp "movies-mongo:/tmp/${BACKUP_NAME}" "${BACKUP_DIR}/"
+docker cp "aftercredits-mongo:/tmp/${BACKUP_NAME}" "${BACKUP_DIR}/"
 
-docker exec movies-mongo rm -rf "/tmp/${BACKUP_NAME}"
+docker exec aftercredits-mongo rm -rf "/tmp/${BACKUP_NAME}"
 
 tar -czf "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" -C "${BACKUP_DIR}" "${BACKUP_NAME}"
 rm -rf "${BACKUP_DIR}/${BACKUP_NAME}"

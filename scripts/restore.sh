@@ -34,10 +34,10 @@ echo "📦 Extracting backup file..."
 tar -xzf "${BACKUP_FILE}" -C "${BACKUP_DIR}"
 
 echo "📦 Copying backup to container..."
-docker cp "${EXTRACT_DIR}" "movies-mongo:/tmp/${BACKUP_NAME}"
+docker cp "${EXTRACT_DIR}" "aftercredits-mongo:/tmp/${BACKUP_NAME}"
 
 echo "📦 Starting MongoDB restore..."
-docker exec movies-mongo mongorestore \
+docker exec aftercredits-mongo mongorestore \
   -u "${MONGO_USER}" \
   -p "${MONGO_PASSWORD}" \
   --authenticationDatabase admin \
@@ -45,7 +45,7 @@ docker exec movies-mongo mongorestore \
   "/tmp/${BACKUP_NAME}"
 
 echo "🧹 Cleaning up..."
-docker exec movies-mongo rm -rf "/tmp/${BACKUP_NAME}"
+docker exec aftercredits-mongo rm -rf "/tmp/${BACKUP_NAME}"
 rm -rf "${EXTRACT_DIR}"
 
 echo "✅ Restore completed!"

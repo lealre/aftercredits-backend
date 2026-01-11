@@ -2,7 +2,7 @@
 services:
   mongo:
     image: mongo:7
-    container_name: movies-mongo
+    container_name: aftercredits-mongo
     restart: unless-stopped
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-root}
@@ -19,3 +19,4 @@ services:
 
 volumes:
   mongo_data:
+   name: aftercredits-mongo-data
