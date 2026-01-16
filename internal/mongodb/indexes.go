@@ -81,6 +81,11 @@ func CreateAllIndexes(ctx context.Context, db *mongo.Database, reset bool) error
 		return fmt.Errorf("failed to create comment indexes: %w", err)
 	}
 
+	// Create indexes for groups collection
+	if err := CreateGroupIndexes(ctx, db, reset); err != nil {
+		return fmt.Errorf("failed to create group indexes: %w", err)
+	}
+
 	return nil
 }
 
@@ -169,6 +174,34 @@ func CreateCommentIndexes(ctx context.Context, db *mongo.Database, reset bool) e
 			SetName(commentsIndexName),
 	}
 	if err := createIndexIfNotExists(ctx, coll, commentsIndex, commentsIndexName, reset); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CreateGroupIndexes creates indexes for the groups collection
+func CreateGroupIndexes(ctx context.Context, db *mongo.Database, reset bool) error {
+	coll := db.Collection(GroupsCollection)
+	groupsIndexName := "ownerId_and_name_unique"
+
+	// Create unique index on ownerId and name
+	// Exclude null values and empty strings from uniqueness constraint
+	groupsIndex := mongo.IndexModel{
+		Keys: bson.D{{Key: "ownerId", Value: 1}, {Key: "name", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetName(groupsIndexName).
+			SetPartialFilterExpression(bson.M{
+				"$and": []bson.M{
+					{"ownerId": bson.M{"$type": "string"}},
+					{"ownerId": bson.M{"$gt": ""}},
+					{"name": bson.M{"$type": "string"}},
+					{"name": bson.M{"$gt": ""}},
+				},
+			}),
+	}
+	if err := createIndexIfNotExists(ctx, coll, groupsIndex, groupsIndexName, reset); err != nil {
 		return err
 	}
 
