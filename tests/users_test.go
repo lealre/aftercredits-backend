@@ -297,7 +297,7 @@ func TestGetUsers(t *testing.T) {
 		})
 
 		req, err := http.NewRequest(http.MethodGet,
-			testServer.URL+"/users/"+user.Id,
+			testServer.URL+"/users/me",
 			nil,
 		)
 		require.NoError(t, err)
