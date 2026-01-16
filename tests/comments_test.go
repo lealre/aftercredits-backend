@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/services/comments"
@@ -302,6 +303,9 @@ func TestUpdateComment(t *testing.T) {
 	require.Equal(t, http.StatusCreated, comment.StatusCode)
 	var commentCreated comments.Comment
 	require.NoError(t, json.NewDecoder(comment.Body).Decode(&commentCreated))
+
+	// Add delay to ensure UpdatedAt will be different from CreatedAt
+	time.Sleep(1 * time.Second)
 
 	// ======================================================================
 	// 		TEST UPDATING COMMENTS

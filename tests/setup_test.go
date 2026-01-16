@@ -89,43 +89,80 @@ func createIndexes(t *testing.T, db *mongo.Database) {
 	t.Helper()
 
 	ctx := context.Background()
+	usersColl := db.Collection(mongodb.UsersCollection)
+	ratingsColl := db.Collection(mongodb.RatingsCollection)
+	commentsColl := db.Collection(mongodb.CommentsCollection)
 
-	// Create unique index on username (sparse to allow null values)
-	usernameIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "username", Value: 1}},
-		Options: options.Index().SetUnique(true).SetSparse(true),
+	// Create unique index on email (case-insensitive)
+	// Exclude empty strings and null values from uniqueness constraint
+	usersEmailIndexName := "email_unique"
+	emailIndex := mongo.IndexModel{
+		Keys: bson.D{{Key: "email", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetName(usersEmailIndexName).
+			SetCollation(&options.Collation{
+				Locale:   "en",
+				Strength: 2,
+			}).
+			SetPartialFilterExpression(bson.M{
+				"$and": []bson.M{
+					{"email": bson.M{"$type": "string"}},
+					{"email": bson.M{"$gt": ""}},
+				},
+			}),
 	}
-	_, err := db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, usernameIndexModel)
-	if err != nil {
-		t.Fatalf("failed to create unique index on username: %v", err)
-	}
-
-	// Create unique index on email (sparse to allow null values)
-	emailIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "email", Value: 1}},
-		Options: options.Index().SetUnique(true).SetSparse(true),
-	}
-	_, err = db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, emailIndexModel)
+	_, err := usersColl.Indexes().CreateOne(ctx, emailIndex)
 	if err != nil {
 		t.Fatalf("failed to create unique index on email: %v", err)
 	}
 
-	// Create unique index on ratings collection
-	ratingsIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
-		Options: options.Index().SetUnique(true),
+	// Create unique index on username (case-insensitive)
+	// Exclude empty strings and null values from uniqueness constraint
+	usersUsernameIndexName := "username_unique"
+	usernameIndex := mongo.IndexModel{
+		Keys: bson.D{{Key: "username", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetName(usersUsernameIndexName).
+			SetCollation(&options.Collation{
+				Locale:   "en",
+				Strength: 2,
+			}).
+			SetPartialFilterExpression(bson.M{
+				"$and": []bson.M{
+					{"username": bson.M{"$type": "string"}},
+					{"username": bson.M{"$gt": ""}},
+				},
+			}),
 	}
-	_, err = db.Collection(mongodb.RatingsCollection).Indexes().CreateOne(ctx, ratingsIndexModel)
+	_, err = usersColl.Indexes().CreateOne(ctx, usernameIndex)
+	if err != nil {
+		t.Fatalf("failed to create unique index on username: %v", err)
+	}
+
+	// Create unique index on ratings collection
+	ratingsIndexName := "userId_and_titleId_unique"
+	ratingsIndex := mongo.IndexModel{
+		Keys: bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetName(ratingsIndexName),
+	}
+	_, err = ratingsColl.Indexes().CreateOne(ctx, ratingsIndex)
 	if err != nil {
 		t.Fatalf("failed to create unique index on ratings collection: %v", err)
 	}
 
 	// Create unique index on comments collection
-	commentsIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
-		Options: options.Index().SetUnique(true),
+	commentsIndexName := "userId_and_titleId_unique"
+	commentsIndex := mongo.IndexModel{
+		Keys: bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetName(commentsIndexName),
 	}
-	_, err = db.Collection(mongodb.CommentsCollection).Indexes().CreateOne(ctx, commentsIndexModel)
+	_, err = commentsColl.Indexes().CreateOne(ctx, commentsIndex)
 	if err != nil {
 		t.Fatalf("failed to create unique index on comments collection: %v", err)
 	}
