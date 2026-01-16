@@ -28,13 +28,13 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.Name) == "" {
-		respondWithError(w, http.StatusBadRequest, "Name is required")
-		return
-	}
-
 	group, err := groups.CreateGroup(api.Db, r.Context(), req, currentUser.Id)
 	if err != nil {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			logger.Printf("Error 400? %v", err)
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to create group")
 		return

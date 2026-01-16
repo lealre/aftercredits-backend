@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
@@ -18,6 +19,11 @@ var ErrTitleNotInGroup = errors.New("title not found in group")
 var ErrUpdatingWatchedAtWhenWatchedIsFalse = errors.New("cannot update watchedAt when watched is set to false")
 
 func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
+
+	if strings.TrimSpace(req.Name) == "" {
+		return GroupResponse{}, ErrGroupNameInvalid
+	}
+
 	group := mongodb.GroupDb{
 		Name:    req.Name,
 		OwnerId: userId,
@@ -27,6 +33,9 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 
 	newGroup, err := db.CreateGroup(ctx, group)
 	if err != nil {
+		if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+			return GroupResponse{}, ErrGroupDuplicatedName
+		}
 		return GroupResponse{}, err
 	}
 
@@ -56,7 +65,7 @@ func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userI
 		return err
 	}
 
-	// Just the owner of the group can add users to it
+	// Only the owner of the group can add users to it
 	if group.OwnerId != ownerId {
 		return ErrGroupNotOwnedByUser
 	}

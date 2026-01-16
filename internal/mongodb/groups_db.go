@@ -47,6 +47,9 @@ func (db *DB) CreateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
 
 	_, err := coll.InsertOne(ctx, group)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return GroupDb{}, ErrDuplicatedRecord
+		}
 		return GroupDb{}, err
 	}
 
