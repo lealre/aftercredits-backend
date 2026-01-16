@@ -27,11 +27,58 @@ func TestCreateGroup(t *testing.T) {
 			Password: "testpass",
 		})
 
-		// Create a group with the user
+		// Create the group
 		newGroup := groups.CreateGroupRequest{
 			Name: "testgroupname",
 		}
-		jsonData, err := json.Marshal(newGroup)
+		respGroupBody := createGroup(t, newGroup, token)
+
+		require.Equal(t, newGroup.Name, respGroupBody.Name)
+		require.Equal(t, user.Id, respGroupBody.OwnerId)
+		require.Len(t, respGroupBody.Users, 1)
+		require.Contains(t, respGroupBody.Users, user.Id)
+		require.Empty(t, respGroupBody.Titles, "titles should be empty")
+		require.NotEmpty(t, respGroupBody.CreatedAt, "createdAt should not be empty")
+		require.NotEmpty(t, respGroupBody.UpdatedAt, "updatedAt should not be empty")
+
+		// Database assertion to check group creation
+		groupDb := getGroup(t, respGroupBody.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.NotEmpty(t, groupDb.Users, "Expected group's users to not be empty")
+		require.Equal(t, 1, len(groupDb.Users), "Expected group's users length to be 1, got %d", len(groupDb.Users))
+		require.Equal(t, user.Id, groupDb.OwnerId, "Expected group owner to be user id")
+		require.Empty(t, groupDb.Titles, "Expected group titles to be empty")
+		require.NotEmpty(t, respGroupBody.CreatedAt, "Expected group CreatedAt to not be empty")
+		require.NotEmpty(t, respGroupBody.UpdatedAt, "Expected group UpdatedAt to not be empty")
+
+		// Database assertion to check if user is added to group
+		userDb := getUserFromDb(t, user.Id)
+		require.NotEmpty(t, userDb, "Expected user to not be empty")
+		require.NotEmpty(t, userDb.Groups, "Expected user groups to not be empty")
+		require.Equal(t, 1, len(userDb.Groups), "Expected user groups to be 1, got %d", len(userDb.Groups))
+		require.Contains(t, userDb.Groups, respGroupBody.Id, "Expected user groups to contain the group id")
+	})
+
+	t.Run("Creating a group with the same name and ownerId should return 400", func(t *testing.T) {
+		resetDB(t)
+
+		// Create a new user
+		user, token := addUser(t, users.NewUserRequest{
+			Username: "testname",
+			Password: "testpass",
+		})
+
+		// Create the first group
+		groupOne := groups.CreateGroupRequest{
+			Name: "testgroupname",
+		}
+		respGroupOneBody := createGroup(t, groupOne, token)
+
+		// Create second grop with same name for same user
+		groupTwo := groups.CreateGroupRequest{
+			Name: "testgroupname",
+		}
+		jsonData, err := json.Marshal(groupTwo)
 		require.NoError(t, err)
 		req, err := http.NewRequest(http.MethodPost,
 			testServer.URL+"/groups",
@@ -42,26 +89,67 @@ func TestCreateGroup(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		respGroup, err := client.Do(req)
+
 		require.NoError(t, err)
 		defer respGroup.Body.Close()
-		require.Equal(t, http.StatusCreated, respGroup.StatusCode)
+		require.Equal(t, http.StatusBadRequest, respGroup.StatusCode)
 
-		var respGroupBody groups.GroupResponse
-		require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&respGroupBody))
-		require.Equal(t, newGroup.Name, respGroupBody.Name)
-		require.Equal(t, user.Id, respGroupBody.OwnerId)
-		require.Len(t, respGroupBody.Users, 1)
-		require.Contains(t, respGroupBody.Users, user.Id)
-		require.Empty(t, respGroupBody.Titles, "titles should be empty")
-		require.NotEmpty(t, respGroupBody.CreatedAt, "createdAt should not be empty")
-		require.NotEmpty(t, respGroupBody.UpdatedAt, "updatedAt should not be empty")
+		var respGroupTwoBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&respGroupTwoBody))
+		require.Contains(t, respGroupTwoBody.ErrorMessage, groups.ErrGroupDuplicatedName.Error()[1:])
 
-		// Database assertion to check if user is added to group
+		// Database assertion to check group creation
+		groupDb := getGroup(t, respGroupOneBody.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.NotEmpty(t, groupDb.Users, "Expected group's users to not be empty")
+		require.Equal(t, 1, len(groupDb.Users), "Expected group's users length to be 1, got %d", len(groupDb.Users))
+		require.Equal(t, user.Id, groupDb.OwnerId, "Expected group owner to be user id")
+		require.Empty(t, groupDb.Titles, "Expected group titles to be empty")
+		require.NotEmpty(t, respGroupOneBody.CreatedAt, "Expected group CreatedAt to not be empty")
+		require.NotEmpty(t, respGroupOneBody.UpdatedAt, "Expected group UpdatedAt to not be empty")
+
+		// Database assertion to check if there is just one group
 		userDb := getUserFromDb(t, user.Id)
 		require.NotEmpty(t, userDb, "Expected user to not be empty")
 		require.NotEmpty(t, userDb.Groups, "Expected user groups to not be empty")
 		require.Equal(t, 1, len(userDb.Groups), "Expected user groups to be 1, got %d", len(userDb.Groups))
-		require.Contains(t, userDb.Groups, respGroupBody.Id, "Expected user groups to contain the group id")
+		require.Contains(t, userDb.Groups, respGroupOneBody.Id, "Expected user groups to contain the group id")
+
+	})
+
+	t.Run("Creating a group with empty name should return 400", func(t *testing.T) {
+		resetDB(t)
+
+		// Create a new user
+		_, token := addUser(t, users.NewUserRequest{
+			Username: "testname",
+			Password: "testpass",
+		})
+
+		// Create group
+		group := groups.CreateGroupRequest{
+			Name: "",
+		}
+
+		jsonData, err := json.Marshal(group)
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodPost,
+			testServer.URL+"/groups",
+			bytes.NewBuffer(jsonData),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroup, err := client.Do(req)
+
+		require.NoError(t, err)
+		defer respGroup.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respGroup.StatusCode)
+
+		var respGroupTwoBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respGroup.Body).Decode(&respGroupTwoBody))
+		require.Contains(t, respGroupTwoBody.ErrorMessage, groups.ErrGroupNameInvalid.Error()[1:])
 
 	})
 
@@ -85,10 +173,9 @@ func TestGroupUsers(t *testing.T) {
 		})
 
 		// Create a group for user one (Owner)
-		newGroup := groups.CreateGroupRequest{
+		respGroupBody := createGroup(t, groups.CreateGroupRequest{
 			Name: "testgroupname",
-		}
-		respGroupBody := createGroup(t, newGroup, tokenUserOne)
+		}, tokenUserOne)
 
 		// Add User 2 (Participant) to group
 		addUserToGroup := groups.AddUserToGroupRequest{
@@ -211,16 +298,14 @@ func TestGroupTitles(t *testing.T) {
 	})
 
 	// Create a group for user One (Owner)
-	newGroup := groups.CreateGroupRequest{
+	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
-	}
-	group := createGroup(t, newGroup, tokenUserOne)
+	}, tokenUserOne)
 
 	// Add user Two to group owned by user One
-	userToGroup := groups.AddUserToGroupRequest{
+	addUserToGroup(t, groups.AddUserToGroupRequest{
 		UserId: userTwo.Id,
-	}
-	addUserToGroup(t, userToGroup, group.Id, tokenUserOne)
+	}, group.Id, tokenUserOne)
 
 	// User that is not part of the group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
