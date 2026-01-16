@@ -56,6 +56,20 @@ func (api *API) GetUserById(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, user)
 }
 
+func (api *API) GetUserMe(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	user, err := users.GetUserById(api.Db, r.Context(), currentUser.Id)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, user)
+}
+
 func (api *API) UpdateUserInfo(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currnetUser := auth.GetUserFromContext(r.Context())
