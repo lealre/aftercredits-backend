@@ -63,3 +63,35 @@ type Interest struct {
 	Name       string `json:"name" bson:"name"`
 	IsSubgenre bool   `json:"isSubgenre,omitempty" bson:"isSubgenre,omitempty"`
 }
+
+type EpisodesResponse struct {
+	Episodes   []Episode `json:"episodes" bson:"episodes"`
+	TotalCount int       `json:"totalCount" bson:"totalCount"`
+}
+
+type Episode struct {
+	ID             string       `json:"id" bson:"id"`
+	Title          string       `json:"title" bson:"title"`
+	PrimaryImage   Image        `json:"primaryImage" bson:"primaryImage"`
+	Season         string       `json:"season" bson:"season"`
+	EpisodeNumber  int          `json:"episodeNumber" bson:"episodeNumber"`
+	RuntimeSeconds *int         `json:"runtimeSeconds,omitempty" bson:"runtimeSeconds,omitempty"`
+	Plot           *string      `json:"plot,omitempty" bson:"plot,omitempty"`
+	Rating         *Rating      `json:"rating,omitempty" bson:"rating,omitempty"`
+	ReleaseDate    *ReleaseDate `json:"releaseDate,omitempty" bson:"releaseDate,omitempty"`
+}
+
+type ReleaseDate struct {
+	Year  int `json:"year" bson:"year"`
+	Month int `json:"month" bson:"month"`
+	Day   int `json:"day" bson:"day"`
+}
+
+type SeasonsResponse struct {
+	Seasons []Season `json:"seasons" bson:"seasons"`
+}
+
+type Season struct {
+	Season       string `json:"season" bson:"season"`
+	EpisodeCount int    `json:"episodeCount" bson:"episodeCount"`
+}

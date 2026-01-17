@@ -1,6 +1,9 @@
 package titles
 
-import "github.com/lealre/movies-backend/internal/mongodb"
+import (
+	"github.com/lealre/movies-backend/internal/imdb"
+	"github.com/lealre/movies-backend/internal/mongodb"
+)
 
 func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 	directorNames := make([]string, len(title.Directors))
@@ -47,4 +50,33 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 		AddedAt:         title.AddedAt,
 		UpdatedAt:       title.UpdatedAt,
 	}
+}
+
+func MapImdbSeasonsToDbSeasons(seasons imdb.SeasonsResponse) []mongodb.Season {
+	dbSeasons := make([]mongodb.Season, len(seasons.Seasons))
+	for i, season := range seasons.Seasons {
+		dbSeasons[i] = mongodb.Season{
+			Season:       season.Season,
+			EpisodeCount: season.EpisodeCount,
+		}
+	}
+	return dbSeasons
+}
+
+func MapImdbEpisodesToDbEpisodes(episodes imdb.EpisodesResponse) []mongodb.Episode {
+	dbEpisodes := make([]mongodb.Episode, len(episodes.Episodes))
+	for i, episode := range episodes.Episodes {
+		dbEpisodes[i] = mongodb.Episode{
+			ID:    episode.ID,
+			Title: episode.Title,
+			PrimaryImage: mongodb.Image{
+				URL:    episode.PrimaryImage.URL,
+				Width:  episode.PrimaryImage.Width,
+				Height: episode.PrimaryImage.Height,
+			},
+			Season:        episode.Season,
+			EpisodeNumber: episode.EpisodeNumber,
+		}
+	}
+	return dbEpisodes
 }

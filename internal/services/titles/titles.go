@@ -7,6 +7,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/imdb"
+	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -148,6 +149,7 @@ func GetPageOfTitles(
 
 func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, error) {
 	// TODO: Handle the case where the titles id is returning nothing from IMDB API
+	logger := logx.FromContext(ctx)
 
 	body, err := imdb.FetchTitle(titleId)
 	if err != nil {
@@ -157,6 +159,36 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 	var title mongodb.TitleDb
 	if err := json.Unmarshal(body, &title); err != nil {
 		return Title{}, err
+	}
+
+	// If title is a TV series, fetch seasons/episodes from IMDB (for validation purposes)
+	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
+		logger.Printf("Title %s is a TV series, fetching seasons/episodes from IMDB", titleId)
+		seasonsBody, err := imdb.FetchSeasons(titleId)
+		if err != nil {
+			return Title{}, err
+		}
+
+		var seasonsResp imdb.SeasonsResponse
+		if err := json.Unmarshal(seasonsBody, &seasonsResp); err != nil {
+			return Title{}, err
+		}
+
+		episodesBody, err := imdb.FetchEpisodes(titleId)
+		if err != nil {
+			return Title{}, err
+		}
+
+		var episodesResp imdb.EpisodesResponse
+		if err := json.Unmarshal(episodesBody, &episodesResp); err != nil {
+			return Title{}, err
+		}
+
+		logger.Printf("Seasons: %v", seasonsResp)
+		logger.Printf("Episodes: %v", episodesResp)
+
+		title.Seasons = MapImdbSeasonsToDbSeasons(seasonsResp)
+		title.Episodes = MapImdbEpisodesToDbEpisodes(episodesResp)
 	}
 
 	// Set missing fields
