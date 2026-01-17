@@ -13,13 +13,16 @@ import (
 // ----- Types for the database -----
 
 type RatingDb struct {
-	Id        string    `json:"id" bson:"_id"`
-	TitleId   string    `json:"titleId" bson:"titleId"`
-	UserId    string    `json:"userId" bson:"userId"`
-	Note      float32   `json:"note" bson:"note"`
-	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+	Id             string            `json:"id" bson:"_id"`
+	TitleId        string            `json:"titleId" bson:"titleId"`
+	SeasonsRatings *SeasonsRatingsDb `json:"seasonsRatings,omitempty" bson:"seasonsRatings,omitempty"`
+	UserId         string            `json:"userId" bson:"userId"`
+	Note           float32           `json:"note" bson:"note"`
+	CreatedAt      time.Time         `json:"createdAt" bson:"createdAt"`
+	UpdatedAt      time.Time         `json:"updatedAt" bson:"updatedAt"`
 }
+
+type SeasonsRatingsDb map[int]float32
 
 // ----- Methods for the database -----
 
@@ -33,6 +36,9 @@ func (db *DB) AddRating(ctx context.Context, rating RatingDb) (RatingDb, error) 
 
 	_, err := coll.InsertOne(ctx, rating)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return RatingDb{}, ErrDuplicatedRecord
+		}
 		return RatingDb{}, err
 	}
 

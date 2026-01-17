@@ -20,6 +20,8 @@ type Title struct {
 	DirectorsNames  []string   `json:"directorsNames"`
 	WritersNames    []string   `json:"writersNames"`
 	StarsNames      []string   `json:"starsNames"`
+	Seasons         []Season   `json:"seasons"`
+	Episodes        []Episode  `json:"episodes"`
 	OriginCountries []string   `json:"originCountries"`
 	AddedAt         *time.Time `json:"addedAt,omitempty"`
 	UpdatedAt       *time.Time `json:"updatedAt,omitempty"`
@@ -67,4 +69,27 @@ type AllTitlesResponse struct {
 type SetWatchedRequest struct {
 	Watched   *bool                  `json:"watched,omitempty"`
 	WatchedAt *generics.FlexibleDate `json:"watchedAt,omitempty"`
+}
+
+type Season struct {
+	Season       string `json:"season"`
+	EpisodeCount int    `json:"episodeCount"`
+}
+
+type Episode struct {
+	ID             string       `json:"id" bson:"id"`
+	Title          string       `json:"title" bson:"title"`
+	PrimaryImage   Image        `json:"primaryImage" bson:"primaryImage"`
+	Season         string       `json:"season" bson:"season"`
+	EpisodeNumber  int          `json:"episodeNumber" bson:"episodeNumber"`
+	RuntimeSeconds *int         `json:"runtimeSeconds,omitempty" bson:"runtimeSeconds,omitempty"`
+	Plot           *string      `json:"plot,omitempty" bson:"plot,omitempty"`
+	Rating         *Rating      `json:"rating,omitempty" bson:"rating,omitempty"`
+	ReleaseDate    *ReleaseDate `json:"releaseDate,omitempty" bson:"releaseDate,omitempty"`
+}
+
+type ReleaseDate struct {
+	Year  int `json:"year" bson:"year"`
+	Month int `json:"month" bson:"month"`
+	Day   int `json:"day" bson:"day"`
 }

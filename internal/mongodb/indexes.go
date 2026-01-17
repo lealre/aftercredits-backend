@@ -71,11 +71,6 @@ func CreateAllIndexes(ctx context.Context, db *mongo.Database, reset bool) error
 		return fmt.Errorf("failed to create user indexes: %w", err)
 	}
 
-	// Create indexes for ratings collection
-	if err := CreateRatingIndexes(ctx, db, reset); err != nil {
-		return fmt.Errorf("failed to create rating indexes: %w", err)
-	}
-
 	// Create indexes for comments collection
 	if err := CreateCommentIndexes(ctx, db, reset); err != nil {
 		return fmt.Errorf("failed to create comment indexes: %w", err)
@@ -136,25 +131,6 @@ func CreateUserIndexes(ctx context.Context, db *mongo.Database, reset bool) erro
 			}),
 	}
 	if err := createIndexIfNotExists(ctx, coll, usernameIndex, usersUsernameIndexName, reset); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// CreateRatingIndexes creates indexes for the ratings collection
-func CreateRatingIndexes(ctx context.Context, db *mongo.Database, reset bool) error {
-	coll := db.Collection(RatingsCollection)
-	ratingsIndexName := "userId_and_titleId_unique"
-
-	// Create unique index on userId and titleId
-	ratingsIndex := mongo.IndexModel{
-		Keys: bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
-		Options: options.Index().
-			SetUnique(true).
-			SetName(ratingsIndexName),
-	}
-	if err := createIndexIfNotExists(ctx, coll, ratingsIndex, ratingsIndexName, reset); err != nil {
 		return err
 	}
 
