@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRatings(t *testing.T) {
+func TestAddRating(t *testing.T) {
 	resetDB(t)
 
 	// ===================================
@@ -36,7 +36,6 @@ func TestRatings(t *testing.T) {
 	titles := loadTitlesFixture(t)
 	seedTitles(t, titles)
 	expectedTitle := titles[0]
-	expectedTitleToUpdate := titles[1]
 	titleNotIngroup := titles[2]
 
 	// Add expected title to group
@@ -45,20 +44,14 @@ func TestRatings(t *testing.T) {
 		GroupId: group.Id,
 	}, tokenOwnerUser)
 
-	// Add expected title to update to group
-	addTitleToGroup(t, groups.AddTitleToGroupRequest{
-		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitleToUpdate.ID),
-		GroupId: group.Id,
-	}, tokenOwnerUser)
-
-	// Users not in group
+	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
 		Username: "othertestname",
 		Password: "testpass",
 	})
 
 	// ===================================
-	// 		TEST ADDING RATINGS
+	// 		TEST ADDING RATINGS - MOVIES
 	// ===================================
 
 	t.Run("Adding a rating sucessfully", func(t *testing.T) {
@@ -160,12 +153,44 @@ func TestRatings(t *testing.T) {
 			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidNoteValue.Error()[1:])
 		}
 	})
+}
+
+func TestUpdateRating(t *testing.T) {
+	resetDB(t)
 
 	// ===================================
-	// 		TEST UPDATE RATINGS
+	// 		TEST SETUP
 	// ===================================
 
-	// Add a rating to the designed title in test setup to be updated
+	// Create a new user
+	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add titles to database
+	titles := loadTitlesFixture(t)
+	seedTitles(t, titles)
+	expectedTitleToUpdate := titles[1]
+
+	// Add expected title to update to group
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitleToUpdate.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// User not in group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// Add a rating to be updated
 	expectedNote := float32(5)
 	newRating := ratings.NewRating{
 		GroupId: group.Id,
@@ -181,6 +206,10 @@ func TestRatings(t *testing.T) {
 
 	// Add delay to ensure UpdatedAt will be different from CreatedAt
 	time.Sleep(1 * time.Second)
+
+	// ===================================
+	// 		TEST UPDATE RATINGS
+	// ===================================
 
 	t.Run("Update a rating sucessfully", func(t *testing.T) {
 		expectedNewNote := float32(10)
@@ -244,5 +273,4 @@ func TestRatings(t *testing.T) {
 			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidNoteValue.Error()[1:])
 		}
 	})
-
 }
