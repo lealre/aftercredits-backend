@@ -16,7 +16,7 @@
     ],
     "rating": {
       "aggregateRating": 9.2,
-      "voteCount": 2172900
+      "voteCount": 2195570
     },
     "metacritic": {
       "score": 100,
@@ -187,12 +187,16 @@
         "isSubgenre": true
       },
       {
+        "id": "in0000086",
+        "name": "Psychological Drama",
+        "isSubgenre": true
+      },
+      {
         "id": "in0000090",
         "name": "Tragedy",
         "isSubgenre": true
       }
-    ],
-    "watched": false
+    ]
   },
   {
     "id": "tt0075148",
@@ -211,7 +215,7 @@
     ],
     "rating": {
       "aggregateRating": 8.1,
-      "voteCount": 674372
+      "voteCount": 680153
     },
     "metacritic": {
       "score": 70,
@@ -364,8 +368,7 @@
         "id": "in0000174",
         "name": "Sport"
       }
-    ],
-    "watched": false
+    ]
   },
   {
     "id": "tt1092016",
@@ -385,7 +388,7 @@
     ],
     "rating": {
       "aggregateRating": 7.2,
-      "voteCount": 8571
+      "voteCount": 8661
     },
     "plot": "The true story of João Guilherme Estrella (\"Johnny\"), a young middle-class bon vivant who became a big-time cocaine dealer in Rio de Janeiro in the early 1990s.",
     "directors": [
@@ -400,6 +403,16 @@
       }
     ],
     "writers": [
+      {
+        "id": "nm16188639",
+        "displayName": "Guilherme Fiúza",
+        "alternativeNames": [
+          "Guilherme Fiuza"
+        ],
+        "primaryProfessions": [
+          "writer"
+        ]
+      },
       {
         "id": "nm0508190",
         "displayName": "Mariza Leão",
@@ -420,16 +433,6 @@
           "director",
           "writer"
         ]
-      },
-      {
-        "id": "nm16188639",
-        "displayName": "Guilherme Fiúza",
-        "alternativeNames": [
-          "Guilherme Fiuza"
-        ],
-        "primaryProfessions": [
-          "writer"
-        ]
       }
     ],
     "stars": [
@@ -443,18 +446,6 @@
           "actress",
           "producer",
           "soundtrack"
-        ]
-      },
-      {
-        "id": "nm0519890",
-        "displayName": "Giulio Lopes",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZDBjZWExZGEtZTU1Ny00MjM3LWE5NDktMzE4MTFkMzM1ZDMxXkEyXkFqcGc@._V1_.jpg",
-          "width": 1347,
-          "height": 767
-        },
-        "primaryProfessions": [
-          "actor"
         ]
       },
       {
@@ -472,6 +463,18 @@
           "actor",
           "director",
           "writer"
+        ]
+      },
+      {
+        "id": "nm0519890",
+        "displayName": "Giulio Lopes",
+        "primaryImage": {
+          "url": "https://m.media-amazon.com/images/M/MV5BZDBjZWExZGEtZTU1Ny00MjM3LWE5NDktMzE4MTFkMzM1ZDMxXkEyXkFqcGc@._V1_.jpg",
+          "width": 1347,
+          "height": 767
+        },
+        "primaryProfessions": [
+          "actor"
         ]
       },
       {
@@ -518,9 +521,12 @@
       {
         "id": "in0000076",
         "name": "Drama"
+      },
+      {
+        "id": "in0000233",
+        "name": "Spanish"
       }
-    ],
-    "watched": false
+    ]
   },
   {
     "id": "tt0381707",
@@ -539,7 +545,7 @@
     ],
     "rating": {
       "aggregateRating": 5.9,
-      "voteCount": 185649
+      "voteCount": 188781
     },
     "metacritic": {
       "score": 41,
@@ -733,8 +739,7 @@
         "name": "Police Procedural",
         "isSubgenre": true
       }
-    ],
-    "watched": false
+    ]
   },
   {
     "id": "tt0133093",
@@ -753,7 +758,7 @@
     ],
     "rating": {
       "aggregateRating": 8.7,
-      "voteCount": 2198298
+      "voteCount": 2220024
     },
     "metacritic": {
       "score": 73,
@@ -981,7 +986,6 @@
         "name": "Gun Fu",
         "isSubgenre": true
       }
-    ],
-    "watched": false
+    ]
   }
 ]

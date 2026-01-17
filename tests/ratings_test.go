@@ -33,14 +33,14 @@ func TestAddRating(t *testing.T) {
 	}, tokenOwnerUser)
 
 	// Add titles to database
-	titles := loadTitlesFixture(t)
-	seedTitles(t, titles)
-	expectedTitle := titles[0]
-	titleNotIngroup := titles[2]
+	movieTitles := loadTitlesFixture(t)
+	seedTitles(t, movieTitles)
+	expectedMovieTitle := movieTitles[0]
+	movieTitleNotIngroup := movieTitles[2]
 
 	// Add expected title to group
 	addTitleToGroup(t, groups.AddTitleToGroupRequest{
-		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedMovieTitle.ID),
 		GroupId: group.Id,
 	}, tokenOwnerUser)
 
@@ -54,11 +54,11 @@ func TestAddRating(t *testing.T) {
 	// 		TEST ADDING RATINGS - MOVIES
 	// ===================================
 
-	t.Run("Adding a rating sucessfully", func(t *testing.T) {
+	t.Run("Adding a rating for a movie title sucessfully", func(t *testing.T) {
 		expectedNote := float32(5)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
-			TitleId: expectedTitle.ID,
+			TitleId: expectedMovieTitle.ID,
 			Note:    expectedNote,
 		}
 
@@ -69,7 +69,7 @@ func TestAddRating(t *testing.T) {
 		var respNewRatingBody ratings.Rating
 		require.NoError(t, json.NewDecoder(respNewRating.Body).Decode(&respNewRatingBody))
 		require.Equal(t, user.Id, respNewRatingBody.UserId)
-		require.Equal(t, expectedTitle.ID, respNewRatingBody.TitleId)
+		require.Equal(t, expectedMovieTitle.ID, respNewRatingBody.TitleId)
 		require.Equal(t, expectedNote, respNewRatingBody.Note)
 		require.NotEmpty(t, respNewRatingBody.CreatedAt)
 		require.Equal(t, respNewRatingBody.CreatedAt, respNewRatingBody.UpdatedAt)
@@ -77,17 +77,17 @@ func TestAddRating(t *testing.T) {
 		// Database assertion
 		ratingDb := getRating(t, respNewRatingBody.Id)
 		require.Equal(t, user.Id, ratingDb.UserId)
-		require.Equal(t, expectedTitle.ID, ratingDb.TitleId)
+		require.Equal(t, expectedMovieTitle.ID, ratingDb.TitleId)
 		require.Equal(t, expectedNote, ratingDb.Note)
 		require.NotEmpty(t, ratingDb.CreatedAt)
 		require.Equal(t, ratingDb.CreatedAt, ratingDb.UpdatedAt)
 	})
 
-	t.Run("Adding a rating twice should return 409", func(t *testing.T) {
+	t.Run("Adding a rating for a movie title twice should return 409", func(t *testing.T) {
 		expectedNote := float32(8)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
-			TitleId: expectedTitle.ID,
+			TitleId: expectedMovieTitle.ID,
 			Note:    expectedNote,
 		}
 
@@ -100,11 +100,11 @@ func TestAddRating(t *testing.T) {
 		require.Contains(t, respNewRatingBody.ErrorMessage, ratings.ErrRatingAlreadyExists.Error()[1:])
 	})
 
-	t.Run("Adding a rating for a title not in group should return 404", func(t *testing.T) {
+	t.Run("Adding a rating for a movie title not in group should return 404", func(t *testing.T) {
 		expectedNote := float32(5)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
-			TitleId: titleNotIngroup.ID,
+			TitleId: movieTitleNotIngroup.ID,
 			Note:    expectedNote,
 		}
 
@@ -117,11 +117,11 @@ func TestAddRating(t *testing.T) {
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", newRating.GroupId, newRating.TitleId), respNewRatingBody.ErrorMessage)
 	})
 
-	t.Run("Adding a rating not being from group should return 404", func(t *testing.T) {
+	t.Run("Adding a rating for a movie title not being from group should return 404", func(t *testing.T) {
 		expectedNote := float32(5)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
-			TitleId: expectedTitle.ID,
+			TitleId: expectedMovieTitle.ID,
 			Note:    expectedNote,
 		}
 
@@ -134,13 +134,13 @@ func TestAddRating(t *testing.T) {
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", newRating.GroupId, newRating.TitleId), respNewRatingBody.ErrorMessage)
 	})
 
-	t.Run("Add a rating with notes not between 0 and 10 should return 400", func(t *testing.T) {
+	t.Run("Add a rating for a movie title with notes not between 0 and 10 should return 400", func(t *testing.T) {
 		expectedNotes := []float32{-5, 11}
 
 		for _, note := range expectedNotes {
 			newRating := ratings.NewRating{
 				GroupId: group.Id,
-				TitleId: expectedTitle.ID,
+				TitleId: expectedMovieTitle.ID,
 				Note:    note,
 			}
 

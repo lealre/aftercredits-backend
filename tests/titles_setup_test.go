@@ -13,7 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-const TILES_FIXTURES_PATH = "fixtures/titles.json"
+const TILES_FIXTURES_PATH = "fixtures/movieTitles.json"
 
 func seedTitles(t *testing.T, titles []imdb.Title) {
 	t.Helper()
