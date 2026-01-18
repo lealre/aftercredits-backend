@@ -302,26 +302,51 @@ func updateRatingForMovie(db *mongodb.DB, ctx context.Context, ratingId, userId 
 	return MapDbRatingDbToApiRating(updatedRatingDb), nil
 }
 
-func updateRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating Rating, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+// updateRatingForTVSeries updates the rating of a specific season of a TV series
+// and recalculates the overall rating accordingly.
+//
+// Steps performed by this method:
+// 1. Validate that a season number is provided in the update request.
+// 2. Ensure the existing rating contains season ratings (sanity check).
+// 3. Verify that the specified season already exists in the stored ratings.
+// 4. Update the rating for the specified season.
+// 5. Recalculate the overall rating as the average of all season ratings.
+// 6. Persist the updated season ratings and overall rating to the database.
+// 7. Map the database model back to the API model and return it.
+//
+// Possible errors returned:
+//   - ErrSeasonRequired: if no season is provided in the update request.
+//   - ErrRatingNotFound: if the rating does not contain season ratings.
+//   - ErrSeasonDoesNotExist: if the specified season is not present in the rating.
+//   - Any error returned by db.UpdateRating when persisting the update.
+func updateRatingForTVSeries(
+	db *mongodb.DB,
+	ctx context.Context,
+	rating Rating,
+	userId string,
+	updateReq UpdateRatingRequest,
+) (Rating, error) {
+
+	// 1. Season is required for updating a TV series rating
 	if updateReq.Season == nil {
 		return Rating{}, ErrSeasonRequired
 	}
 
-	// This is a sanity check, if it fails here, something is wrong in rating creation
+	// 2. Sanity check: season ratings must exist on the rating
 	if rating.SeasonsRatings == nil {
 		return Rating{}, ErrRatingNotFound
 	}
 
-	// check if the season exists in the rating
+	// 3. Check if the requested season exists in the current ratings
 	newSeasonAsString := strconv.Itoa(*updateReq.Season)
 	if _, exists := (*rating.SeasonsRatings)[newSeasonAsString]; !exists {
 		return Rating{}, ErrSeasonDoesNotExist
 	}
 
-	// update the season rating
+	// 4. Update the rating for the specified season
 	(*rating.SeasonsRatings)[newSeasonAsString] = updateReq.Note
 
-	// calculate the overall rating
+	// 5. Recalculate the overall rating (average of all season ratings)
 	var sum float32
 	var count int
 	for _, seasonRating := range *rating.SeasonsRatings {
@@ -330,11 +355,11 @@ func updateRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating Rating,
 	}
 	newOverallRating := sum / float32(count)
 
-	// update the overall rating
+	// 6. Prepare updated rating for persistence
 	rating.Note = newOverallRating
-	var seasonsRatings *mongodb.SeasonsRatingsDb
+
 	converted := mongodb.SeasonsRatingsDb(*rating.SeasonsRatings)
-	seasonsRatings = &converted
+	seasonsRatings := &converted
 
 	ratingDb := mongodb.RatingDb{
 		Id:             rating.Id,
@@ -342,11 +367,12 @@ func updateRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating Rating,
 		SeasonsRatings: seasonsRatings,
 	}
 
-	// update the rating in the database
+	// 7. Update the rating in the database
 	updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
 	if err != nil {
 		return Rating{}, err
 	}
 
+	// 8. Map database model to API model and return
 	return MapDbRatingDbToApiRating(updatedRatingDb), nil
 }
