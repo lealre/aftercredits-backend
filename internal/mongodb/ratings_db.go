@@ -119,8 +119,9 @@ func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
-			"note":      ratingDb.Note,
-			"updatedAt": now,
+			"note":           ratingDb.Note,
+			"seasonsRatings": ratingDb.SeasonsRatings,
+			"updatedAt":      now,
 		},
 	}
 

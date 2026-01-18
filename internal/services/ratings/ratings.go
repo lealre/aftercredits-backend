@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"go.mongodb.org/mongo-driver/bson"
@@ -59,43 +60,18 @@ func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (Ti
 	return titleRatingsMap, nil
 }
 
-// The behavior differs based on whether the title is a TV series or not.
+// AddRating creates a new rating for a title.
 //
-// 1 - For TV Series (tvSeries or tvMiniSeries):
-//
-//	1.1. Validates that a season number is provided in the rating request
-//	1.2. Validates that the season exists in the title's seasons list
-//	1.3. Checks if a rating already exists for this user/title combination:
-//	   - If no rating exists:
-//			1.3.1. Creates a new rating with the season rating
-//	   - If a rating exists:
-//			1.3.2. Checks if a rating for this specific season already exists
-//			1.3.3. If the season rating exists: Returns ErrSeasonRatingAlreadyExists
-//			1.3.4. If the season rating doesn't exist: Adds the new season rating to the existing rating
-//	1.4. Calculates the overall rating as the mean of all season ratings
-//
-// 2 - For Non-TV Series (movies, etc.):
-//
-//	2.1. Checks if a rating already exists for this user/title combination
-//	2.2. If a rating exists: Returns ErrRatingAlreadyExists (only one rating per user/title allowed)
-//
-// 3 - Creates the rating in the database
-//
-// Parameters:
-//   - db: MongoDB database connection
-//   - ctx: Context for the operation
-//   - rating: NewRating struct containing titleId, note, and optional season number
-//   - userId: ID of the user creating the rating
+// Routes to the appropriate handler based on title type (TV series or movie):
+//   - addRatingForTVSeries: If the title is a TV series (tvSeries or tvMiniSeries)
+//   - addRatingForMovie: If the title is a movie (non-TV series)
 //
 // Returns:
-//   - Rating: The created rating with all fields populated
-//   - error: Returns various errors based on validation failures:
-//   - ErrInvalidNoteValue: If note is not between 0 and 10
-//   - ErrSeasonRequired: If season is missing for TV series
-//   - ErrSeasonDoesNotExist: If the season doesn't exist in the title
-//   - ErrSeasonRatingAlreadyExists: If rating for this season already exists (TV series only)
-//   - ErrRatingAlreadyExists: If rating already exists (non-TV series)
+//   - Rating: The created or updated rating with all fields populated
+//   - error: Returns various errors based on validation failures from routes handlers
 func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+	logger := logx.FromContext(ctx)
+
 	if rating.Note < 0 || rating.Note > 10 {
 		return Rating{}, ErrInvalidNoteValue
 	}
@@ -108,81 +84,161 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId str
 		return Rating{}, err
 	}
 
-	var seasonsRatings *mongodb.SeasonsRatingsDb
-	newRating := rating.Note
+	// Split logic for TV series and non-TV series
+	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
+		logger.Printf("Adding rating for TV series %s", rating.TitleId)
+		return addRatingForTVSeries(db, ctx, rating, userId, title)
+	} else {
+		logger.Printf("Adding rating for movie %s", rating.TitleId)
+		return addRatingForMovie(db, ctx, rating, userId)
+	}
+}
 
-	// 1.3 / 2.1: Get existing rating (used for both TV and non-TV series)
+// addRatingForTVSeries handles rating creation/update for TV series (tvSeries or tvMiniSeries).
+//
+//	1.1. Validates that a season number is provided in the rating request
+//	1.2. Validates that the season exists in the title's seasons list
+//	1.3. Checks if a rating already exists for this user/title combination:
+//	   - If no rating exists:
+//	     1.3.1. Creates a new rating with the season rating
+//	   - If a rating exists:
+//	     1.3.2. Checks if a rating for this specific season already exists
+//	     1.3.3. If the season rating exists: Returns ErrSeasonRatingAlreadyExists
+//	     1.3.4. If the season rating doesn't exist: Adds the new season rating to the existing rating
+//	1.4. Calculates the overall rating as the mean of all season ratings
+//	1.5. Creates a new rating OR updates the existing rating in the database
+//
+// Parameters:
+//   - db: MongoDB database connection
+//   - ctx: Context for the operation
+//   - rating: NewRating struct containing titleId, note, and season number
+//   - userId: ID of the user creating the rating
+//   - title: Title struct with seasons information
+//
+// Returns:
+//   - Rating: The created or updated rating with all fields populated
+//   - error: Returns various errors based on validation failures:
+//   - ErrSeasonRequired: If season is missing
+//   - ErrSeasonDoesNotExist: If the season doesn't exist in the title
+//   - ErrSeasonRatingAlreadyExists: If rating for this season already exists
+func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating NewRating, userId string, title titles.Title) (Rating, error) {
+	// 1.1: Validates that a season number is provided
+	if rating.Season == nil {
+		return Rating{}, ErrSeasonRequired
+	}
+
+	// 1.2: Validates that the season exists in the title's seasons list
+	seasonExists := false
+	for _, season := range title.Seasons {
+		if season.Season == fmt.Sprintf("%d", *rating.Season) {
+			seasonExists = true
+			break
+		}
+	}
+	if !seasonExists {
+		return Rating{}, ErrSeasonDoesNotExist
+	}
+
+	// 1.3: Checks if a rating already exists for this user/title combination
 	existingRating, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
 	hasExistingRating := err == nil
 	if err != nil && err != mongodb.ErrRecordNotFound {
 		return Rating{}, err
 	}
 
-	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		// 1.1: Validates that a season number is provided
-		if rating.Season == nil {
-			return Rating{}, ErrSeasonRequired
-		}
+	var seasonsRatings *mongodb.SeasonsRatingsDb
 
-		// 1.2: Validates that the season exists in the title's seasons list
-		seasonExists := false
-		for _, season := range title.Seasons {
-			if season.Season == fmt.Sprintf("%d", *rating.Season) {
-				seasonExists = true
-				break
+	if !hasExistingRating {
+		// 1.3.1: Creates a new rating with the season rating
+		seasonsRatings = &mongodb.SeasonsRatingsDb{
+			*rating.Season: rating.Note,
+		}
+	} else {
+		// 1.3.2: Checks if a rating for this specific season already exists
+		if existingRating.SeasonsRatings != nil {
+			if _, exists := (*existingRating.SeasonsRatings)[*rating.Season]; exists {
+				// 1.3.3: Returns ErrSeasonRatingAlreadyExists
+				return Rating{}, ErrSeasonRatingAlreadyExists
 			}
 		}
-		if !seasonExists {
-			return Rating{}, ErrSeasonDoesNotExist
-		}
-
-		// 1.3: Checks if a rating already exists for this user/title combination
-		if !hasExistingRating {
-			// 1.3.1: Creates a new rating with the season rating
+		// 1.3.4: Adds the new season rating to the existing rating
+		if existingRating.SeasonsRatings == nil {
 			seasonsRatings = &mongodb.SeasonsRatingsDb{
 				*rating.Season: rating.Note,
 			}
 		} else {
-			// 1.3.2: Checks if a rating for this specific season already exists
-			if existingRating.SeasonsRatings != nil {
-				if _, exists := (*existingRating.SeasonsRatings)[*rating.Season]; exists {
-					// 1.3.3: Returns ErrSeasonRatingAlreadyExists
-					return Rating{}, ErrSeasonRatingAlreadyExists
-				}
-			}
-			// 1.3.4: Adds the new season rating to the existing rating
-			if existingRating.SeasonsRatings == nil {
-				seasonsRatings = &mongodb.SeasonsRatingsDb{
-					*rating.Season: rating.Note,
-				}
-			} else {
-				seasonsRatings = existingRating.SeasonsRatings
-				(*seasonsRatings)[*rating.Season] = rating.Note
-			}
-		}
-
-		// 1.4: Calculates the overall rating as the mean of all season ratings
-		var sum float32
-		var count int
-		for _, seasonRating := range *seasonsRatings {
-			sum += seasonRating
-			count++
-		}
-		newRating = sum / float32(count)
-	} else {
-		// 2.1: Checks if a rating already exists for this user/title combination
-		// 2.2: If a rating exists, returns ErrRatingAlreadyExists
-		if hasExistingRating {
-			return Rating{}, ErrRatingAlreadyExists
+			seasonsRatings = existingRating.SeasonsRatings
+			(*seasonsRatings)[*rating.Season] = rating.Note
 		}
 	}
 
-	// 3: Creates the rating in the database
+	// 1.4: Calculates the overall rating as the mean of all season ratings
+	var sum float32
+	var count int
+	for _, seasonRating := range *seasonsRatings {
+		sum += seasonRating
+		count++
+	}
+	newRating := sum / float32(count)
+
+	// 1.5: Creates a new rating OR updates the existing rating in the database
 	ratingDb := mongodb.RatingDb{
 		TitleId:        rating.TitleId,
 		UserId:         userId,
 		Note:           newRating,
 		SeasonsRatings: seasonsRatings,
+	}
+
+	if hasExistingRating {
+		// Update existing rating
+		ratingDb.Id = existingRating.Id
+		ratingDb.CreatedAt = existingRating.CreatedAt
+		updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
+		if err != nil {
+			return Rating{}, err
+		}
+		return MapDbRatingDbToApiRating(updatedRatingDb), nil
+	} else {
+		// Create new rating
+		ratingDb, err = db.AddRating(ctx, ratingDb)
+		if err != nil {
+			return Rating{}, err
+		}
+		return MapDbRatingDbToApiRating(ratingDb), nil
+	}
+}
+
+// addRatingForMovie handles rating creation for movies (non-TV series).
+//
+//	1.1. Checks if a rating already exists for this user/title combination
+//	1.2. If a rating exists: Returns ErrRatingAlreadyExists (only one rating per user/title allowed)
+//	1.3. If no rating exists: Creates a new rating with the provided note value
+//
+// Parameters:
+//   - db: MongoDB database connection
+//   - ctx: Context for the operation
+//   - rating: NewRating struct containing titleId and note
+//   - userId: ID of the user creating the rating
+//
+// Returns:
+//   - Rating: The created rating with all fields populated
+//   - error: Returns various errors based on validation failures:
+//   - ErrRatingAlreadyExists: If rating already exists
+func addRatingForMovie(db *mongodb.DB, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+	// 1.1: Checks if a rating already exists for this user/title combination
+	_, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
+	if err == nil {
+		// 1.2: If a rating exists, returns ErrRatingAlreadyExists
+		return Rating{}, ErrRatingAlreadyExists
+	} else if err != mongodb.ErrRecordNotFound {
+		return Rating{}, err
+	}
+
+	// 1.3: If no rating exists, creates a new rating with the provided note value
+	ratingDb := mongodb.RatingDb{
+		TitleId: rating.TitleId,
+		UserId:  userId,
+		Note:    rating.Note,
 	}
 
 	ratingDb, err = db.AddRating(ctx, ratingDb)
