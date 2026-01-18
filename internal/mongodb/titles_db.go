@@ -30,7 +30,7 @@ type TitleDb struct {
 	OriginCountries []CodeName  `json:"originCountries" bson:"originCountries"`
 	SpokenLanguages []CodeName  `json:"spokenLanguages" bson:"spokenLanguages"`
 	Interests       []Interest  `json:"interests" bson:"interests"`
-	Seasons         []Season    `json:"seasons" bson:"seasons"`
+	Seasons         []Seasons   `json:"seasons" bson:"seasons"`
 	Episodes        []Episode   `json:"episodes" bson:"episodes"`
 	AddedAt         *time.Time  `json:"addedAt,omitempty" bson:"addedAt,omitempty"`
 	UpdatedAt       *time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
@@ -71,18 +71,9 @@ type Interest struct {
 	IsSubgenre bool   `json:"isSubgenre,omitempty" bson:"isSubgenre,omitempty"`
 }
 
-type SeasonsResponse struct {
-	Seasons []Season `json:"seasons" bson:"seasons"`
-}
-
-type Season struct {
+type Seasons struct {
 	Season       string `json:"season" bson:"season"`
 	EpisodeCount int    `json:"episodeCount" bson:"episodeCount"`
-}
-
-type EpisodesResponse struct {
-	Episodes   []Episode `json:"episodes" bson:"episodes"`
-	TotalCount int       `json:"totalCount" bson:"totalCount"`
 }
 
 type Episode struct {

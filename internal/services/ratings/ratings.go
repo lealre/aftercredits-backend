@@ -3,7 +3,7 @@ package ratings
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strconv"
 
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -121,16 +121,20 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId str
 //   - ErrSeasonRequired: If season is missing
 //   - ErrSeasonDoesNotExist: If the season doesn't exist in the title
 //   - ErrSeasonRatingAlreadyExists: If rating for this season already exists
-func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating NewRating, userId string, title titles.Title) (Rating, error) {
+func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRating, userId string, title titles.Title) (Rating, error) {
+	logger := logx.FromContext(ctx)
 	// 1.1: Validates that a season number is provided
-	if rating.Season == nil {
+	if newRating.Season == nil {
 		return Rating{}, ErrSeasonRequired
 	}
+
+	newSeasonAsString := strconv.Itoa(*newRating.Season)
+	logger.Printf("title.Seasons: %+v", title.Seasons)
 
 	// 1.2: Validates that the season exists in the title's seasons list
 	seasonExists := false
 	for _, season := range title.Seasons {
-		if season.Season == fmt.Sprintf("%d", *rating.Season) {
+		if season.Season == newSeasonAsString {
 			seasonExists = true
 			break
 		}
@@ -140,7 +144,7 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating NewRating,
 	}
 
 	// 1.3: Checks if a rating already exists for this user/title combination
-	existingRating, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
+	existingRating, err := db.GetRatingByUserIdAndTitleId(ctx, userId, newRating.TitleId)
 	hasExistingRating := err == nil
 	if err != nil && err != mongodb.ErrRecordNotFound {
 		return Rating{}, err
@@ -151,12 +155,12 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating NewRating,
 	if !hasExistingRating {
 		// 1.3.1: Creates a new rating with the season rating
 		seasonsRatings = &mongodb.SeasonsRatingsDb{
-			*rating.Season: rating.Note,
+			newSeasonAsString: newRating.Note,
 		}
 	} else {
 		// 1.3.2: Checks if a rating for this specific season already exists
 		if existingRating.SeasonsRatings != nil {
-			if _, exists := (*existingRating.SeasonsRatings)[*rating.Season]; exists {
+			if _, exists := (*existingRating.SeasonsRatings)[newSeasonAsString]; exists {
 				// 1.3.3: Returns ErrSeasonRatingAlreadyExists
 				return Rating{}, ErrSeasonRatingAlreadyExists
 			}
@@ -164,11 +168,11 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating NewRating,
 		// 1.3.4: Adds the new season rating to the existing rating
 		if existingRating.SeasonsRatings == nil {
 			seasonsRatings = &mongodb.SeasonsRatingsDb{
-				*rating.Season: rating.Note,
+				newSeasonAsString: newRating.Note,
 			}
 		} else {
 			seasonsRatings = existingRating.SeasonsRatings
-			(*seasonsRatings)[*rating.Season] = rating.Note
+			(*seasonsRatings)[newSeasonAsString] = newRating.Note
 		}
 	}
 
@@ -179,13 +183,13 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating NewRating,
 		sum += seasonRating
 		count++
 	}
-	newRating := sum / float32(count)
+	newOverallRating := sum / float32(count)
 
 	// 1.5: Creates a new rating OR updates the existing rating in the database
 	ratingDb := mongodb.RatingDb{
-		TitleId:        rating.TitleId,
+		TitleId:        newRating.TitleId,
 		UserId:         userId,
-		Note:           newRating,
+		Note:           newOverallRating,
 		SeasonsRatings: seasonsRatings,
 	}
 

@@ -22,7 +22,7 @@ type RatingDb struct {
 	UpdatedAt      time.Time         `json:"updatedAt" bson:"updatedAt"`
 }
 
-type SeasonsRatingsDb map[int]float32
+type SeasonsRatingsDb map[string]float32
 
 // ----- Methods for the database -----
 

@@ -20,7 +20,7 @@ type Title struct {
 	DirectorsNames  []string   `json:"directorsNames"`
 	WritersNames    []string   `json:"writersNames"`
 	StarsNames      []string   `json:"starsNames"`
-	Seasons         []Season   `json:"seasons"`
+	Seasons         []Seasons  `json:"seasons"`
 	Episodes        []Episode  `json:"episodes"`
 	OriginCountries []string   `json:"originCountries"`
 	AddedAt         *time.Time `json:"addedAt,omitempty"`
@@ -71,7 +71,7 @@ type SetWatchedRequest struct {
 	WatchedAt *generics.FlexibleDate `json:"watchedAt,omitempty"`
 }
 
-type Season struct {
+type Seasons struct {
 	Season       string `json:"season"`
 	EpisodeCount int    `json:"episodeCount"`
 }

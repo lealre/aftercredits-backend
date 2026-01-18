@@ -9,26 +9,26 @@ import (
 )
 
 type Title struct {
-	ID              string            `json:"id" bson:"_id"`
-	Type            string            `json:"type" bson:"type"`
-	PrimaryTitle    string            `json:"primaryTitle" bson:"primaryTitle"`
-	PrimaryImage    Image             `json:"primaryImage" bson:"primaryImage"`
-	StartYear       int               `json:"startYear" bson:"startYear"`
-	RuntimeSeconds  int               `json:"runtimeSeconds" bson:"runtimeSeconds"`
-	Genres          []string          `json:"genres" bson:"genres"`
-	Rating          Rating            `json:"rating" bson:"rating"`
-	Metacritic      *Metacritic       `json:"metacritic,omitempty" bson:"metacritic,omitempty"`
-	Plot            string            `json:"plot" bson:"plot"`
-	Directors       []Person          `json:"directors" bson:"directors"`
-	Writers         []Person          `json:"writers" bson:"writers"`
-	Stars           []Person          `json:"stars" bson:"stars"`
-	OriginCountries []CodeName        `json:"originCountries" bson:"originCountries"`
-	SpokenLanguages []CodeName        `json:"spokenLanguages" bson:"spokenLanguages"`
-	Interests       []Interest        `json:"interests" bson:"interests"`
-	Seasons         *SeasonsResponse  `json:"seasons,omitempty"`
-	Episodes        *EpisodesResponse `json:"episodes,omitempty"`
-	AddedAt         *time.Time        `json:"addedAt,omitempty" bson:"addedAt,omitempty"`
-	UpdatedAt       *time.Time        `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
+	ID              string      `json:"id" bson:"_id"`
+	Type            string      `json:"type" bson:"type"`
+	PrimaryTitle    string      `json:"primaryTitle" bson:"primaryTitle"`
+	PrimaryImage    Image       `json:"primaryImage" bson:"primaryImage"`
+	StartYear       int         `json:"startYear" bson:"startYear"`
+	RuntimeSeconds  int         `json:"runtimeSeconds" bson:"runtimeSeconds"`
+	Genres          []string    `json:"genres" bson:"genres"`
+	Rating          Rating      `json:"rating" bson:"rating"`
+	Metacritic      *Metacritic `json:"metacritic,omitempty" bson:"metacritic,omitempty"`
+	Plot            string      `json:"plot" bson:"plot"`
+	Directors       []Person    `json:"directors" bson:"directors"`
+	Writers         []Person    `json:"writers" bson:"writers"`
+	Stars           []Person    `json:"stars" bson:"stars"`
+	OriginCountries []CodeName  `json:"originCountries" bson:"originCountries"`
+	SpokenLanguages []CodeName  `json:"spokenLanguages" bson:"spokenLanguages"`
+	Interests       []Interest  `json:"interests" bson:"interests"`
+	Seasons         *[]Seasons  `json:"seasons,omitempty"`
+	Episodes        *[]Episode  `json:"episodes,omitempty"`
+	AddedAt         *time.Time  `json:"addedAt,omitempty" bson:"addedAt,omitempty"`
+	UpdatedAt       *time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
 }
 
 type Image struct {
@@ -90,10 +90,10 @@ type ReleaseDate struct {
 }
 
 type SeasonsResponse struct {
-	Seasons []Season `json:"seasons" bson:"seasons"`
+	Seasons []Seasons `json:"seasons" bson:"seasons"`
 }
 
-type Season struct {
+type Seasons struct {
 	Season       string `json:"season" bson:"season"`
 	EpisodeCount int    `json:"episodeCount" bson:"episodeCount"`
 }

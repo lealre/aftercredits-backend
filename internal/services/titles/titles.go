@@ -187,8 +187,8 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 		logger.Printf("Seasons: %v", seasonsResp)
 		logger.Printf("Episodes: %v", episodesResp)
 
-		title.Seasons = MapImdbSeasonsToDbSeasons(seasonsResp)
-		title.Episodes = MapImdbEpisodesToDbEpisodes(episodesResp)
+		title.Seasons = MapImdbSeasonsToDbSeasons(seasonsResp.Seasons)
+		title.Episodes = MapImdbEpisodesToDbEpisodes(episodesResp.Episodes)
 	}
 
 	// Set missing fields

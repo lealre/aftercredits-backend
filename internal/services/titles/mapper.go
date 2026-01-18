@@ -46,16 +46,18 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 		DirectorsNames:  directorNames,
 		WritersNames:    writerNames,
 		StarsNames:      starNames,
+		Seasons:         MapDbSeasonsToImdbSeasons(title.Seasons),
+		Episodes:        MapDbEpisodesToImdbEpisodes(title.Episodes),
 		OriginCountries: originCountries,
 		AddedAt:         title.AddedAt,
 		UpdatedAt:       title.UpdatedAt,
 	}
 }
 
-func MapImdbSeasonsToDbSeasons(seasons imdb.SeasonsResponse) []mongodb.Season {
-	dbSeasons := make([]mongodb.Season, len(seasons.Seasons))
-	for i, season := range seasons.Seasons {
-		dbSeasons[i] = mongodb.Season{
+func MapImdbSeasonsToDbSeasons(seasons []imdb.Seasons) []mongodb.Seasons {
+	dbSeasons := make([]mongodb.Seasons, len(seasons))
+	for i, season := range seasons {
+		dbSeasons[i] = mongodb.Seasons{
 			Season:       season.Season,
 			EpisodeCount: season.EpisodeCount,
 		}
@@ -63,9 +65,9 @@ func MapImdbSeasonsToDbSeasons(seasons imdb.SeasonsResponse) []mongodb.Season {
 	return dbSeasons
 }
 
-func MapImdbEpisodesToDbEpisodes(episodes imdb.EpisodesResponse) []mongodb.Episode {
-	dbEpisodes := make([]mongodb.Episode, len(episodes.Episodes))
-	for i, episode := range episodes.Episodes {
+func MapImdbEpisodesToDbEpisodes(episodes []imdb.Episode) []mongodb.Episode {
+	dbEpisodes := make([]mongodb.Episode, len(episodes))
+	for i, episode := range episodes {
 		dbEpisodes[i] = mongodb.Episode{
 			ID:    episode.ID,
 			Title: episode.Title,
@@ -79,4 +81,33 @@ func MapImdbEpisodesToDbEpisodes(episodes imdb.EpisodesResponse) []mongodb.Episo
 		}
 	}
 	return dbEpisodes
+}
+
+func MapDbSeasonsToImdbSeasons(seasons []mongodb.Seasons) []Seasons {
+	imdbSeasons := make([]Seasons, len(seasons))
+	for i, season := range seasons {
+		imdbSeasons[i] = Seasons{
+			Season:       season.Season,
+			EpisodeCount: season.EpisodeCount,
+		}
+	}
+	return imdbSeasons
+}
+
+func MapDbEpisodesToImdbEpisodes(episodes []mongodb.Episode) []Episode {
+	apiEpisodes := make([]Episode, len(episodes))
+	for i, episode := range episodes {
+		apiEpisodes[i] = Episode{
+			ID:    episode.ID,
+			Title: episode.Title,
+			PrimaryImage: Image{
+				URL:    episode.PrimaryImage.URL,
+				Width:  episode.PrimaryImage.Width,
+				Height: episode.PrimaryImage.Height,
+			},
+			Season:        episode.Season,
+			EpisodeNumber: episode.EpisodeNumber,
+		}
+	}
+	return apiEpisodes
 }

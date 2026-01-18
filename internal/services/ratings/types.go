@@ -12,7 +12,7 @@ type Rating struct {
 	UpdatedAt      time.Time       `json:"updatedAt"`
 }
 
-type SeasonsRatings map[int]float32
+type SeasonsRatings map[string]float32
 
 type NewRating struct {
 	GroupId string  `json:"groupId"`
