@@ -18,9 +18,9 @@ import (
 func TestAddRating(t *testing.T) {
 	resetDB(t)
 
-	// ===================================
-	// 		TEST SETUP
-	// ===================================
+	// =========================================================
+	// 		TEST SETUP - ADDING RATINGS
+	// =========================================================
 
 	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
@@ -58,9 +58,9 @@ func TestAddRating(t *testing.T) {
 		Password: "testpass",
 	})
 
-	// ===================================
+	// =========================================================
 	// 		TEST ADDING RATINGS - MOVIES
-	// ===================================
+	// =========================================================
 
 	t.Run("Adding a rating for a movie title sucessfully", func(t *testing.T) {
 		expectedNote := float32(5)
@@ -162,9 +162,9 @@ func TestAddRating(t *testing.T) {
 		}
 	})
 
-	// ===================================
+	// =========================================================
 	// 		TEST ADDING RATINGS - TV SERIES
-	// ===================================
+	// =========================================================
 
 	expectedNoteSeasonOne := float32(5)
 	expectedNoteSeasonTwo := float32(8)
@@ -328,9 +328,9 @@ func TestAddRating(t *testing.T) {
 func TestUpdateRating(t *testing.T) {
 	resetDB(t)
 
-	// ===================================
-	// 		TEST SETUP
-	// ===================================
+	// =========================================================
+	// 		TEST SETUP - UPDATING RATINGS
+	// =========================================================
 
 	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
@@ -344,15 +344,20 @@ func TestUpdateRating(t *testing.T) {
 	}, tokenOwnerUser)
 
 	// Add titles to database
-	titles := loadTitlesFixture(t)
-	seedTitles(t, titles)
-	expectedTitleToUpdate := titles[1]
+	movieTitles := loadTitlesFixture(t)
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	allTitles := append(movieTitles, tvSeriesTitles...)
+	seedTitles(t, allTitles)
+	expectedMovieTitle := movieTitles[0]
+	expectedTVSeriesTitle := tvSeriesTitles[0]
 
 	// Add expected title to update to group
-	addTitleToGroup(t, groups.AddTitleToGroupRequest{
-		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitleToUpdate.ID),
-		GroupId: group.Id,
-	}, tokenOwnerUser)
+	for _, title := range allTitles {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
+			GroupId: group.Id,
+		}, tokenOwnerUser)
+	}
 
 	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
@@ -360,41 +365,59 @@ func TestUpdateRating(t *testing.T) {
 		Password: "testpass",
 	})
 
-	// Add a rating to be updated
-	expectedNote := float32(5)
-	newRating := ratings.NewRating{
-		GroupId: group.Id,
-		TitleId: expectedTitleToUpdate.ID,
-		Note:    expectedNote,
+	// Reusable function to add a rating and return the rating object
+	addRatingAndGetResult := func(groupId, titleId string, note float32, season *int) ratings.Rating {
+		newRating := ratings.NewRating{
+			GroupId: groupId,
+			TitleId: titleId,
+			Note:    note,
+			Season:  season,
+		}
+
+		resp := addRating(t, newRating, tokenOwnerUser)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		var rating ratings.Rating
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&rating))
+		return rating
 	}
 
-	respNewRating := addRating(t, newRating, tokenOwnerUser)
-	defer respNewRating.Body.Close()
-	require.Equal(t, http.StatusCreated, respNewRating.StatusCode)
-	var ratingToUpdate ratings.Rating
-	require.NoError(t, json.NewDecoder(respNewRating.Body).Decode(&ratingToUpdate))
+	// Add a rating for the movie
+	ratingToUpdateMovie := addRatingAndGetResult(group.Id, expectedMovieTitle.ID, float32(5), nil)
+
+	// Add ratings for the TV series (season 1 and season 2)
+	season1 := 1
+	season2 := 2
+	season1Note := float32(5)
+	season2Note := float32(8)
+	ratingToUpdateTVSeriesSeason1 := addRatingAndGetResult(group.Id, expectedTVSeriesTitle.ID, season1Note, &season1)
+	ratingToUpdateTVSeriesSeason2 := addRatingAndGetResult(group.Id, expectedTVSeriesTitle.ID, season2Note, &season2)
+	// These variables are available for future TV series update tests
+	_ = ratingToUpdateTVSeriesSeason1
+	_ = ratingToUpdateTVSeriesSeason2
 
 	// Add delay to ensure UpdatedAt will be different from CreatedAt
 	time.Sleep(1 * time.Second)
 
-	// ===================================
-	// 		TEST UPDATE RATINGS
-	// ===================================
+	// =========================================================
+	// 		TEST UPDATE RATINGS - MOVIES
+	// =========================================================
 
-	t.Run("Update a rating sucessfully", func(t *testing.T) {
+	t.Run("Update a movie rating sucessfully", func(t *testing.T) {
 		expectedNewNote := float32(10)
 		updateRequestRating := ratings.UpdateRatingRequest{
 			Note: expectedNewNote,
 		}
 
-		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdate.Id, tokenOwnerUser)
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateMovie.Id, tokenOwnerUser)
 		defer respUpdatedRating.Body.Close()
 		require.Equal(t, http.StatusOK, respUpdatedRating.StatusCode)
 
 		var respUpdatedRatingBody ratings.Rating
 		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
 		require.Equal(t, user.Id, respUpdatedRatingBody.UserId)
-		require.Equal(t, expectedTitleToUpdate.ID, respUpdatedRatingBody.TitleId)
+		require.Equal(t, expectedMovieTitle.ID, respUpdatedRatingBody.TitleId)
 		require.Equal(t, expectedNewNote, respUpdatedRatingBody.Note)
 		require.NotEmpty(t, respUpdatedRatingBody.CreatedAt)
 		require.NotEqual(t, respUpdatedRatingBody.CreatedAt, respUpdatedRatingBody.UpdatedAt)
@@ -403,21 +426,21 @@ func TestUpdateRating(t *testing.T) {
 		// Database assertion
 		ratingDb := getRating(t, respUpdatedRatingBody.Id)
 		require.Equal(t, user.Id, ratingDb.UserId)
-		require.Equal(t, expectedTitleToUpdate.ID, ratingDb.TitleId)
+		require.Equal(t, expectedMovieTitle.ID, ratingDb.TitleId)
 		require.Equal(t, expectedNewNote, ratingDb.Note)
 		require.NotEmpty(t, ratingDb.CreatedAt)
 		require.NotEqual(t, ratingDb.CreatedAt, ratingDb.UpdatedAt)
 		require.True(t, ratingDb.UpdatedAt.After(ratingDb.CreatedAt))
 	})
 
-	t.Run("Update a rating from other user should return 404", func(t *testing.T) {
+	t.Run("Update a movie rating from other user should return 404", func(t *testing.T) {
 		expectedNewNote := float32(10)
 		updateRequestRating := ratings.UpdateRatingRequest{
 			Note: expectedNewNote,
 		}
 
 		// This user is not the owner of the rating. Here we are testing only the rating permissions, unrelated to the group.
-		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdate.Id, tokenUserNotInGroup)
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateMovie.Id, tokenUserNotInGroup)
 		defer respUpdatedRating.Body.Close()
 		require.Equal(t, http.StatusNotFound, respUpdatedRating.StatusCode)
 
@@ -426,7 +449,7 @@ func TestUpdateRating(t *testing.T) {
 		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrRatingNotFound.Error()[1:])
 	})
 
-	t.Run("Update a rating with notes not between 0 and 10 should return 400", func(t *testing.T) {
+	t.Run("Update a movie rating with notes not between 0 and 10 should return 400", func(t *testing.T) {
 		expectedNotes := []float32{-5, 11}
 
 		for _, note := range expectedNotes {
@@ -434,7 +457,7 @@ func TestUpdateRating(t *testing.T) {
 				Note: note,
 			}
 
-			respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdate.Id, tokenOwnerUser)
+			respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateMovie.Id, tokenOwnerUser)
 			defer respUpdatedRating.Body.Close()
 			require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
 
@@ -442,5 +465,121 @@ func TestUpdateRating(t *testing.T) {
 			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
 			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidNoteValue.Error()[1:])
 		}
+	})
+
+	// =========================================================
+	// 		TEST UPDATE RATINGS - TV SERIES
+	// =========================================================
+
+	seasonTests := []struct {
+		name         string
+		season       int
+		ratingId     string
+		newNote      float32
+		expectedNote func(seasonsRatings *ratings.SeasonsRatings) float32
+	}{
+		{
+			name:     "season 1",
+			season:   season1,
+			ratingId: ratingToUpdateTVSeriesSeason1.Id,
+			newNote:  float32(10),
+			expectedNote: func(seasonsRatings *ratings.SeasonsRatings) float32 {
+				return (float32(10) + season2Note) / 2
+			},
+		},
+		{
+			name:     "season 2",
+			season:   season2,
+			ratingId: ratingToUpdateTVSeriesSeason2.Id,
+			newNote:  float32(3),
+			expectedNote: func(seasonsRatings *ratings.SeasonsRatings) float32 {
+				var sum float32
+				for _, note := range *seasonsRatings {
+					sum += note
+				}
+				return sum / float32(len(*seasonsRatings))
+			},
+		},
+	}
+
+	for _, tt := range seasonTests {
+		t.Run(fmt.Sprintf("Update a TV series rating %s sucessfully", tt.name), func(t *testing.T) {
+			updateRequestRating := ratings.UpdateRatingRequest{
+				Note:   tt.newNote,
+				Season: &tt.season,
+			}
+
+			respUpdatedRating := updateRating(t, updateRequestRating, tt.ratingId, tokenOwnerUser)
+			defer respUpdatedRating.Body.Close()
+			require.Equal(t, http.StatusOK, respUpdatedRating.StatusCode)
+
+			var respUpdatedRatingBody ratings.Rating
+			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+			require.Equal(t, user.Id, respUpdatedRatingBody.UserId)
+			require.Equal(t, expectedTVSeriesTitle.ID, respUpdatedRatingBody.TitleId)
+			require.Equal(t, tt.newNote, (*respUpdatedRatingBody.SeasonsRatings)[strconv.Itoa(tt.season)])
+			require.Equal(t, tt.expectedNote(respUpdatedRatingBody.SeasonsRatings), respUpdatedRatingBody.Note)
+			require.NotEmpty(t, respUpdatedRatingBody.CreatedAt)
+			require.NotEqual(t, respUpdatedRatingBody.CreatedAt, respUpdatedRatingBody.UpdatedAt)
+			require.True(t, respUpdatedRatingBody.UpdatedAt.After(respUpdatedRatingBody.CreatedAt))
+			require.NotEmpty(t, respUpdatedRatingBody.SeasonsRatings)
+
+			// Database assertion
+			ratingDb := getRating(t, respUpdatedRatingBody.Id)
+			require.Equal(t, user.Id, ratingDb.UserId)
+			require.Equal(t, expectedTVSeriesTitle.ID, ratingDb.TitleId)
+			require.Equal(t, tt.newNote, (*ratingDb.SeasonsRatings)[strconv.Itoa(tt.season)])
+			require.Equal(t, tt.expectedNote(respUpdatedRatingBody.SeasonsRatings), ratingDb.Note)
+			require.NotEmpty(t, ratingDb.CreatedAt)
+			require.NotEqual(t, ratingDb.CreatedAt, ratingDb.UpdatedAt)
+			require.True(t, ratingDb.UpdatedAt.After(ratingDb.CreatedAt))
+			require.NotEmpty(t, ratingDb.SeasonsRatings)
+		})
+	}
+
+	t.Run("Update a TV series rating with invalid season should return 400", func(t *testing.T) {
+		invalidSeason := 0
+		updateRequestRating := ratings.UpdateRatingRequest{
+			Note:   float32(10),
+			Season: &invalidSeason,
+		}
+
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
+		defer respUpdatedRating.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
+
+		var respUpdatedRatingBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidSeasonValue.Error()[1:])
+	})
+
+	t.Run("Update a TV series rating with season that does not exist should return 400", func(t *testing.T) {
+		invalidSeason := 3
+		updateRequestRating := ratings.UpdateRatingRequest{
+			Note:   float32(10),
+			Season: &invalidSeason,
+		}
+
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
+		defer respUpdatedRating.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
+
+		var respUpdatedRatingBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrSeasonDoesNotExist.Error()[1:])
+	})
+
+	t.Run("Update a TV series rating without season value in request should return 400", func(t *testing.T) {
+		updateRequestRating := ratings.UpdateRatingRequest{
+			Note: float32(10),
+		}
+
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
+		defer respUpdatedRating.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
+
+		var respUpdatedRatingBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrSeasonRequired.Error()[1:])
 	})
 }
