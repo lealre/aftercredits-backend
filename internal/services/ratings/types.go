@@ -22,7 +22,8 @@ type NewRating struct {
 }
 
 type UpdateRatingRequest struct {
-	Note float32 `json:"note"`
+	Note   float32 `json:"note"`
+	Season *int    `json:"season,omitempty"`
 }
 
 type AllRatingsFromTitle struct {

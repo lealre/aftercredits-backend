@@ -75,7 +75,7 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId str
 	if rating.Note < 0 || rating.Note > 10 {
 		return Rating{}, ErrInvalidNoteValue
 	}
-	if rating.Season != nil && *rating.Season < 0 {
+	if rating.Season != nil && *rating.Season <= 0 {
 		return Rating{}, ErrInvalidSeasonValue
 	}
 
@@ -122,14 +122,12 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId str
 //   - ErrSeasonDoesNotExist: If the season doesn't exist in the title
 //   - ErrSeasonRatingAlreadyExists: If rating for this season already exists
 func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRating, userId string, title titles.Title) (Rating, error) {
-	logger := logx.FromContext(ctx)
 	// 1.1: Validates that a season number is provided
 	if newRating.Season == nil {
 		return Rating{}, ErrSeasonRequired
 	}
 
 	newSeasonAsString := strconv.Itoa(*newRating.Season)
-	logger.Printf("title.Seasons: %+v", title.Seasons)
 
 	// 1.2: Validates that the season exists in the title's seasons list
 	seasonExists := false
@@ -257,11 +255,38 @@ func addRatingForMovie(db *mongodb.DB, ctx context.Context, rating NewRating, us
 }
 
 func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+	logger := logx.FromContext(ctx)
 
 	if updateReq.Note < 0 || updateReq.Note > 10 {
 		return Rating{}, ErrInvalidNoteValue
 	}
+	if updateReq.Season != nil && *updateReq.Season <= 0 {
+		return Rating{}, ErrInvalidSeasonValue
+	}
 
+	rating, err := GetRatingById(db, ctx, ratingId, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Rating{}, ErrRatingNotFound
+		}
+		return Rating{}, err
+	}
+
+	title, err := titles.GetTitleById(db, ctx, rating.TitleId)
+	if err != nil {
+		return Rating{}, err
+	}
+
+	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
+		logger.Printf("Updating rating for TV series %s", rating.TitleId)
+		return updateRatingForTVSeries(db, ctx, rating, userId, updateReq)
+	} else {
+		logger.Printf("Updating rating for movie %s", rating.TitleId)
+		return updateRatingForMovie(db, ctx, ratingId, userId, updateReq)
+	}
+}
+
+func updateRatingForMovie(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
 	ratingDb := mongodb.RatingDb{
 		Id:   ratingId,
 		Note: updateReq.Note,
@@ -274,5 +299,54 @@ func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, 
 		}
 		return Rating{}, err
 	}
+	return MapDbRatingDbToApiRating(updatedRatingDb), nil
+}
+
+func updateRatingForTVSeries(db *mongodb.DB, ctx context.Context, rating Rating, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+	if updateReq.Season == nil {
+		return Rating{}, ErrSeasonRequired
+	}
+
+	// This is a sanity check, if it fails here, something is wrong in rating creation
+	if rating.SeasonsRatings == nil {
+		return Rating{}, ErrRatingNotFound
+	}
+
+	// check if the season exists in the rating
+	newSeasonAsString := strconv.Itoa(*updateReq.Season)
+	if _, exists := (*rating.SeasonsRatings)[newSeasonAsString]; !exists {
+		return Rating{}, ErrSeasonDoesNotExist
+	}
+
+	// update the season rating
+	(*rating.SeasonsRatings)[newSeasonAsString] = updateReq.Note
+
+	// calculate the overall rating
+	var sum float32
+	var count int
+	for _, seasonRating := range *rating.SeasonsRatings {
+		sum += seasonRating
+		count++
+	}
+	newOverallRating := sum / float32(count)
+
+	// update the overall rating
+	rating.Note = newOverallRating
+	var seasonsRatings *mongodb.SeasonsRatingsDb
+	converted := mongodb.SeasonsRatingsDb(*rating.SeasonsRatings)
+	seasonsRatings = &converted
+
+	ratingDb := mongodb.RatingDb{
+		Id:             rating.Id,
+		Note:           newOverallRating,
+		SeasonsRatings: seasonsRatings,
+	}
+
+	// update the rating in the database
+	updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
+	if err != nil {
+		return Rating{}, err
+	}
+
 	return MapDbRatingDbToApiRating(updatedRatingDb), nil
 }
