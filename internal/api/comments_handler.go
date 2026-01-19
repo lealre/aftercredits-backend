@@ -8,6 +8,7 @@ import (
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/comments"
+	"github.com/lealre/movies-backend/internal/services/titles"
 )
 
 func (api *API) GetCommentsByTitleIDFromGroup(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +46,48 @@ func (api *API) GetCommentsByTitleIDFromGroup(w http.ResponseWriter, r *http.Req
 	}
 
 	respondWithJSON(w, http.StatusOK, comments.AllCommentsFromTitle{Comments: commentsList})
+}
+
+func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	var newComment comments.NewComment
+	if err := json.NewDecoder(r.Body).Decode(&newComment); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
+		return
+	}
+
+	// Get the title here to be used to know if its a tv or movie
+	if ok, err := api.Db.GroupContainsTitle(r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	title, err := titles.GetTitleById(api.Db, r.Context(), newComment.TitleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	createdComment, err := comments.AddComment(api.Db, r.Context(), newComment, currentUser.Id, title)
+	if err != nil {
+		if statusCode, ok := comments.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to add comment")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, createdComment)
 }
 
 func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
@@ -100,40 +143,6 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, updatedComment)
 
-}
-
-func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
-	logger := logx.FromContext(r.Context())
-	currentUser := auth.GetUserFromContext(r.Context())
-
-	var newComment comments.NewComment
-	if err := json.NewDecoder(r.Body).Decode(&newComment); err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
-		return
-	}
-
-	if ok, err := api.Db.GroupContainsTitle(r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId))
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
-		return
-	}
-
-	createdComment, err := comments.AddComment(api.Db, r.Context(), newComment, currentUser.Id)
-	if err != nil {
-		if statusCode, ok := comments.ErrorMap[err]; ok {
-			respondWithError(w, statusCode, formatErrorMessage(err))
-			return
-		}
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to add comment")
-		return
-	}
-
-	respondWithJSON(w, http.StatusCreated, createdComment)
 }
 
 func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {

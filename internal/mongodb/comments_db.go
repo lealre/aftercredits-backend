@@ -13,13 +13,16 @@ import (
 // ----- Types for the database -----
 
 type CommentDb struct {
-	Id        string    `json:"id" bson:"_id"`
-	TitleId   string    `json:"titleId" bson:"titleId"`
-	UserId    string    `json:"userId" bson:"userId"`
-	Comment   string    `json:"comment" bson:"comment"`
-	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+	Id              string             `json:"id" bson:"_id"`
+	TitleId         string             `json:"titleId" bson:"titleId"`
+	UserId          string             `json:"userId" bson:"userId"`
+	Comment         *string            `json:"comment" bson:"comment"`
+	SeasonsComments *SeasonsCommentsDb `json:"seasonsComments" bson:"seasonsComments"`
+	CreatedAt       time.Time          `json:"createdAt" bson:"createdAt"`
+	UpdatedAt       time.Time          `json:"updatedAt" bson:"updatedAt"`
 }
+
+type SeasonsCommentsDb map[string]string
 
 // ----- Methods for the database -----
 
@@ -42,6 +45,23 @@ func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId string, usersFro
 	return comments, nil
 }
 
+func (db *DB) GetUserCommentByTitleId(ctx context.Context, titleId string, userId string) (CommentDb, error) {
+	coll := db.Collection(CommentsCollection)
+
+	filter := bson.M{"titleId": titleId, "userId": userId}
+
+	var comment CommentDb
+	err := coll.FindOne(ctx, filter).Decode(&comment)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return CommentDb{}, ErrRecordNotFound
+		}
+		return CommentDb{}, err
+	}
+
+	return comment, nil
+}
+
 func (db *DB) AddComment(ctx context.Context, comment CommentDb) (CommentDb, error) {
 	coll := db.Collection(CommentsCollection)
 
@@ -52,6 +72,9 @@ func (db *DB) AddComment(ctx context.Context, comment CommentDb) (CommentDb, err
 
 	_, err := coll.InsertOne(ctx, comment)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return CommentDb{}, ErrDuplicatedRecord
+		}
 		return CommentDb{}, err
 	}
 
@@ -66,8 +89,9 @@ func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb, userId str
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
-			"comment":   commentDb.Comment,
-			"updatedAt": now,
+			"comment":         commentDb.Comment,
+			"seasonsComments": commentDb.SeasonsComments,
+			"updatedAt":       now,
 		},
 	}
 

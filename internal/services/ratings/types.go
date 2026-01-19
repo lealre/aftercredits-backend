@@ -34,7 +34,6 @@ type GetRatingsBatchRequest struct {
 	Titles []string `json:"titles"`
 }
 
-// This will map titleId to respective ratings
 type TitlesRatings struct {
 	Titles map[string][]Rating `json:"titles"`
 }
