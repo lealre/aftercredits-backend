@@ -39,12 +39,12 @@ func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, groupId, titleId,
 
 func AddComment(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string, title titles.Title) (Comment, error) {
 	logger := logx.FromContext(ctx)
-	if newComment.Season != nil && strings.TrimSpace(newComment.Comment) == "" {
+	if strings.TrimSpace(newComment.Comment) == "" {
 		return Comment{}, ErrCommentIsNull
 	}
 
 	if newComment.Season != nil && *newComment.Season <= 0 {
-		return Comment{}, ErrSeasonValueInvalid
+		return Comment{}, ErrInvalidSeasonValue
 	}
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
@@ -75,6 +75,10 @@ func addCommentForMovie(db *mongodb.DB, ctx context.Context, newComment NewComme
 }
 
 func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string, title titles.Title) (Comment, error) {
+	if newComment.Season == nil {
+		return Comment{}, ErrSeasonRequired
+	}
+
 	// check is the comment already exists for this user/title combination
 	existingComment, err := db.GetUserCommentByTitleId(ctx, newComment.TitleId, userId)
 	hasComment := err == nil
@@ -162,22 +166,4 @@ func DeleteComment(db *mongodb.DB, ctx context.Context, commentId, userId string
 	}
 
 	return deletedCount, nil
-}
-
-func MapDbCommentToApiComment(commentDb mongodb.CommentDb) Comment {
-	var seasonsComments *SeasonsComments
-	if commentDb.SeasonsComments != nil {
-		converted := SeasonsComments(*commentDb.SeasonsComments)
-		seasonsComments = &converted
-	}
-
-	return Comment{
-		Id:              commentDb.Id,
-		TitleId:         commentDb.TitleId,
-		UserId:          commentDb.UserId,
-		Comment:         *commentDb.Comment,
-		SeasonsComments: seasonsComments,
-		CreatedAt:       commentDb.CreatedAt,
-		UpdatedAt:       commentDb.UpdatedAt,
-	}
 }
