@@ -170,11 +170,27 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 	return MapDbCommentToApiComment(commentDb), nil
 }
 
-func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
+func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+	logger := logx.FromContext(ctx)
 	if strings.TrimSpace(updateReq.Comment) == "" {
 		return Comment{}, ErrCommentIsNull
 	}
 
+	if updateReq.Season != nil && *updateReq.Season <= 0 {
+		return Comment{}, ErrInvalidSeasonValue
+	}
+
+	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
+		logger.Printf("Updating comment for TV series %s", commentId)
+		return updateCommentForTVSeries(db, ctx, commentId, userId, updateReq, title)
+	}
+
+	logger.Printf("Updating comment for movie %s", commentId)
+	return updateCommentForMovie(db, ctx, commentId, userId, updateReq)
+
+}
+
+func updateCommentForMovie(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
 	commentDb := mongodb.CommentDb{
 		Id:      commentId,
 		Comment: &updateReq.Comment,
@@ -186,6 +202,42 @@ func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string
 		}
 		return Comment{}, err
 	}
+	return MapDbCommentToApiComment(updatedCommentDb), nil
+}
+
+func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Comment{}, ErrCommentNotFound
+		}
+		return Comment{}, err
+	}
+
+	seasonAsString := strconv.Itoa(*updateReq.Season)
+
+	if existingComment.SeasonsComments == nil {
+		return Comment{}, ErrCommentNotFound
+	}
+
+	if _, exists := (*existingComment.SeasonsComments)[seasonAsString]; !exists {
+		return Comment{}, ErrCommentNotFound
+	}
+	(*existingComment.SeasonsComments)[seasonAsString] = updateReq.Comment
+
+	converted := mongodb.SeasonsCommentsDb(*existingComment.SeasonsComments)
+	seasonsComments := &converted
+
+	commentDb := mongodb.CommentDb{
+		Id:              commentId,
+		SeasonsComments: seasonsComments,
+	}
+
+	updatedCommentDb, err := db.UpdateComment(ctx, commentDb, userId)
+	if err != nil {
+		return Comment{}, err
+	}
+
 	return MapDbCommentToApiComment(updatedCommentDb), nil
 }
 

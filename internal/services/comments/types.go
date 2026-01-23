@@ -6,7 +6,7 @@ type Comment struct {
 	Id              string           `json:"id"`
 	TitleId         string           `json:"titleId"`
 	UserId          string           `json:"userId"`
-	Comment         string           `json:"comment"`
+	Comment         *string          `json:"comment,omitempty"`
 	SeasonsComments *SeasonsComments `json:"seasonsComments,omitempty"`
 	CreatedAt       time.Time        `json:"createdAt"`
 	UpdatedAt       time.Time        `json:"updatedAt"`
@@ -27,4 +27,5 @@ type AllCommentsFromTitle struct {
 
 type UpdateCommentRequest struct {
 	Comment string `json:"comment"`
+	Season  *int   `json:"season,omitempty"`
 }

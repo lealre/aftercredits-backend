@@ -9,16 +9,11 @@ func MapDbCommentToApiComment(commentDb mongodb.CommentDb) Comment {
 		seasonsComments = &converted
 	}
 
-	comment := ""
-	if commentDb.Comment != nil {
-		comment = *commentDb.Comment
-	}
-
 	return Comment{
 		Id:              commentDb.Id,
 		TitleId:         commentDb.TitleId,
 		UserId:          commentDb.UserId,
-		Comment:         comment,
+		Comment:         commentDb.Comment,
 		SeasonsComments: seasonsComments,
 		CreatedAt:       commentDb.CreatedAt,
 		UpdatedAt:       commentDb.UpdatedAt,

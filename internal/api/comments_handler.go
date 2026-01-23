@@ -119,7 +119,6 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This checks if the group exists, if the title is in the group and if the user is in the group
 	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
 	if !ok && err == nil {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
@@ -130,7 +129,14 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedComment, err := comments.UpdateComment(api.Db, r.Context(), commentId, currentUser.Id, updateReq)
+	title, err := titles.GetTitleById(api.Db, r.Context(), titleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	updatedComment, err := comments.UpdateComment(api.Db, r.Context(), commentId, currentUser.Id, updateReq, title)
 	if err != nil {
 		if statusCode, ok := comments.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
