@@ -365,34 +365,16 @@ func TestUpdateRating(t *testing.T) {
 		Password: "testpass",
 	})
 
-	// Reusable function to add a rating and return the rating object
-	addRatingAndGetResult := func(groupId, titleId string, note float32, season *int) ratings.Rating {
-		newRating := ratings.NewRating{
-			GroupId: groupId,
-			TitleId: titleId,
-			Note:    note,
-			Season:  season,
-		}
-
-		resp := addRating(t, newRating, tokenOwnerUser)
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusCreated, resp.StatusCode)
-
-		var rating ratings.Rating
-		require.NoError(t, json.NewDecoder(resp.Body).Decode(&rating))
-		return rating
-	}
-
 	// Add a rating for the movie
-	ratingToUpdateMovie := addRatingAndGetResult(group.Id, expectedMovieTitle.ID, float32(5), nil)
+	ratingToUpdateMovie := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(5), nil, tokenOwnerUser)
 
 	// Add ratings for the TV series (season 1 and season 2)
 	season1 := 1
 	season2 := 2
 	season1Note := float32(5)
 	season2Note := float32(8)
-	ratingToUpdateTVSeriesSeason1 := addRatingAndGetResult(group.Id, expectedTVSeriesTitle.ID, season1Note, &season1)
-	ratingToUpdateTVSeriesSeason2 := addRatingAndGetResult(group.Id, expectedTVSeriesTitle.ID, season2Note, &season2)
+	ratingToUpdateTVSeriesSeason1 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, season1Note, &season1, tokenOwnerUser)
+	ratingToUpdateTVSeriesSeason2 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, season2Note, &season2, tokenOwnerUser)
 	// These variables are available for future TV series update tests
 	_ = ratingToUpdateTVSeriesSeason1
 	_ = ratingToUpdateTVSeriesSeason2
