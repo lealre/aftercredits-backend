@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/services/comments"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/users"
@@ -18,7 +20,7 @@ func TestAddComment(t *testing.T) {
 	resetDB(t)
 
 	// ======================================================================
-	// 		TEST SETUP
+	// 		TEST SETUP - ADDING COMMENTS
 	// ======================================================================
 
 	// Create a new user
@@ -34,15 +36,20 @@ func TestAddComment(t *testing.T) {
 
 	// Add titles to database
 	titles := loadTitlesFixture(t)
-	seedTitles(t, titles)
-	expectedTitle := titles[0]
-	titleNotIngroup := titles[1]
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	allTitles := append(titles, tvSeriesTitles...)
+	seedTitles(t, allTitles)
+	expectedMovieTitle := titles[0]
+	expectedTVSeriesTitle := tvSeriesTitles[0]
+	expectedMovieTitleNotIngroup := titles[1]
 
 	// Add expected title to group
-	addTitleToGroup(t, groups.AddTitleToGroupRequest{
-		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
-		GroupId: group.Id,
-	}, tokenOwnerUser)
+	for _, title := range []imdb.Title{expectedMovieTitle, expectedTVSeriesTitle} {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
+			GroupId: group.Id,
+		}, tokenOwnerUser)
+	}
 
 	// User that is not in the group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
@@ -54,14 +61,13 @@ func TestAddComment(t *testing.T) {
 	expectedComment := "This is a test comment"
 
 	// ======================================================================
-	// 		TEST ADDING COMMENTS
+	// 		TEST ADDING COMMENTS - MOVIES
 	// ======================================================================
 
-	t.Run("Adding a comment sucessfully", func(t *testing.T) {
-
+	t.Run("Adding a comment sucessfully for a movie", func(t *testing.T) {
 		newComment := comments.NewComment{
 			GroupId: group.Id,
-			TitleId: expectedTitle.ID,
+			TitleId: expectedMovieTitle.ID,
 			Comment: expectedComment,
 		}
 
@@ -72,7 +78,7 @@ func TestAddComment(t *testing.T) {
 		var respNewCommentBody comments.Comment
 		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
 		require.Equal(t, user.Id, respNewCommentBody.UserId)
-		require.Equal(t, expectedTitle.ID, respNewCommentBody.TitleId)
+		require.Equal(t, expectedMovieTitle.ID, respNewCommentBody.TitleId)
 		require.Equal(t, expectedComment, respNewCommentBody.Comment)
 		require.NotEmpty(t, respNewCommentBody.CreatedAt)
 		require.Equal(t, respNewCommentBody.CreatedAt, respNewCommentBody.UpdatedAt)
@@ -80,17 +86,19 @@ func TestAddComment(t *testing.T) {
 		// Database assertion
 		commentDb := getCommentFromDB(t, respNewCommentBody.Id)
 		require.Equal(t, user.Id, commentDb.UserId)
-		require.Equal(t, expectedTitle.ID, commentDb.TitleId)
-		require.Equal(t, expectedComment, commentDb.Comment)
+		require.Equal(t, expectedMovieTitle.ID, commentDb.TitleId)
+		require.NotNil(t, commentDb.Comment)
+		require.Equal(t, *commentDb.Comment, expectedComment)
 		require.NotEmpty(t, commentDb.CreatedAt)
 		require.Equal(t, commentDb.CreatedAt, commentDb.UpdatedAt)
 	})
 
-	t.Run("Adding a comment with a empty comment should return 400", func(t *testing.T) {
+	t.Run("Adding a comment for a movie with a empty comment should return 400", func(t *testing.T) {
+		emptyComment := "  "
 		newComment := comments.NewComment{
 			GroupId: group.Id,
-			TitleId: expectedTitle.ID,
-			Comment: "   ",
+			TitleId: expectedMovieTitle.ID,
+			Comment: emptyComment,
 		}
 		respNewComment := addComment(t, newComment, tokenOwnerUser)
 		defer respNewComment.Body.Close()
@@ -101,10 +109,10 @@ func TestAddComment(t *testing.T) {
 		require.Contains(t, respNewCommentBody.ErrorMessage, comments.ErrCommentIsNull.Error()[1:])
 	})
 
-	t.Run("Adding a comment from the same user and title should return 409", func(t *testing.T) {
+	t.Run("Adding a comment for a movie from the same user and title should return 409", func(t *testing.T) {
 		newComment := comments.NewComment{
 			GroupId: group.Id,
-			TitleId: expectedTitle.ID,
+			TitleId: expectedMovieTitle.ID,
 			Comment: expectedComment,
 		}
 
@@ -117,10 +125,10 @@ func TestAddComment(t *testing.T) {
 		require.Contains(t, respNewCommentBody.ErrorMessage, comments.ErrCommentAlreadyExists.Error()[1:])
 	})
 
-	t.Run("Adding a comment for a title that is not in the group should return 404", func(t *testing.T) {
+	t.Run("Adding a comment for a movie title that is not in the group should return 404", func(t *testing.T) {
 		newComment := comments.NewComment{
 			GroupId: group.Id,
-			TitleId: titleNotIngroup.ID,
+			TitleId: expectedMovieTitleNotIngroup.ID,
 			Comment: expectedComment,
 		}
 
@@ -133,10 +141,10 @@ func TestAddComment(t *testing.T) {
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId), respNewCommentBody.ErrorMessage)
 	})
 
-	t.Run("Adding a comment from user that is not in the group should return 404", func(t *testing.T) {
+	t.Run("Adding a comment for a movie from user that is not in the group should return 404", func(t *testing.T) {
 		newComment := comments.NewComment{
 			GroupId: group.Id,
-			TitleId: expectedTitle.ID,
+			TitleId: expectedMovieTitle.ID,
 			Comment: expectedComment,
 		}
 
@@ -148,6 +156,165 @@ func TestAddComment(t *testing.T) {
 		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
 		require.Contains(t, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId), respNewCommentBody.ErrorMessage)
 	})
+
+	// ======================================================================
+	// 		TEST ADDING COMMENTS - TV SERIES
+	// ======================================================================
+
+	t.Run("Adding a comment sucessfully for a tv series season 1", func(t *testing.T) {
+		expectedSeason := 1
+		newComment := comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle.ID,
+			Comment: expectedComment,
+			Season:  &expectedSeason,
+		}
+
+		respNewComment := addComment(t, newComment, tokenOwnerUser)
+		defer respNewComment.Body.Close()
+		require.Equal(t, http.StatusCreated, respNewComment.StatusCode)
+
+		var respNewCommentBody comments.Comment
+		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
+		require.Equal(t, user.Id, respNewCommentBody.UserId)
+		require.Equal(t, expectedTVSeriesTitle.ID, respNewCommentBody.TitleId)
+		require.Empty(t, respNewCommentBody.Comment)
+		require.NotNil(t, respNewCommentBody.SeasonsComments)
+		require.Equal(t, expectedComment, (*respNewCommentBody.SeasonsComments)["1"])
+		require.NotEmpty(t, respNewCommentBody.CreatedAt)
+		require.Equal(t, respNewCommentBody.CreatedAt, respNewCommentBody.UpdatedAt)
+
+		// Database assertion
+		commentDb := getCommentFromDB(t, respNewCommentBody.Id)
+		require.Equal(t, user.Id, commentDb.UserId)
+		require.Equal(t, expectedTVSeriesTitle.ID, commentDb.TitleId)
+		require.Nil(t, commentDb.Comment)
+		require.NotNil(t, commentDb.SeasonsComments)
+		require.Equal(t, expectedComment, (*commentDb.SeasonsComments)["1"])
+		require.NotEmpty(t, commentDb.CreatedAt)
+		require.Equal(t, commentDb.CreatedAt, commentDb.UpdatedAt)
+	})
+
+	t.Run("Adding a comment for a TV series for other season sucessfully", func(t *testing.T) {
+		commentTests := []struct {
+			season          int
+			expectedComment string
+		}{
+			{season: 2, expectedComment: "Comment for season 2"},
+			{season: 3, expectedComment: "Comment for season 3"},
+		}
+
+		for i, tt := range commentTests {
+			t.Run(fmt.Sprintf("Season %d", tt.season), func(t *testing.T) {
+				newComment := comments.NewComment{
+					GroupId: group.Id,
+					TitleId: expectedTVSeriesTitle.ID,
+					Comment: tt.expectedComment,
+					Season:  &tt.season,
+				}
+
+				respNewComment := addComment(t, newComment, tokenOwnerUser)
+				defer respNewComment.Body.Close()
+				require.Equal(t, http.StatusCreated, respNewComment.StatusCode)
+
+				var respNewCommentBody comments.Comment
+				require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
+				require.Equal(t, user.Id, respNewCommentBody.UserId)
+				require.Equal(t, expectedTVSeriesTitle.ID, respNewCommentBody.TitleId)
+				require.Empty(t, respNewCommentBody.Comment)
+				require.NotNil(t, respNewCommentBody.SeasonsComments)
+				require.Equal(t, tt.expectedComment, (*respNewCommentBody.SeasonsComments)[strconv.Itoa(tt.season)])
+				require.NotEmpty(t, respNewCommentBody.CreatedAt)
+				require.NotEqual(t, respNewCommentBody.CreatedAt, respNewCommentBody.UpdatedAt)
+				require.True(t, respNewCommentBody.UpdatedAt.After(respNewCommentBody.CreatedAt))
+
+				// Database assertion
+				commentDb := getCommentFromDB(t, respNewCommentBody.Id)
+				require.Equal(t, user.Id, commentDb.UserId)
+				require.Equal(t, expectedTVSeriesTitle.ID, commentDb.TitleId)
+				require.Nil(t, commentDb.Comment)
+				require.NotNil(t, commentDb.SeasonsComments)
+				require.Equal(t, tt.expectedComment, (*commentDb.SeasonsComments)[strconv.Itoa(tt.season)])
+				require.NotEmpty(t, commentDb.CreatedAt)
+				require.NotEqual(t, commentDb.CreatedAt, commentDb.UpdatedAt)
+				require.True(t, commentDb.UpdatedAt.After(commentDb.CreatedAt))
+				// Assert that the SeasonsComments map has the correct number of seasons added
+				// One from previous test, and the additional season from the current test
+				require.NotEmpty(t, commentDb.SeasonsComments)
+				require.Equal(t, i+2, len(*commentDb.SeasonsComments))
+			})
+		}
+	})
+
+	t.Run("Adding a comment for a TV series for a season that do not exist should return 404", func(t *testing.T) {
+		expectedSeason := 100
+		newComment := comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle.ID,
+			Comment: expectedComment,
+			Season:  &expectedSeason,
+		}
+		respNewComment := addComment(t, newComment, tokenOwnerUser)
+		defer respNewComment.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respNewComment.StatusCode)
+
+		var respNewCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
+		require.Contains(t, respNewCommentBody.ErrorMessage, comments.ErrSeasonDoesNotExist.Error()[1:])
+	})
+
+	t.Run("Adding a comment for a TV series for a season that already has a comment should return 409", func(t *testing.T) {
+		expectedSeason := 1
+		newComment := comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle.ID,
+			Comment: "Other comment for season 1",
+			Season:  &expectedSeason,
+		}
+
+		respNewComment := addComment(t, newComment, tokenOwnerUser)
+		defer respNewComment.Body.Close()
+		require.Equal(t, http.StatusConflict, respNewComment.StatusCode)
+
+		var respNewCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
+		require.Contains(t, respNewCommentBody.ErrorMessage, comments.ErrSeasonCommentAlreadyExists.Error()[1:])
+	})
+
+	t.Run("Adding a comment for a TV series for a season without a season number should return 400", func(t *testing.T) {
+		newComment := comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle.ID,
+			Comment: "Other comment for season 1",
+		}
+
+		respNewComment := addComment(t, newComment, tokenOwnerUser)
+		defer respNewComment.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respNewComment.StatusCode)
+
+		var respNewCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
+		require.Contains(t, respNewCommentBody.ErrorMessage, comments.ErrSeasonRequired.Error()[1:])
+	})
+
+	t.Run("Adding a rating for a TV series for a season with a season number less than 1 should return 400", func(t *testing.T) {
+		expectedSeason := 0
+		newComment := comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle.ID,
+			Comment: "Other comment for season 1",
+			Season:  &expectedSeason,
+		}
+
+		respNewComment := addComment(t, newComment, tokenOwnerUser)
+		defer respNewComment.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respNewComment.StatusCode)
+
+		var respNewCommentBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respNewComment.Body).Decode(&respNewCommentBody))
+		require.Contains(t, respNewCommentBody.ErrorMessage, comments.ErrInvalidSeasonValue.Error()[1:])
+	})
+
 }
 
 func TestGetComments(t *testing.T) {
@@ -231,7 +398,8 @@ func TestGetComments(t *testing.T) {
 		require.Equal(t, 1, len(commentDb))
 		require.Equal(t, user.Id, commentDb[0].UserId)
 		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
-		require.Equal(t, expectedComment, commentDb[0].Comment)
+		require.NotNil(t, commentDb[0].Comment)
+		require.Equal(t, *commentDb[0].Comment, expectedComment)
 		require.NotEmpty(t, commentDb[0].CreatedAt)
 		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
 	})
@@ -294,10 +462,11 @@ func TestUpdateComment(t *testing.T) {
 	})
 
 	// Add comment to title as group owner
+	expectedComment := "This is a test comment"
 	comment := addComment(t, comments.NewComment{
 		GroupId: group.Id,
 		TitleId: expectedTitle.ID,
-		Comment: "This is a test comment",
+		Comment: expectedComment,
 	}, tokenOwnerUser)
 	defer comment.Body.Close()
 	require.Equal(t, http.StatusCreated, comment.StatusCode)
@@ -330,7 +499,8 @@ func TestUpdateComment(t *testing.T) {
 		commentDb := getCommentFromDB(t, respUpdatedCommentBody.Id)
 		require.Equal(t, user.Id, commentDb.UserId)
 		require.Equal(t, expectedTitle.ID, commentDb.TitleId)
-		require.Equal(t, expectedUpdatedComment, commentDb.Comment)
+		require.NotNil(t, commentDb.Comment)
+		require.Equal(t, *commentDb.Comment, expectedUpdatedComment)
 		require.NotEmpty(t, commentDb.CreatedAt)
 		require.NotEqual(t, commentDb.CreatedAt, commentDb.UpdatedAt)
 		require.True(t, commentDb.UpdatedAt.After(commentDb.CreatedAt))
@@ -447,7 +617,8 @@ func TestDeleteComment(t *testing.T) {
 		require.Equal(t, 1, len(commentDb))
 		require.Equal(t, userFromGroup.Id, commentDb[0].UserId)
 		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
-		require.Equal(t, expectedGroupComment, commentDb[0].Comment)
+		require.NotNil(t, commentDb[0].Comment)
+		require.Equal(t, *commentDb[0].Comment, expectedGroupComment)
 		require.NotEmpty(t, commentDb[0].CreatedAt)
 		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
 	})
@@ -466,7 +637,8 @@ func TestDeleteComment(t *testing.T) {
 		require.Equal(t, 1, len(commentDb))
 		require.Equal(t, userFromGroup.Id, commentDb[0].UserId)
 		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
-		require.Equal(t, expectedGroupComment, commentDb[0].Comment)
+		require.NotNil(t, commentDb[0].Comment)
+		require.Equal(t, *commentDb[0].Comment, expectedGroupComment)
 		require.NotEmpty(t, commentDb[0].CreatedAt)
 		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
 	})
@@ -485,7 +657,8 @@ func TestDeleteComment(t *testing.T) {
 		require.Equal(t, 1, len(commentDb))
 		require.Equal(t, userFromGroup.Id, commentDb[0].UserId)
 		require.Equal(t, expectedTitle.ID, commentDb[0].TitleId)
-		require.Equal(t, expectedGroupComment, commentDb[0].Comment)
+		require.NotNil(t, commentDb[0].Comment)
+		require.Equal(t, *commentDb[0].Comment, expectedGroupComment)
 		require.NotEmpty(t, commentDb[0].CreatedAt)
 		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
 	})
