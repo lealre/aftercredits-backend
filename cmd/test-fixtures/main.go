@@ -89,7 +89,7 @@ func fetchTitleWithSeasonsAndEpisodes(titleID string) (imdb.Title, error) {
 	if err = json.Unmarshal(seasonsResp, &seasons); err != nil {
 		return imdb.Title{}, err
 	}
-	title.Seasons = &seasons
+	title.Seasons = &seasons.Seasons
 
 	// Fetch episodes
 	log.Printf("  Fetching episodes for %s", titleID)
@@ -102,7 +102,7 @@ func fetchTitleWithSeasonsAndEpisodes(titleID string) (imdb.Title, error) {
 	if err = json.Unmarshal(episodesResp, &episodes); err != nil {
 		return imdb.Title{}, err
 	}
-	title.Episodes = &episodes
+	title.Episodes = &episodes.Episodes
 
 	return title, nil
 }
