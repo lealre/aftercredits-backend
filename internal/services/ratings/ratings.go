@@ -260,9 +260,6 @@ func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, 
 	if updateReq.Note < 0 || updateReq.Note > 10 {
 		return Rating{}, ErrInvalidNoteValue
 	}
-	if updateReq.Season != nil && *updateReq.Season <= 0 {
-		return Rating{}, ErrInvalidSeasonValue
-	}
 
 	rating, err := GetRatingById(db, ctx, ratingId, userId)
 	if err != nil {

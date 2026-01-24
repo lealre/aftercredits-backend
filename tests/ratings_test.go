@@ -519,36 +519,24 @@ func TestUpdateRating(t *testing.T) {
 		})
 	}
 
-	t.Run("Update a TV series rating with invalid season should return 400", func(t *testing.T) {
-		invalidSeason := 0
-		updateRequestRating := ratings.UpdateRatingRequest{
-			Note:   float32(10),
-			Season: &invalidSeason,
-		}
-
-		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
-		defer respUpdatedRating.Body.Close()
-		require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
-
-		var respUpdatedRatingBody api.ErrorResponse
-		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
-		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidSeasonValue.Error()[1:])
-	})
-
 	t.Run("Update a TV series rating with season that does not exist should return 400", func(t *testing.T) {
-		invalidSeason := 3
-		updateRequestRating := ratings.UpdateRatingRequest{
-			Note:   float32(10),
-			Season: &invalidSeason,
+		invalidSeasons := []int{0, -1, 3}
+
+		for _, season := range invalidSeasons {
+			invalidSeason := season
+			updateRequestRating := ratings.UpdateRatingRequest{
+				Note:   float32(10),
+				Season: &invalidSeason,
+			}
+
+			respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
+			defer respUpdatedRating.Body.Close()
+			require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
+
+			var respUpdatedRatingBody api.ErrorResponse
+			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrSeasonDoesNotExist.Error()[1:])
 		}
-
-		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
-		defer respUpdatedRating.Body.Close()
-		require.Equal(t, http.StatusBadRequest, respUpdatedRating.StatusCode)
-
-		var respUpdatedRatingBody api.ErrorResponse
-		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
-		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrSeasonDoesNotExist.Error()[1:])
 	})
 
 	t.Run("Update a TV series rating without season value in request should return 400", func(t *testing.T) {
