@@ -170,6 +170,18 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 	return MapDbCommentToApiComment(commentDb), nil
 }
 
+// UpdateComment updates an existing comment for a given title.
+//
+// It performs basic validations on the incoming request and then delegates to
+// the appropriate handler based on the title type:
+//   - updateCommentForTVSeries: if the title is a TV series (tvSeries or tvMiniSeries)
+//   - updateCommentForMovie: if the title is a movie (non‑TV series)
+//
+// Possible errors:
+//   - ErrCommentIsNull: if the updated comment text is empty or whitespace
+//   - ErrInvalidSeasonValue: if a season is provided and is less than or equal to zero
+//   - ErrCommentNotFound: if the underlying specific handler cannot find the target comment
+//   - Any error propagated from the underlying database operations
 func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
 	logger := logx.FromContext(ctx)
 	if strings.TrimSpace(updateReq.Comment) == "" {
@@ -205,11 +217,27 @@ func updateCommentForMovie(db *mongodb.DB, ctx context.Context, commentId, userI
 	return MapDbCommentToApiComment(updatedCommentDb), nil
 }
 
+// updateCommentForTVSeries updates the comment of a specific season of a TV series.
+//
+// Steps performed by this method:
+//  1. Validates that a season number is provided in the update request.
+//  2. Fetches the existing comment for the given user and title.
+//  3. Ensures that the existing comment has season comments.
+//  4. Verifies that the specified season exists within the stored season comments.
+//  5. Updates the comment for the specified season.
+//  6. Persists the updated season comments to the database.
+//
+// Possible errors:
+//   - ErrSeasonRequired: if no season is provided in the update request.
+//   - ErrCommentNotFound: if the comment or the specified season comment does not exist.
+//   - Any error returned by db.UpdateComment when persisting the update.
 func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+	// 1. Validate that a season number is provided in the update request
 	if updateReq.Season == nil {
 		return Comment{}, ErrSeasonRequired
 	}
 
+	// 2. Fetch the existing comment for this user and title
 	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId)
 	if err != nil {
 		if err == mongodb.ErrRecordNotFound {
@@ -218,17 +246,22 @@ func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, us
 		return Comment{}, err
 	}
 
+	// 3. Ensure that the existing comment has season comments
 	seasonAsString := strconv.Itoa(*updateReq.Season)
 
 	if existingComment.SeasonsComments == nil {
 		return Comment{}, ErrCommentNotFound
 	}
 
+	// 4. Verify that the specified season exists in the stored season comments
 	if _, exists := (*existingComment.SeasonsComments)[seasonAsString]; !exists {
 		return Comment{}, ErrCommentNotFound
 	}
+
+	// 5. Update the comment for the specified season
 	(*existingComment.SeasonsComments)[seasonAsString] = updateReq.Comment
 
+	// 6. Persist the updated season comments to the database
 	converted := mongodb.SeasonsCommentsDb(*existingComment.SeasonsComments)
 	seasonsComments := &converted
 
