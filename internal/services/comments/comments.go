@@ -206,6 +206,10 @@ func updateCommentForMovie(db *mongodb.DB, ctx context.Context, commentId, userI
 }
 
 func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+	if updateReq.Season == nil {
+		return Comment{}, ErrSeasonRequired
+	}
+
 	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId)
 	if err != nil {
 		if err == mongodb.ErrRecordNotFound {

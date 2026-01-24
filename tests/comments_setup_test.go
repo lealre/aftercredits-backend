@@ -46,9 +46,10 @@ func getCommentsFromApi(t *testing.T, groupId, titleId, innerToken string) *http
 	return resp
 }
 
-func updateCommentFromApi(t *testing.T, groupId, titleId, commentId, comment, innerToken string) *http.Response {
+func updateCommentFromApi(t *testing.T, groupId, titleId, commentId, comment, innerToken string, season *int) *http.Response {
 	jsonData, err := json.Marshal(comments.UpdateCommentRequest{
 		Comment: comment,
+		Season:  season,
 	})
 	require.NoError(t, err)
 
