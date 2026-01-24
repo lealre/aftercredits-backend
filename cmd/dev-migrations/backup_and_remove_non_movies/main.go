@@ -13,8 +13,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-const backupFileName = "backup_non_movie_titles.json"
-
 func main() {
 	_ = godotenv.Load()
 
@@ -60,6 +58,7 @@ func main() {
 		log.Fatalf("Failed to marshal titles to JSON: %v", err)
 	}
 
+	backupFileName := fmt.Sprintf("backup_non_movie_titles_%s.json", time.Now().Format("20060102150405"))
 	if err := os.WriteFile(backupFileName, backupData, 0644); err != nil {
 		log.Fatalf("Failed to write backup file: %v", err)
 	}
