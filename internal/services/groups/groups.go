@@ -14,10 +14,6 @@ import (
 	"github.com/lealre/movies-backend/internal/services/users"
 )
 
-var ErrTitleAlreadyInGroup = errors.New("title is already in group")
-var ErrTitleNotInGroup = errors.New("title not found in group")
-var ErrUpdatingWatchedAtWhenWatchedIsFalse = errors.New("cannot update watchedAt when watched is set to false")
-
 func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
 
 	if strings.TrimSpace(req.Name) == "" {
@@ -105,8 +101,8 @@ func GetTitlesFromGroup(
 			continue
 		}
 
-		titleGroupMap[title.Id] = title
-		allTitlesIds = append(allTitlesIds, title.Id)
+		titleGroupMap[title.TitleId] = title
+		allTitlesIds = append(allTitlesIds, title.TitleId)
 	}
 
 	// Check this after the watched/unwatched filter, to include that case as well
@@ -216,7 +212,7 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, user
 	}
 
 	for _, title := range group.Titles {
-		if title.Id == titleId {
+		if title.TitleId == titleId {
 			return ErrTitleAlreadyInGroup
 		}
 	}
@@ -228,7 +224,16 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, user
 	return nil
 }
 
-func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string, watched *bool, watchedAt *generics.FlexibleDate) (GroupTitle, error) {
+func UpdateGroupTitleWatched(
+	db *mongodb.DB,
+	ctx context.Context,
+	groupId string,
+	title titles.Title,
+	userId string,
+	watched *bool,
+	watchedAt *generics.FlexibleDate,
+) (GroupTitle, error) {
+
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return GroupTitle{}, err
@@ -237,12 +242,12 @@ func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId, title
 	// Don't allow updating watchedAt if watched is set to false or when title is not watched
 	watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
 	watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
-	for _, title := range groupDb.Titles {
-		if title.Id != titleId {
+	for _, titleDb := range groupDb.Titles {
+		if titleDb.TitleId != title.Id {
 			continue
 		}
 
-		if !title.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
+		if !titleDb.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
 			return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
 		}
 		break
@@ -254,12 +259,41 @@ func UpdateGroupTitleWatched(db *mongodb.DB, ctx context.Context, groupId, title
 		watchedAt = &generics.FlexibleDate{Time: nil}
 	}
 
-	groupTitle, err := db.UpdateGroupTitleWatched(ctx, groupId, titleId, watched, watchedAt)
+	groupTitle, err := db.UpdateGroupTitleWatched(ctx, groupId, title.Id, watched, watchedAt)
 	if err != nil {
 		return GroupTitle{}, err
 	}
 	return MapDbGroupTitleToApiGroupTitle(*groupTitle), nil
 }
+
+// func updateTVSeriesTitleWatched(
+// 	db *mongodb.DB,
+// 	ctx context.Context,
+// 	groupId, userId string,
+// 	title titles.Title,
+// 	watched *bool,
+// 	watchedAt *generics.FlexibleDate,
+// 	season *int,
+// ) (GroupTitle, error) {
+
+// 	// 1. Validate season value input(empty, negative or zero)
+// 	if season == nil || *season <= 0 {
+// 		return GroupTitle{}, ErrInvalidSeasonValue
+// 	}
+
+// 	seasonAsString := strconv.Itoa(*season)
+
+// 	// 2. Check if the title has the season field
+// 	for _, season := range title.Seasons {
+// 		if season.Season == seasonAsString {
+// 			break
+// 		}
+// 		return GroupTitle{}, ErrSeasonDoesNotExist
+// 	}
+
+// 	// 3. Check
+// 	return GroupTitle{}, nil
+// }
 
 func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
@@ -270,7 +304,7 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 	// Check if the title exists in the group
 	found := false
 	for _, title := range group.Titles {
-		if title.Id == titleId {
+		if title.TitleId == titleId {
 			found = true
 			break
 		}

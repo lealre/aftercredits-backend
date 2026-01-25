@@ -26,7 +26,7 @@ func MapDbGroupTitleToApiGroupTitle(title mongodb.GroupTitleDb) GroupTitle {
 	}
 
 	return GroupTitle{
-		Id:        title.Id,
+		Id:        title.TitleId,
 		Watched:   watched,
 		AddedAt:   title.AddedAt,
 		UpdatedAt: title.UpdatedAt,

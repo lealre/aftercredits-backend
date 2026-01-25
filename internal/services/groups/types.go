@@ -62,6 +62,7 @@ type AddTitleToGroupRequest struct {
 
 type UpdateGroupTitleWatchedRequest struct {
 	TitleId   string                 `json:"titleId"`
+	Season    *int                   `json:"season,omitempty"`
 	Watched   *bool                  `json:"watched,omitempty"`
 	WatchedAt *generics.FlexibleDate `json:"watchedAt,omitempty"`
 }

@@ -28,10 +28,19 @@ type GroupDb struct {
 type UsersIds []string
 
 type GroupTitleDb struct {
-	Id        string     `json:"id" bson:"titleId"`
+	TitleId        string            `json:"titleId" bson:"titleId"`
+	TitleType      string            `json:"titleType" bson:"titleType"`
+	SeasonsWatched *SeasonsWatchedDb `json:"seasonsWatched,omitempty" bson:"seasonsWatched,omitempty"`
+	Watched        bool              `json:"watched" bson:"watched"`
+	AddedAt        time.Time         `json:"addedAt" bson:"addedAt"`
+	UpdatedAt      time.Time         `json:"updatedAt" bson:"updatedAt"`
+	WatchedAt      *time.Time        `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
+}
+
+type SeasonsWatchedDb map[string]SeasonWatchedDb
+
+type SeasonWatchedDb struct {
 	Watched   bool       `json:"watched" bson:"watched"`
-	AddedAt   time.Time  `json:"addedAt" bson:"addedAt"`
-	UpdatedAt time.Time  `json:"updatedAt" bson:"updatedAt"`
 	WatchedAt *time.Time `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
 }
 
@@ -185,7 +194,7 @@ func (db *DB) AddNewGroupTitle(ctx context.Context, groupId string, titleId stri
 	_, err := coll.UpdateOne(
 		ctx,
 		bson.M{"_id": groupId},
-		bson.M{"$push": bson.M{"titles": GroupTitleDb{Id: titleId, Watched: false, AddedAt: time.Now(), UpdatedAt: time.Now()}}},
+		bson.M{"$push": bson.M{"titles": GroupTitleDb{TitleId: titleId, TitleType: "movie", SeasonsWatched: nil, Watched: false, AddedAt: time.Now(), UpdatedAt: time.Now()}}},
 	)
 	if err != nil {
 		return err
@@ -262,7 +271,7 @@ func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, title
 
 	// Find and return the updated title from the group
 	for _, title := range updatedGroup.Titles {
-		if title.Id == titleId {
+		if title.TitleId == titleId {
 			return &title, nil
 		}
 	}

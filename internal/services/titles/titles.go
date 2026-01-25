@@ -184,9 +184,6 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 			return Title{}, err
 		}
 
-		logger.Printf("Seasons: %v", seasonsResp)
-		logger.Printf("Episodes: %v", episodesResp)
-
 		title.Seasons = MapImdbSeasonsToDbSeasons(seasonsResp.Seasons)
 		title.Episodes = MapImdbEpisodesToDbEpisodes(episodesResp.Episodes)
 	}
