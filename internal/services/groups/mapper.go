@@ -19,7 +19,7 @@ func MapDbGroupToApiGroupResponse(group mongodb.GroupDb) GroupResponse {
 	return groupResponse
 }
 
-func MapDbGroupTitleToApiGroupTitle(title mongodb.GroupTitleDb) GroupTitle {
+func MapDbGroupTitleToApiGroupTitle(title mongodb.GroupTitleItemDb) GroupTitle {
 	watched := title.Watched
 	if !watched {
 		watched = false

@@ -24,7 +24,7 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 		Name:    req.Name,
 		OwnerId: userId,
 		Users:   []string{userId},
-		Titles:  []mongodb.GroupTitleDb{},
+		Titles:  mongodb.GroupTitleDb{},
 	}
 
 	newGroup, err := db.CreateGroup(ctx, group)
@@ -94,7 +94,7 @@ func GetTitlesFromGroup(
 	}
 
 	var allTitlesIds []string
-	var titleGroupMap map[string]mongodb.GroupTitleDb = make(map[string]mongodb.GroupTitleDb)
+	var titleGroupMap map[string]mongodb.GroupTitleItemDb = make(map[string]mongodb.GroupTitleItemDb)
 	for _, title := range group.Titles {
 
 		if watched != nil && title.Watched != *watched {
@@ -125,7 +125,7 @@ func GetTitlesFromGroup(
 		// If its a group field sorting, we must sort on the ids order of the group titles.
 		// Later in GetPageOfTitles, it will mantain the order of the ids.
 		if orderBy == "addedAt" || orderBy == "watchedAt" {
-			getOrderValue := func(title mongodb.GroupTitleDb) (timeValue *time.Time) {
+			getOrderValue := func(title mongodb.GroupTitleItemDb) (timeValue *time.Time) {
 				if orderBy == "watchedAt" {
 					return title.WatchedAt
 				}
@@ -211,10 +211,8 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, user
 		return err
 	}
 
-	for _, title := range group.Titles {
-		if title.TitleId == titleId {
-			return ErrTitleAlreadyInGroup
-		}
+	if _, exists := group.Titles[mongodb.TitleId(titleId)]; exists {
+		return ErrTitleAlreadyInGroup
 	}
 
 	err = db.AddNewGroupTitle(ctx, groupId, titleId)
@@ -242,15 +240,13 @@ func UpdateGroupTitleWatched(
 	// Don't allow updating watchedAt if watched is set to false or when title is not watched
 	watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
 	watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
-	for _, titleDb := range groupDb.Titles {
-		if titleDb.TitleId != title.Id {
-			continue
-		}
+	titleDb, exists := groupDb.Titles[mongodb.TitleId(title.Id)]
+	if !exists {
+		return GroupTitle{}, ErrTitleNotInGroup
+	}
 
-		if !titleDb.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
-			return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
-		}
-		break
+	if !titleDb.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
+		return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
 	}
 
 	// If the request comes with the watched field set to false, clear the watchedAt field.
@@ -259,11 +255,11 @@ func UpdateGroupTitleWatched(
 		watchedAt = &generics.FlexibleDate{Time: nil}
 	}
 
-	groupTitle, err := db.UpdateGroupTitleWatched(ctx, groupId, title.Id, watched, watchedAt)
+	groupTitleItem, err := db.UpdateGroupTitleWatched(ctx, groupId, title.Id, watched, watchedAt)
 	if err != nil {
 		return GroupTitle{}, err
 	}
-	return MapDbGroupTitleToApiGroupTitle(*groupTitle), nil
+	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
 }
 
 // func updateTVSeriesTitleWatched(
@@ -301,16 +297,7 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 		return err
 	}
 
-	// Check if the title exists in the group
-	found := false
-	for _, title := range group.Titles {
-		if title.TitleId == titleId {
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	if _, exists := group.Titles[mongodb.TitleId(titleId)]; !exists {
 		return ErrTitleNotInGroup
 	}
 
