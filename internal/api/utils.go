@@ -68,15 +68,3 @@ func formatErrorMessage(err error) string {
 	}
 	return ""
 }
-
-// getErrorStatusCode safely checks if an error is in the ErrorMap by iterating through it
-// and using errors.Is() to match errors. This prevents panics when non-hashable errors
-// (like MongoDB errors) are passed as map keys.
-func getErrorStatusCode(errMap map[error]int, err error) (int, bool) {
-	for predefinedErr, statusCode := range errMap {
-		if errors.Is(err, predefinedErr) {
-			return statusCode, true
-		}
-	}
-	return 0, false
-}

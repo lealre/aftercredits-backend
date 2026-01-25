@@ -30,7 +30,7 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 
 	group, err := groups.CreateGroup(api.Db, r.Context(), req, currentUser.Id)
 	if err != nil {
-		if statusCode, ok := getErrorStatusCode(groups.ErrorMap, err); ok {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
@@ -111,7 +111,7 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	// 3 - Add user to group and update user group list
 	err := groups.AddUserToGroup(api.Db, r.Context(), groupId, currentUser.Id, req.UserId)
 	if err != nil {
-		if statusCode, ok := getErrorStatusCode(groups.ErrorMap, err); ok {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
@@ -254,7 +254,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 
 	err = groups.AddTitleToGroup(api.Db, r.Context(), groupId, titleID, currentUser.Id)
 	if err != nil {
-		if statusCode, ok := getErrorStatusCode(groups.ErrorMap, err); ok {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
@@ -305,7 +305,7 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 
 	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, title, currentUser.Id, req.Watched, req.WatchedAt, req.Season)
 	if err != nil {
-		if statusCode, ok := getErrorStatusCode(groups.ErrorMap, err); ok {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
@@ -353,7 +353,7 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 
 	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if err != nil {
-		if statusCode, ok := getErrorStatusCode(groups.ErrorMap, err); ok {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
