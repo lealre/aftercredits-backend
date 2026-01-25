@@ -32,20 +32,22 @@ type TitleId string
 type GroupTitleDb map[TitleId]GroupTitleItemDb
 
 type GroupTitleItemDb struct {
-	TitleId        string            `json:"titleId" bson:"titleId"`
-	TitleType      string            `json:"titleType" bson:"titleType"`
-	SeasonsWatched *SeasonsWatchedDb `json:"seasonsWatched,omitempty" bson:"seasonsWatched,omitempty"`
-	Watched        bool              `json:"watched" bson:"watched"`
-	AddedAt        time.Time         `json:"addedAt" bson:"addedAt"`
-	UpdatedAt      time.Time         `json:"updatedAt" bson:"updatedAt"`
-	WatchedAt      *time.Time        `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
+	TitleId        string           `json:"titleId" bson:"titleId"`
+	TitleType      string           `json:"titleType" bson:"titleType"`
+	SeasonsWatched *SeasonWatchedDb `json:"seasonsWatched,omitempty" bson:"seasonsWatched,omitempty"`
+	Watched        bool             `json:"watched" bson:"watched"`
+	AddedAt        time.Time        `json:"addedAt" bson:"addedAt"`
+	UpdatedAt      time.Time        `json:"updatedAt" bson:"updatedAt"`
+	WatchedAt      *time.Time       `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
 }
 
-type SeasonsWatchedDb map[string]SeasonWatchedDb
+type SeasonWatchedDb map[string]SeasonWatchedItemDb
 
-type SeasonWatchedDb struct {
+type SeasonWatchedItemDb struct {
 	Watched   bool       `json:"watched" bson:"watched"`
 	WatchedAt *time.Time `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
+	AddedAt   time.Time  `json:"addedAt" bson:"addedAt"`
+	UpdatedAt time.Time  `json:"updatedAt" bson:"updatedAt"`
 }
 
 // ----- Methods for the database -----
@@ -222,49 +224,62 @@ func (db *DB) AddNewGroupTitle(ctx context.Context, groupId string, titleId stri
 	return nil
 }
 
-/*
-Update the watched properties of a title in the database.
+// UpdateGroupTitleWatched routes to the appropriate handler based on whether a season is provided.
+//
+//   - UpdateGroupTitleWatchedForTVSeries: if season is provided (TV series case)
+//   - UpdateGroupTitleWatchedForMovie: if season is not provided (movie case)
+func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season *int, userId string) (*GroupTitleItemDb, error) {
+	if season != nil {
+		return db.UpdateGroupTitleWatchedForTVSeries(ctx, groupId, titleId, watched, watchedAt, *season, userId)
+	}
+	return db.UpdateGroupTitleWatchedForMovie(ctx, groupId, titleId, watched, watchedAt)
+}
 
-If the watchedAt is provided but watchedAt.Time is nil,
-or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
-*/
-func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*GroupTitleItemDb, error) {
+// UpdateGroupTitleWatchedForMovie updates the watched properties of a movie title in the database.
+//
+// Steps performed by this method:
+//  1. Updates the main watched field if provided.
+//  2. Updates the main watchedAt field if provided (or sets it to null if Time is nil).
+//  3. Updates the title's updatedAt timestamp.
+//  4. Persists the changes to the database.
+//
+// If the watchedAt is provided but watchedAt.Time is nil,
+// or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
+//
+// Possible errors:
+//   - ErrRecordNotFound: if the group or title is not found
+//   - fmt.Errorf("no fields to update"): if no watched or watchedAt fields are provided
+//   - Any error returned by the database update operation
+func (db *DB) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*GroupTitleItemDb, error) {
 	coll := db.Collection(GroupsCollection)
 
 	// Use FindOneAndUpdate to get the updated document
 	opts := options.FindOneAndUpdate()
 	opts.SetReturnDocument(options.After) // Return the document after update
 
-	updateDoc := bson.M{}
+	now := time.Now()
+	setDoc := bson.M{
+		fmt.Sprintf("titles.%s.updatedAt", titleId): now,
+		"updatedAt": now,
+	}
 
+	// Update main watched fields
 	if watched != nil {
-		updateDoc["watched"] = *watched
+		setDoc[fmt.Sprintf("titles.%s.watched", titleId)] = *watched
 	}
 
 	if watchedAt != nil {
 		if watchedAt.Time != nil {
-			updateDoc["watchedAt"] = *watchedAt.Time
+			setDoc[fmt.Sprintf("titles.%s.watchedAt", titleId)] = *watchedAt.Time
 		} else {
 			// If watchedAt is provided but Time is nil, set it to null in database
-			updateDoc["watchedAt"] = nil
+			setDoc[fmt.Sprintf("titles.%s.watchedAt", titleId)] = nil
 		}
 	}
 
-	if len(updateDoc) > 0 {
-		now := time.Now()
-		updateDoc["updatedAt"] = now
-	}
-
-	if len(updateDoc) == 0 {
+	// Check if we have any fields to update
+	if len(setDoc) <= 2 { // Only updatedAt fields
 		return nil, fmt.Errorf("no fields to update")
-	}
-
-	// Build the update document with direct map key access
-	setDoc := bson.M{
-		"updatedAt": time.Now(),
-	}
-	for key, value := range updateDoc {
-		setDoc[fmt.Sprintf("titles.%s.%s", titleId, key)] = value
 	}
 
 	var updatedGroup GroupDb
@@ -284,6 +299,112 @@ func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, title
 
 	// Return the updated title from the map using direct key access
 	titleKey := TitleId(titleId)
+	if title, exists := updatedGroup.Titles[titleKey]; exists {
+		return &title, nil
+	}
+
+	return nil, ErrRecordNotFound
+}
+
+// UpdateGroupTitleWatchedForTVSeries updates the watched properties of a specific season of a TV series title in the database.
+//
+// Steps performed by this method:
+//  1. Gets the current group to check if the season already exists.
+//  2. Initializes the seasonsWatched map if it doesn't exist.
+//  3. Builds the season update document with watched and watchedAt fields.
+//  4. Sets addedAt only if the season doesn't already exist.
+//  5. Sets updatedAt for the season entry.
+//  6. Updates the title's updatedAt timestamp.
+//  7. Persists the changes to the database.
+//
+// If the watchedAt is provided but watchedAt.Time is nil,
+// or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
+//
+// Possible errors:
+//   - ErrRecordNotFound: if the group or title is not found
+//   - fmt.Errorf("no fields to update"): if no watched or watchedAt fields are provided
+//   - Any error returned by the database update operation
+func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season int, userId string) (*GroupTitleItemDb, error) {
+	coll := db.Collection(GroupsCollection)
+
+	// Use FindOneAndUpdate to get the updated document
+	opts := options.FindOneAndUpdate()
+	opts.SetReturnDocument(options.After) // Return the document after update
+
+	now := time.Now()
+	setDoc := bson.M{
+		fmt.Sprintf("titles.%s.updatedAt", titleId): now,
+		"updatedAt": now,
+	}
+
+	seasonAsString := fmt.Sprintf("%d", season)
+	seasonPath := fmt.Sprintf("titles.%s.seasonsWatched.%s", titleId, seasonAsString)
+
+	// Get the current group to check if season already exists
+	group, err := db.GetGroupById(ctx, groupId, userId)
+	if err != nil {
+		return nil, err
+	}
+
+	titleKey := TitleId(titleId)
+	titleItem, exists := group.Titles[titleKey]
+	if !exists {
+		return nil, ErrRecordNotFound
+	}
+
+	// Build season update document
+	seasonUpdate := bson.M{}
+
+	if watched != nil {
+		seasonUpdate["watched"] = *watched
+	}
+
+	if watchedAt != nil {
+		if watchedAt.Time != nil {
+			seasonUpdate["watchedAt"] = *watchedAt.Time
+		} else {
+			seasonUpdate["watchedAt"] = nil
+		}
+	}
+
+	// Check if season already exists to determine if we set AddedAt
+	// Season exists if it's in the map and has been set before
+	seasonExists := titleItem.SeasonsWatched != nil
+	if seasonExists {
+		existingSeason, hasSeason := (*titleItem.SeasonsWatched)[seasonAsString]
+		seasonExists = hasSeason && existingSeason.AddedAt != (time.Time{})
+	}
+	if !seasonExists {
+		seasonUpdate["addedAt"] = now
+	}
+	seasonUpdate["updatedAt"] = now
+
+	// Set all season fields
+	for key, value := range seasonUpdate {
+		setDoc[fmt.Sprintf("%s.%s", seasonPath, key)] = value
+	}
+
+	// Check if we have any fields to update
+	if len(setDoc) <= 2 { // Only updatedAt fields
+		return nil, fmt.Errorf("no fields to update")
+	}
+
+	var updatedGroup GroupDb
+	err = coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": groupId},
+		bson.M{"$set": setDoc},
+		opts,
+	).Decode(&updatedGroup)
+
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+
+	// Return the updated title from the map using direct key access
 	if title, exists := updatedGroup.Titles[titleKey]; exists {
 		return &title, nil
 	}

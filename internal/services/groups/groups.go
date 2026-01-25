@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -222,6 +223,18 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, user
 	return nil
 }
 
+// UpdateGroupTitleWatched updates the watched status of a title in a group.
+//
+// It routes to the appropriate handler based on whether a season is provided:
+//   - updateGroupTitleWatchedForTVSeries: if season is provided (TV series case)
+//   - updateGroupTitleWatchedForMovie: if season is not provided (movie case)
+//
+// Possible errors:
+//   - ErrTitleNotInGroup: if the title is not found in the group
+//   - ErrInvalidSeasonValue: if season is provided and is less than or equal to zero
+//   - ErrSeasonDoesNotExist: if season is provided but doesn't exist in the title
+//   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when watched is false
+//   - Any error propagated from the underlying database operations
 func UpdateGroupTitleWatched(
 	db *mongodb.DB,
 	ctx context.Context,
@@ -230,21 +243,49 @@ func UpdateGroupTitleWatched(
 	userId string,
 	watched *bool,
 	watchedAt *generics.FlexibleDate,
+	season *int,
 ) (GroupTitle, error) {
+	if season != nil {
+		return updateGroupTitleWatchedForTVSeries(db, ctx, groupId, title, userId, watched, watchedAt, season)
+	}
 
+	return updateGroupTitleWatchedForMovie(db, ctx, groupId, title, userId, watched, watchedAt)
+}
+
+// updateGroupTitleWatchedForMovie handles watched status updates for movies.
+//
+// Steps performed by this method:
+//  1. Validates that the title exists in the group.
+//  2. Validates watchedAt update rules (cannot update watchedAt when watched is false).
+//  3. Clears watchedAt if watched is set to false.
+//  4. Updates the watched and watchedAt fields in the database.
+//
+// Possible errors:
+//   - ErrTitleNotInGroup: if the title is not found in the group
+//   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when watched is false
+//   - Any error returned by db.UpdateGroupTitleWatchedForMovie
+func updateGroupTitleWatchedForMovie(
+	db *mongodb.DB,
+	ctx context.Context,
+	groupId string,
+	title titles.Title,
+	userId string,
+	watched *bool,
+	watchedAt *generics.FlexibleDate,
+) (GroupTitle, error) {
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return GroupTitle{}, err
 	}
 
-	// Don't allow updating watchedAt if watched is set to false or when title is not watched
-	watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
-	watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
 	titleDb, exists := groupDb.Titles[mongodb.TitleId(title.Id)]
 	if !exists {
 		return GroupTitle{}, ErrTitleNotInGroup
 	}
 
+	// Don't allow updating watchedAt if watched is set to false or when title is not watched
+	watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
+	watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
 	if !titleDb.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
 		return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
 	}
@@ -255,41 +296,97 @@ func UpdateGroupTitleWatched(
 		watchedAt = &generics.FlexibleDate{Time: nil}
 	}
 
-	groupTitleItem, err := db.UpdateGroupTitleWatched(ctx, groupId, title.Id, watched, watchedAt)
+	groupTitleItem, err := db.UpdateGroupTitleWatchedForMovie(ctx, groupId, title.Id, watched, watchedAt)
 	if err != nil {
 		return GroupTitle{}, err
 	}
 	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
 }
 
-// func updateTVSeriesTitleWatched(
-// 	db *mongodb.DB,
-// 	ctx context.Context,
-// 	groupId, userId string,
-// 	title titles.Title,
-// 	watched *bool,
-// 	watchedAt *generics.FlexibleDate,
-// 	season *int,
-// ) (GroupTitle, error) {
+// updateGroupTitleWatchedForTVSeries handles watched status updates for TV series seasons.
+//
+// Steps performed by this method:
+//  1. Validates that the season value is valid (greater than zero).
+//  2. Validates that the title is a TV series type.
+//  3. Validates that the season exists in the title's seasons list.
+//  4. Validates watchedAt update rules for the specific season.
+//  5. Clears watchedAt if watched is set to false.
+//  6. Updates the seasonsWatched map for the specific season in the database.
+//
+// Possible errors:
+//   - ErrTitleNotInGroup: if the title is not found in the group
+//   - ErrInvalidSeasonValue: if season is less than or equal to zero
+//   - ErrSeasonDoesNotExist: if the season doesn't exist in the title
+//   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when season is not watched
+//   - Any error returned by db.UpdateGroupTitleWatchedForTVSeries
+func updateGroupTitleWatchedForTVSeries(
+	db *mongodb.DB,
+	ctx context.Context,
+	groupId string,
+	title titles.Title,
+	userId string,
+	watched *bool,
+	watchedAt *generics.FlexibleDate,
+	season *int,
+) (GroupTitle, error) {
+	// 1. Validate season value
+	if *season <= 0 {
+		return GroupTitle{}, ErrInvalidSeasonValue
+	}
 
-// 	// 1. Validate season value input(empty, negative or zero)
-// 	if season == nil || *season <= 0 {
-// 		return GroupTitle{}, ErrInvalidSeasonValue
-// 	}
+	// 2. Check if title is a TV series
+	if title.Type != "tvSeries" && title.Type != "tvMiniSeries" {
+		return GroupTitle{}, ErrSeasonDoesNotExist
+	}
 
-// 	seasonAsString := strconv.Itoa(*season)
+	// 3. Check if the season exists in the title
+	seasonAsString := strconv.Itoa(*season)
+	seasonExists := false
+	for _, s := range title.Seasons {
+		if s.Season == seasonAsString {
+			seasonExists = true
+			break
+		}
+	}
+	if !seasonExists {
+		return GroupTitle{}, ErrSeasonDoesNotExist
+	}
 
-// 	// 2. Check if the title has the season field
-// 	for _, season := range title.Seasons {
-// 		if season.Season == seasonAsString {
-// 			break
-// 		}
-// 		return GroupTitle{}, ErrSeasonDoesNotExist
-// 	}
+	groupDb, err := db.GetGroupById(ctx, groupId, userId)
+	if err != nil {
+		return GroupTitle{}, err
+	}
 
-// 	// 3. Check
-// 	return GroupTitle{}, nil
-// }
+	titleDb, exists := groupDb.Titles[mongodb.TitleId(title.Id)]
+	if !exists {
+		return GroupTitle{}, ErrTitleNotInGroup
+	}
+
+	// 4. For TV series seasons, validate watchedAt rules
+	if titleDb.SeasonsWatched != nil {
+		existingSeason, hasSeason := (*titleDb.SeasonsWatched)[seasonAsString]
+		if hasSeason {
+			// Don't allow updating watchedAt if watched is set to false or when season is not watched
+			watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
+			watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
+			if !existingSeason.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
+				return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
+			}
+		}
+	}
+
+	// 5. If the request comes with the watched field set to false, clear the watchedAt field.
+	if watched != nil && !*watched {
+		watchedAt = &generics.FlexibleDate{Time: nil}
+	}
+
+	// 6. Update the season in the database
+	groupTitleItem, err := db.UpdateGroupTitleWatchedForTVSeries(ctx, groupId, title.Id, watched, watchedAt, *season, userId)
+	if err != nil {
+		return GroupTitle{}, err
+	}
+	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
+}
 
 func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
