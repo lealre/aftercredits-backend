@@ -377,8 +377,9 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 		require.NotEmpty(t, groupDb.Titles)
 		require.Equal(t, len(groupDb.Titles), 1)
 
-		groupTitleDb := groupDb.Titles[0]
-		require.Equal(t, groupTitleDb.Id, expectedOwnerTitle.ID, "group title ID should match expected title ID when adding a title to a group")
+		groupTitleDb, exists := groupDb.Titles[mongodb.TitleId(expectedOwnerTitle.ID)]
+		require.True(t, exists, "Expected title to exist in group titles map")
+		require.Equal(t, groupTitleDb.TitleId, expectedOwnerTitle.ID, "group title ID should match expected title ID when adding a title to a group")
 		require.NotEmpty(t, groupTitleDb.AddedAt, "AddedAt should not be empty when adding a title to a group")
 		require.NotEmpty(t, groupTitleDb.UpdatedAt, "UpdatedAt should not be empty when adding a title to a group")
 		require.False(t, groupTitleDb.Watched, "Watched should be false by default when adding a title to a group")
@@ -425,7 +426,7 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 
 		var allTitlesIdsInGroup []string
 		for _, title := range groupDb.Titles {
-			allTitlesIdsInGroup = append(allTitlesIdsInGroup, title.Id)
+			allTitlesIdsInGroup = append(allTitlesIdsInGroup, title.TitleId)
 		}
 		require.Contains(t, allTitlesIdsInGroup, expectedOwnerTitle.ID)       // we check for the owner's title
 		require.Contains(t, allTitlesIdsInGroup, expectedParticipantTitle.ID) // we check for the participant's title
@@ -467,7 +468,7 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 
 		var allTitlesIdsInGroup []string
 		for _, title := range groupDb.Titles {
-			allTitlesIdsInGroup = append(allTitlesIdsInGroup, title.Id)
+			allTitlesIdsInGroup = append(allTitlesIdsInGroup, title.TitleId)
 		}
 		require.Contains(t, allTitlesIdsInGroup, expectedOwnerTitle.ID)
 		require.Contains(t, allTitlesIdsInGroup, expectedParticipantTitle.ID)
@@ -637,13 +638,8 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		var titleToassert mongodb.GroupTitleDb
-		for _, title := range groupDb.Titles {
-			if title.Id == expectedTitle.ID {
-				titleToassert = title
-			}
-		}
-		require.NotEmpty(t, titleToassert, "Expected title to be in group titles db")
+		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
+		require.True(t, exists, "Expected title to be in group titles db")
 		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true")
 		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty")
 	})
@@ -668,13 +664,8 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		var titleToassert mongodb.GroupTitleDb
-		for _, title := range groupDb.Titles {
-			if title.Id == expectedTitle.ID {
-				titleToassert = title
-			}
-		}
-		require.NotEmpty(t, titleToassert, "Expected title %s to be in group titles db", titleToassert.Id)
+		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
+		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitle.ID)
 		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true, got: %v", titleToassert.Watched)
 		require.Equal(t, &testDate, titleToassert.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleToassert.WatchedAt)
 	})
@@ -697,13 +688,8 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		var titleToassert mongodb.GroupTitleDb
-		for _, title := range groupDb.Titles {
-			if title.Id == expectedTitle.ID {
-				titleToassert = title
-			}
-		}
-		require.NotEmpty(t, titleToassert, "Expected title %s to be in group titles db", titleToassert.Id)
+		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
+		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitle.ID)
 		require.False(t, titleToassert.Watched, "Expected title Watched in db to be false, got: %v", titleToassert.Watched)
 		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty when watched is false")
 	})
@@ -754,13 +740,8 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		var titleToassert mongodb.GroupTitleDb
-		for _, title := range groupDb.Titles {
-			if title.Id == expectedTitleTwo.ID {
-				titleToassert = title
-			}
-		}
-		require.NotEmpty(t, titleToassert, "Expected title to be in group titles db")
+		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
+		require.True(t, exists, "Expected title to be in group titles db")
 		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true")
 		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty")
 	})
@@ -785,15 +766,10 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
 
-		var titleToassert mongodb.GroupTitleDb
-		for _, title := range groupDb.Titles {
-			if title.Id == expectedTitleTwo.ID {
-				titleToassert = title
-			}
-		}
-		require.NotEmpty(t, titleToassert, "Expected title %s to be in group titles db", titleToassert.Id)
-		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true, got: %v", titleToassert.Watched)
-		require.Equal(t, &testDate, titleToassert.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleToassert.WatchedAt)
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
+		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitleTwo.ID)
+		require.True(t, titleToAssert.Watched, "Expected title Watched in db to be true, got: %v", titleToAssert.Watched)
+		require.Equal(t, &testDate, titleToAssert.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleToAssert.WatchedAt)
 	})
 
 	t.Run("Set a title group as watched not being from the group should return 404", func(t *testing.T) {
@@ -928,8 +904,9 @@ func TestGroupTitlesDelete(t *testing.T) {
 		require.NotEmpty(t, grouDb, "Expected group to not be empty")
 		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
 
-		titleToAssert := grouDb.Titles[0]
-		require.Equal(t, titleToAssert.Id, expectedTitleTwo.ID)
+		titleToAssert, exists := grouDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
+		require.True(t, exists, "Expected title to exist in group titles map")
+		require.Equal(t, titleToAssert.TitleId, expectedTitleTwo.ID)
 	})
 
 	t.Run("Remove title from a group successfully", func(t *testing.T) {
