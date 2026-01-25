@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -600,21 +601,30 @@ func TestGroupTitlesPatch(t *testing.T) {
 	})
 
 	// Load titles in database
-	titles := loadTitlesFixture(t)
-	seedTitles(t, titles)
-	expectedTitle := titles[0]    // Title for group owner to add
-	expectedTitleTwo := titles[1] // Title for regular user to add
+	movieTitles := loadTitlesFixture(t)
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	allTitles := append(movieTitles, tvSeriesTitles...)
+	seedTitles(t, allTitles)
+	expectedTitle := movieTitles[0]            // Movie title for group owner to add
+	expectedTitleTwo := movieTitles[1]         // Movie title for regular user to add
+	expectedTVSeriesTitle := tvSeriesTitles[0] // TV series title for testing seasons
 
-	// Add titles to group
-	addTitleToGroup(t, groups.AddTitleToGroupRequest{
-		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
-		GroupId: group.Id,
-	}, tokenUserOne)
+	// Add titles to group using a loop
+	titlesToAdd := []struct {
+		TitleID string
+		Token   string
+	}{
+		{expectedTitle.ID, tokenUserOne},
+		{expectedTitleTwo.ID, tokenUserTwo},
+		{expectedTVSeriesTitle.ID, tokenUserOne},
+	}
 
-	addTitleToGroup(t, groups.AddTitleToGroupRequest{
-		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitleTwo.ID),
-		GroupId: group.Id,
-	}, tokenUserTwo)
+	for _, data := range titlesToAdd {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", data.TitleID),
+			GroupId: group.Id,
+		}, data.Token)
+	}
 
 	// =========================================================
 	// 		TEST SETTING WATCHED FIELD FROM TITLE
@@ -636,7 +646,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
-		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
+		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
 		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
 		require.True(t, exists, "Expected title to be in group titles db")
@@ -662,7 +672,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
-		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
+		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
 		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
 		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitle.ID)
@@ -686,7 +696,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
-		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
+		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
 		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
 		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitle.ID)
@@ -738,7 +748,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
-		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
+		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
 		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
 		require.True(t, exists, "Expected title to be in group titles db")
@@ -764,7 +774,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
-		require.Equal(t, 2, len(groupDb.Titles), "Expected group should have 2 title, got %d", len(groupDb.Titles))
+		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
 		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
 		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitleTwo.ID)
@@ -798,6 +808,216 @@ func TestGroupTitlesPatch(t *testing.T) {
 		var respGroupSetWatchedBody api.DefaultResponse
 		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&respGroupSetWatchedBody))
 		require.Contains(t, fmt.Sprintf("Group with id %s not found", group.Id), respGroupSetWatchedBody.Message)
+	})
+
+	// =========================================================
+	// 		TEST SETTING WATCHED FIELD FROM TV SERIES SEASONS
+	// =========================================================
+
+	t.Run("Set TV series season as watched with watchedAt empty successfully", func(t *testing.T) {
+		watched := true
+		season := 1
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
+
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		require.NotEmpty(t, titleToAssert.SeasonsWatched, "Expected SeasonsWatched to not be empty")
+		seasonWatched, seasonExists := (*titleToAssert.SeasonsWatched)[strconv.Itoa(season)]
+		require.True(t, seasonExists, "Expected season %d to exist in SeasonsWatched", season)
+		require.True(t, seasonWatched.Watched, "Expected season Watched in db to be true")
+		require.Empty(t, seasonWatched.WatchedAt, "Expected season WatchedAt in db to be empty")
+		require.NotEmpty(t, seasonWatched.AddedAt, "Expected season AddedAt in db to not be empty")
+		require.NotEmpty(t, seasonWatched.UpdatedAt, "Expected season UpdatedAt in db to not be empty")
+	})
+
+	t.Run("Set watchedAt field for a TV series season with watched already set as true successfully", func(t *testing.T) {
+		testDate := time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC)
+		season := 1
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate,
+			},
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		seasonWatched, seasonExists := (*titleToAssert.SeasonsWatched)[strconv.Itoa(season)]
+		require.True(t, seasonExists, "Expected season %d to exist in SeasonsWatched", season)
+		require.True(t, seasonWatched.Watched, "Expected season Watched in db to be true")
+		require.Equal(t, &testDate, seasonWatched.WatchedAt, "Expected season WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, seasonWatched.WatchedAt)
+	})
+
+	t.Run("Set TV series season watched as false should set watchedAt as empty successfully", func(t *testing.T) {
+		watched := false
+		season := 1
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		seasonWatched, seasonExists := (*titleToAssert.SeasonsWatched)[strconv.Itoa(season)]
+		require.True(t, seasonExists, "Expected season %d to exist in SeasonsWatched", season)
+		require.False(t, seasonWatched.Watched, "Expected season Watched in db to be false")
+		require.Empty(t, seasonWatched.WatchedAt, "Expected season WatchedAt in db to be empty when watched is false")
+	})
+
+	t.Run("Setting watchedAt for TV series season when watched is false should return 400", func(t *testing.T) {
+		testDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		season := 1
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate,
+			},
+		})
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPatch,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			bytes.NewBuffer(pathBody),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupSetWatched, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupSetWatched.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respGroupSetWatched.StatusCode)
+
+		var respGroupSetWatchedBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&respGroupSetWatchedBody))
+		require.Contains(t, respGroupSetWatchedBody.ErrorMessage, groups.ErrUpdatingWatchedAtWhenWatchedIsFalse.Error()[1:])
+	})
+
+	t.Run("Set TV series season as watched with invalid season values should return 400", func(t *testing.T) {
+		invalidSeasons := []struct {
+			season      int
+			expectedErr error
+		}{
+			{season: 0, expectedErr: groups.ErrInvalidSeasonValue},
+			{season: -1, expectedErr: groups.ErrInvalidSeasonValue},
+			{season: 6, expectedErr: groups.ErrSeasonDoesNotExist},
+		}
+		watched := true
+
+		for _, tt := range invalidSeasons {
+			pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+				TitleId: expectedTVSeriesTitle.ID,
+				Season:  &tt.season,
+				Watched: &watched,
+			})
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPatch,
+				testServer.URL+"/groups/"+group.Id+"/titles",
+				bytes.NewBuffer(pathBody),
+			)
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+			req.Header.Set("Content-Type", "application/json")
+			client := &http.Client{}
+			respGroupSetWatched, err := client.Do(req)
+			require.NoError(t, err)
+			defer respGroupSetWatched.Body.Close()
+			require.Equal(t, http.StatusBadRequest, respGroupSetWatched.StatusCode)
+
+			var respGroupSetWatchedBody api.ErrorResponse
+			require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&respGroupSetWatchedBody))
+			require.Contains(t, respGroupSetWatchedBody.ErrorMessage, tt.expectedErr.Error()[1:])
+		}
+	})
+
+	t.Run("Set TV series season as watched for a movie title should return 400", func(t *testing.T) {
+		watched := true
+		season := 1
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTitle.ID, // This is a movie, not a TV series
+			Season:  &season,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPatch,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			bytes.NewBuffer(pathBody),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserOne)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupSetWatched, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupSetWatched.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respGroupSetWatched.StatusCode)
+
+		var respGroupSetWatchedBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&respGroupSetWatchedBody))
+		require.Contains(t, respGroupSetWatchedBody.ErrorMessage, groups.ErrSeasonDoesNotExist.Error()[1:])
+	})
+
+	t.Run("Set TV series season as watched for multiple seasons successfully", func(t *testing.T) {
+		watched := true
+		season2 := 2
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season2,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
+
+		// Database assertion - check both seasons exist
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb, "Expected group to not be empty")
+
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		require.NotEmpty(t, titleToAssert.SeasonsWatched, "Expected SeasonsWatched to not be empty")
+
+		// Check season 1
+		season1Watched, season1Exists := (*titleToAssert.SeasonsWatched)["1"]
+		require.True(t, season1Exists, "Expected season 1 to exist in SeasonsWatched")
+		require.False(t, season1Watched.Watched, "Expected season 1 Watched in db to be false")
+
+		// Check season 2
+		season2Watched, season2Exists := (*titleToAssert.SeasonsWatched)["2"]
+		require.True(t, season2Exists, "Expected season 2 to exist in SeasonsWatched")
+		require.True(t, season2Watched.Watched, "Expected season 2 Watched in db to be true")
+		require.NotEmpty(t, season2Watched.AddedAt, "Expected season 2 AddedAt in db to not be empty")
 	})
 }
 
