@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -70,6 +71,21 @@ func updateCommentFromApi(t *testing.T, groupId, titleId, commentId, comment, in
 func deleteCommentFromApi(t *testing.T, groupId, titleId, commentId, innerToken string) *http.Response {
 	req, err := http.NewRequest(http.MethodDelete,
 		testServer.URL+"/groups/"+groupId+"/titles/"+titleId+"/comments/"+commentId,
+		nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+innerToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	return resp
+}
+
+func deleteCommentSeasonFromApi(t *testing.T, groupId, titleId, commentId, innerToken string, season int) *http.Response {
+	req, err := http.NewRequest(http.MethodDelete,
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId+"/comments/"+commentId+"/seasons/"+strconv.Itoa(season),
 		nil,
 	)
 	require.NoError(t, err)

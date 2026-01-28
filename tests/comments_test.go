@@ -750,3 +750,191 @@ func TestDeleteComment(t *testing.T) {
 		require.Equal(t, commentDb[0].CreatedAt, commentDb[0].UpdatedAt)
 	})
 }
+
+func TestDeleteCommentSeason(t *testing.T) {
+	resetDB(t)
+
+	// ======================================================================
+	// 		TEST SETUP
+	// ======================================================================
+
+	// Create a new user (group owner)
+	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a new user (group user that will be added to the group)
+	userFromGroup, tokenUserFromGroup := addUser(t, users.NewUserRequest{
+		Username: "testname2",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add user to group
+	addUserToGroup(t, groups.AddUserToGroupRequest{
+		UserId: userFromGroup.Id,
+	}, group.Id, tokenOwnerUser)
+
+	// User that is not in the group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// Seed titles
+	movieTitles := loadTitlesFixture(t)
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	allTitles := append(movieTitles, tvSeriesTitles...)
+	seedTitles(t, allTitles)
+
+	expectedTVSeriesTitle := tvSeriesTitles[0]
+	expectedTVSeriesTitle2 := tvSeriesTitles[1]
+
+	// Add tv series titles to group
+	for _, title := range []imdb.Title{expectedTVSeriesTitle, expectedTVSeriesTitle2} {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
+			GroupId: group.Id,
+		}, tokenOwnerUser)
+	}
+
+	// Create a TV series comment with seasons 1 and 2
+	season1 := 1
+	season2 := 2
+	respSeason1 := addComment(t, comments.NewComment{
+		GroupId: group.Id,
+		TitleId: expectedTVSeriesTitle.ID,
+		Comment: "Comment for season 1",
+		Season:  &season1,
+	}, tokenOwnerUser)
+	defer respSeason1.Body.Close()
+	require.Equal(t, http.StatusCreated, respSeason1.StatusCode)
+	var createdSeason1 comments.Comment
+	require.NoError(t, json.NewDecoder(respSeason1.Body).Decode(&createdSeason1))
+
+	respSeason2 := addComment(t, comments.NewComment{
+		GroupId: group.Id,
+		TitleId: expectedTVSeriesTitle.ID,
+		Comment: "Comment for season 2",
+		Season:  &season2,
+	}, tokenOwnerUser)
+	defer respSeason2.Body.Close()
+	require.Equal(t, http.StatusCreated, respSeason2.StatusCode)
+	var createdSeason2 comments.Comment
+	require.NoError(t, json.NewDecoder(respSeason2.Body).Decode(&createdSeason2))
+	require.Equal(t, createdSeason1.Id, createdSeason2.Id, "Expected same comment id for multiple seasons of the same TV series")
+
+	commentId := createdSeason1.Id
+
+	// ======================================================================
+	// 		TEST DELETING SEASON COMMENTS
+	// ======================================================================
+
+	t.Run("Deleting a season comment successfully", func(t *testing.T) {
+		respDeleted := deleteCommentSeasonFromApi(t, group.Id, expectedTVSeriesTitle.ID, commentId, tokenOwnerUser, season1)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
+
+		var respBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Equal(t, fmt.Sprintf("Season %d from comment %s deleted successfully", season1, commentId), respBody.Message)
+
+		// DB assertion: comment still exists, but season 1 was removed
+		commentDb := getCommentFromDB(t, commentId)
+		require.NotNil(t, commentDb.SeasonsComments)
+		_, ok := (*commentDb.SeasonsComments)["1"]
+		require.False(t, ok, "Expected season 1 to be deleted from SeasonsComments")
+		require.Equal(t, "Comment for season 2", (*commentDb.SeasonsComments)["2"])
+
+		// API assertion: returned comments should only contain season 2
+		respGet := getCommentsFromApi(t, group.Id, expectedTVSeriesTitle.ID, tokenOwnerUser)
+		defer respGet.Body.Close()
+		require.Equal(t, http.StatusOK, respGet.StatusCode)
+
+		var allComments comments.AllCommentsFromTitle
+		require.NoError(t, json.NewDecoder(respGet.Body).Decode(&allComments))
+		require.Len(t, allComments.Comments, 1)
+		require.NotNil(t, allComments.Comments[0].SeasonsComments)
+		_, ok = (*allComments.Comments[0].SeasonsComments)["1"]
+		require.False(t, ok, "Expected season 1 to be deleted from API response SeasonsComments")
+		require.Equal(t, "Comment for season 2", (*allComments.Comments[0].SeasonsComments)["2"])
+	})
+
+	t.Run("Deleting last season should delete the whole comment document", func(t *testing.T) {
+		onlySeason := 1
+		respOnly := addComment(t, comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle2.ID,
+			Comment: "Only season comment",
+			Season:  &onlySeason,
+		}, tokenOwnerUser)
+		defer respOnly.Body.Close()
+		require.Equal(t, http.StatusCreated, respOnly.StatusCode)
+		var createdOnly comments.Comment
+		require.NoError(t, json.NewDecoder(respOnly.Body).Decode(&createdOnly))
+
+		respDeleted := deleteCommentSeasonFromApi(t, group.Id, expectedTVSeriesTitle2.ID, createdOnly.Id, tokenOwnerUser, onlySeason)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
+
+		// DB assertion: no comments for this title should remain
+		commentsDb := getCommentsFromDB(t, expectedTVSeriesTitle2.ID)
+		require.Empty(t, commentsDb)
+
+		// API assertion: should return empty comments list
+		respGet := getCommentsFromApi(t, group.Id, expectedTVSeriesTitle2.ID, tokenOwnerUser)
+		defer respGet.Body.Close()
+		require.Equal(t, http.StatusOK, respGet.StatusCode)
+		var allComments comments.AllCommentsFromTitle
+		require.NoError(t, json.NewDecoder(respGet.Body).Decode(&allComments))
+		require.Empty(t, allComments.Comments)
+	})
+
+	t.Run("Deleting a season comment not being from group should return 404", func(t *testing.T) {
+		respDeleted := deleteCommentSeasonFromApi(t, group.Id, expectedTVSeriesTitle.ID, commentId, tokenUserNotInGroup, season2)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeleted.StatusCode)
+
+		var respDeletedBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respDeletedBody))
+		require.Contains(t, respDeletedBody.ErrorMessage, fmt.Sprintf("Group %s do not have title %s or do not exist.", group.Id, expectedTVSeriesTitle.ID))
+	})
+
+	t.Run("Deleting a season comment with invalid season should return 400", func(t *testing.T) {
+		respDeleted := deleteCommentSeasonFromApi(t, group.Id, expectedTVSeriesTitle.ID, commentId, tokenOwnerUser, 0)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respDeleted.StatusCode)
+
+		var respDeletedBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respDeletedBody))
+		require.Contains(t, respDeletedBody.ErrorMessage, comments.ErrInvalidSeasonValue.Error()[1:])
+	})
+
+	t.Run("Deleting a season comment that does not exist should return 404", func(t *testing.T) {
+		// Add a comment for the group user on season 1
+		resp := addComment(t, comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle.ID,
+			Comment: "User season 1",
+			Season:  &season1,
+		}, tokenUserFromGroup)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+		var created comments.Comment
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
+
+		// Try to delete season 2 which exists in the title but not in the comment map for this user
+		respDeleted := deleteCommentSeasonFromApi(t, group.Id, expectedTVSeriesTitle.ID, created.Id, tokenUserFromGroup, season2)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeleted.StatusCode)
+
+		var respDeletedBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respDeletedBody))
+		require.Contains(t, respDeletedBody.ErrorMessage, comments.ErrCommentNotFound.Error()[1:])
+	})
+}
