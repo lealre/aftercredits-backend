@@ -319,11 +319,14 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 	})
 
 	// Load titles in database
-	titles := loadTitlesFixture(t)
-	seedTitles(t, titles)
-	expectedOwnerTitle := titles[0]            // Title for group owner to add
-	expectedParticipantTitle := titles[1]      // Title for regular user to add
-	expectedTitleToUserNotInGroup := titles[2] // Different title to the user not in group to try to add
+	movieTitles := loadTitlesFixture(t)
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	allTitles := append(movieTitles, tvSeriesTitles...)
+	seedTitles(t, allTitles)
+	expectedOwnerTitle := movieTitles[0]            // Title for group owner to add
+	expectedParticipantTitle := movieTitles[1]      // Title for regular user to add
+	expectedTitleToUserNotInGroup := movieTitles[2] // Different title to the user not in group to try to add
+	expectedTVSeriesTitle := tvSeriesTitles[0]      // TV series title for testing seasons watched
 
 	// =========================================================
 	// 		TEST GET GROUP TITLES EMPTY
@@ -563,6 +566,145 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesBody))
 		require.Contains(t, fmt.Sprintf("Group with id %s not found", group.Id), respGroupTitlesBody.Message)
 	})
+
+	// =========================================================
+	// 		TEST GETTING TITLES WITH SEASONS WATCHED
+	// =========================================================
+
+	// Add TV series title to group for seasons watched testing
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTVSeriesTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// Mark some seasons as watched for the TV series
+	watched := true
+	season1 := 1
+	season2 := 2
+	testDate1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	testDate2 := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+
+	// Set season 1 as watched with watchedAt
+	pathBody1, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+		TitleId: expectedTVSeriesTitle.ID,
+		Season:  &season1,
+		Watched: &watched,
+		WatchedAt: &generics.FlexibleDate{
+			Time: &testDate1,
+		},
+	})
+	require.NoError(t, err)
+	patchGroupTitleWatched(t, group.Id, pathBody1, tokenOwnerUser)
+
+	// Set season 2 as watched with watchedAt
+	pathBody2, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+		TitleId: expectedTVSeriesTitle.ID,
+		Season:  &season2,
+		Watched: &watched,
+		WatchedAt: &generics.FlexibleDate{
+			Time: &testDate2,
+		},
+	})
+	require.NoError(t, err)
+	patchGroupTitleWatched(t, group.Id, pathBody2, tokenOwnerUser)
+
+	t.Run("Get titles from group should include seasons watched info for TV series", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenOwnerUser)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupTitles, err := client.Do(req)
+		require.NoError(t, err)
+
+		defer respGroupTitles.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupTitles.StatusCode)
+
+		var respGroupTitlesBody generics.Page[groups.GroupTitleDetail]
+		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesBody))
+		require.Equal(t, 3, respGroupTitlesBody.TotalResults, "Expected TotalResults to be 3, got %d", respGroupTitlesBody.TotalResults)
+		require.Equal(t, 3, len(respGroupTitlesBody.Content), "Expected length of Content to be 3, got %d", len(respGroupTitlesBody.Content))
+
+		// Find the TV series title in the response
+		var tvSeriesTitleDetail *groups.GroupTitleDetail
+		var movieTitleDetail *groups.GroupTitleDetail
+		for i := range respGroupTitlesBody.Content {
+			if respGroupTitlesBody.Content[i].Id == expectedTVSeriesTitle.ID {
+				tvSeriesTitleDetail = &respGroupTitlesBody.Content[i]
+			}
+			if respGroupTitlesBody.Content[i].Id == expectedOwnerTitle.ID {
+				movieTitleDetail = &respGroupTitlesBody.Content[i]
+			}
+		}
+
+		// Verify TV series has seasons watched info
+		require.NotNil(t, tvSeriesTitleDetail, "Expected TV series title to be in response")
+		require.NotNil(t, tvSeriesTitleDetail.SeasonsWatched, "Expected SeasonsWatched to not be nil for TV series")
+		require.Equal(t, 2, len(*tvSeriesTitleDetail.SeasonsWatched), "Expected 2 seasons in SeasonsWatched, got %d", len(*tvSeriesTitleDetail.SeasonsWatched))
+
+		// Verify season 1
+		season1Watched, season1Exists := (*tvSeriesTitleDetail.SeasonsWatched)["1"]
+		require.True(t, season1Exists, "Expected season 1 to exist in SeasonsWatched")
+		require.True(t, season1Watched.Watched, "Expected season 1 Watched to be true")
+		require.NotNil(t, season1Watched.WatchedAt, "Expected season 1 WatchedAt to not be nil")
+		require.Equal(t, testDate1, *season1Watched.WatchedAt, "Expected season 1 WatchedAt to match testDate1")
+		require.NotEmpty(t, season1Watched.AddedAt, "Expected season 1 AddedAt to not be empty")
+		require.NotEmpty(t, season1Watched.UpdatedAt, "Expected season 1 UpdatedAt to not be empty")
+
+		// Verify season 2
+		season2Watched, season2Exists := (*tvSeriesTitleDetail.SeasonsWatched)["2"]
+		require.True(t, season2Exists, "Expected season 2 to exist in SeasonsWatched")
+		require.True(t, season2Watched.Watched, "Expected season 2 Watched to be true")
+		require.NotNil(t, season2Watched.WatchedAt, "Expected season 2 WatchedAt to not be nil")
+		require.Equal(t, testDate2, *season2Watched.WatchedAt, "Expected season 2 WatchedAt to match testDate2")
+		require.NotEmpty(t, season2Watched.AddedAt, "Expected season 2 AddedAt to not be empty")
+		require.NotEmpty(t, season2Watched.UpdatedAt, "Expected season 2 UpdatedAt to not be empty")
+
+		// Verify movie does not have seasons watched info
+		require.NotNil(t, movieTitleDetail, "Expected movie title to be in response")
+		require.Nil(t, movieTitleDetail.SeasonsWatched, "Expected SeasonsWatched to be nil for movie")
+	})
+
+	t.Run("Get titles from group with TV series that has no seasons watched should return empty seasons watched", func(t *testing.T) {
+		// Create a new TV series title and add it to the group without marking any seasons as watched
+		expectedTVSeriesTitle2 := tvSeriesTitles[1]
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTVSeriesTitle2.ID),
+			GroupId: group.Id,
+		}, tokenOwnerUser)
+
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenOwnerUser)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupTitles, err := client.Do(req)
+		require.NoError(t, err)
+
+		defer respGroupTitles.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupTitles.StatusCode)
+
+		var respGroupTitlesBody generics.Page[groups.GroupTitleDetail]
+		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesBody))
+
+		// Find the TV series title without seasons watched
+		var tvSeriesTitleDetail2 *groups.GroupTitleDetail
+		for i := range respGroupTitlesBody.Content {
+			if respGroupTitlesBody.Content[i].Id == expectedTVSeriesTitle2.ID {
+				tvSeriesTitleDetail2 = &respGroupTitlesBody.Content[i]
+				break
+			}
+		}
+
+		require.NotNil(t, tvSeriesTitleDetail2, "Expected TV series title 2 to be in response")
+		require.Nil(t, tvSeriesTitleDetail2.SeasonsWatched, "Expected SeasonsWatched to be nil when no seasons are watched")
+	})
 }
 
 func TestGroupTitlesPatch(t *testing.T) {
@@ -642,6 +784,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected Watched to be true, got %v", respGroupSetWatchedBody.Watched)
 		require.True(t, respGroupSetWatchedBody.AddedAt.Before(respGroupSetWatchedBody.UpdatedAt), "Expected AddedAt to be before UpdatedAt, but AddedAt: %v, UpdatedAt: %v", respGroupSetWatchedBody.AddedAt, respGroupSetWatchedBody.UpdatedAt)
 		require.Empty(t, respGroupSetWatchedBody.WatchedAt, "Expected WatchedAt to be empty when just setting watched: true")
+		require.Nil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to be nil for movie")
 
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
@@ -826,6 +969,16 @@ func TestGroupTitlesPatch(t *testing.T) {
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
 
+		// Verify response includes seasons watched info
+		require.NotNil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to not be nil in response")
+		require.Equal(t, 1, len(*respGroupSetWatchedBody.SeasonsWatched), "Expected 1 season in SeasonsWatched response, got %d", len(*respGroupSetWatchedBody.SeasonsWatched))
+		season1Watched, season1Exists := (*respGroupSetWatchedBody.SeasonsWatched)[strconv.Itoa(season)]
+		require.True(t, season1Exists, "Expected season %d to exist in SeasonsWatched response", season)
+		require.True(t, season1Watched.Watched, "Expected season Watched in response to be true")
+		require.Empty(t, season1Watched.WatchedAt, "Expected season WatchedAt in response to be empty")
+		require.NotEmpty(t, season1Watched.AddedAt, "Expected season AddedAt in response to not be empty")
+		require.NotEmpty(t, season1Watched.UpdatedAt, "Expected season UpdatedAt in response to not be empty")
+
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
@@ -856,6 +1009,14 @@ func TestGroupTitlesPatch(t *testing.T) {
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
 
+		// Verify response includes seasons watched info
+		require.NotNil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to not be nil in response")
+		season1Watched, season1Exists := (*respGroupSetWatchedBody.SeasonsWatched)[strconv.Itoa(season)]
+		require.True(t, season1Exists, "Expected season %d to exist in SeasonsWatched response", season)
+		require.True(t, season1Watched.Watched, "Expected season Watched in response to be true")
+		require.NotNil(t, season1Watched.WatchedAt, "Expected season WatchedAt in response to not be nil")
+		require.Equal(t, testDate, *season1Watched.WatchedAt, "Expected season WatchedAt in response to match testDate")
+
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
@@ -879,6 +1040,13 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NoError(t, err)
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
+
+		// Verify response includes seasons watched info
+		require.NotNil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to not be nil in response")
+		season1Watched, season1Exists := (*respGroupSetWatchedBody.SeasonsWatched)[strconv.Itoa(season)]
+		require.True(t, season1Exists, "Expected season %d to exist in SeasonsWatched response", season)
+		require.False(t, season1Watched.Watched, "Expected season Watched in response to be false")
+		require.Empty(t, season1Watched.WatchedAt, "Expected season WatchedAt in response to be empty when watched is false")
 
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
@@ -999,6 +1167,21 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NoError(t, err)
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
+
+		// Verify response includes seasons watched info for both seasons
+		require.NotNil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to not be nil in response")
+		require.Equal(t, 2, len(*respGroupSetWatchedBody.SeasonsWatched), "Expected 2 seasons in SeasonsWatched response, got %d", len(*respGroupSetWatchedBody.SeasonsWatched))
+
+		// Check season 1 in response
+		season1WatchedResp, season1ExistsResp := (*respGroupSetWatchedBody.SeasonsWatched)["1"]
+		require.True(t, season1ExistsResp, "Expected season 1 to exist in SeasonsWatched response")
+		require.False(t, season1WatchedResp.Watched, "Expected season 1 Watched in response to be false")
+
+		// Check season 2 in response
+		season2WatchedResp, season2ExistsResp := (*respGroupSetWatchedBody.SeasonsWatched)["2"]
+		require.True(t, season2ExistsResp, "Expected season 2 to exist in SeasonsWatched response")
+		require.True(t, season2WatchedResp.Watched, "Expected season 2 Watched in response to be true")
+		require.NotEmpty(t, season2WatchedResp.AddedAt, "Expected season 2 AddedAt in response to not be empty")
 
 		// Database assertion - check both seasons exist
 		groupDb := getGroup(t, group.Id)
