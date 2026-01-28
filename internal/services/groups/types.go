@@ -21,11 +21,12 @@ type Group struct {
 type UsersIds []string
 
 type GroupTitle struct {
-	Id        string     `json:"id"`
-	Watched   bool       `json:"watched"`
-	AddedAt   time.Time  `json:"addedAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	WatchedAt *time.Time `json:"watchedAt,omitempty"`
+	Id             string          `json:"id"`
+	Watched        bool            `json:"watched"`
+	SeasonsWatched *SeasonsWatched `json:"seasonsWatched,omitempty"`
+	AddedAt        time.Time       `json:"addedAt"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
+	WatchedAt      *time.Time      `json:"watchedAt,omitempty"`
 }
 
 type CreateGroupRequest struct {
@@ -46,13 +47,23 @@ type GroupResponse struct {
 	UpdatedAt time.Time    `json:"updatedAt"`
 }
 
+type SeasonWatched struct {
+	Watched   bool       `json:"watched"`
+	WatchedAt *time.Time `json:"watchedAt,omitempty"`
+	AddedAt   time.Time  `json:"addedAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
+}
+
+type SeasonsWatched map[string]SeasonWatched
+
 type GroupTitleDetail struct {
 	titles.Title
-	GroupRatings []ratings.Rating `json:"groupRatings"`
-	Watched      bool             `json:"watched"`
-	AddedAt      time.Time        `json:"addedAt"`
-	UpdatedAt    time.Time        `json:"updatedAt"`
-	WatchedAt    *time.Time       `json:"watchedAt,omitempty"`
+	GroupRatings   []ratings.Rating `json:"groupRatings"`
+	SeasonsWatched *SeasonsWatched  `json:"seasonsWatched,omitempty"`
+	Watched        bool             `json:"watched"`
+	AddedAt        time.Time        `json:"addedAt"`
+	UpdatedAt      time.Time        `json:"updatedAt"`
+	WatchedAt      *time.Time       `json:"watchedAt,omitempty"`
 }
 
 type AddTitleToGroupRequest struct {

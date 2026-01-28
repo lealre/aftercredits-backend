@@ -185,6 +185,21 @@ func GetTitlesFromGroup(
 			AddedAt:      groupTitle.AddedAt,
 			UpdatedAt:    groupTitle.UpdatedAt,
 		}
+
+		// Map seasons watched from database to API type
+		if groupTitle.SeasonsWatched != nil {
+			seasonsWatched := make(SeasonsWatched)
+			for seasonKey, seasonDb := range *groupTitle.SeasonsWatched {
+				seasonsWatched[seasonKey] = SeasonWatched{
+					Watched:   seasonDb.Watched,
+					WatchedAt: seasonDb.WatchedAt,
+					AddedAt:   seasonDb.AddedAt,
+					UpdatedAt: seasonDb.UpdatedAt,
+				}
+			}
+			detail.SeasonsWatched = &seasonsWatched
+		}
+
 		detail.Title = title
 		allTitlesDetails = append(allTitlesDetails, detail)
 	}
