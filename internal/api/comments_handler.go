@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
@@ -194,4 +195,68 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Comment with id %s deleted successfully", commentId)})
+}
+
+func (api *API) DeleteCommentSeason(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	commentId := r.PathValue("commentId")
+	if commentId == "" {
+		respondWithError(w, http.StatusBadRequest, "Comment id is required")
+		return
+	}
+
+	seasonStr := r.PathValue("season")
+	if seasonStr == "" {
+		respondWithError(w, http.StatusBadRequest, "Season is required")
+		return
+	}
+	season, err := strconv.Atoi(seasonStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, formatErrorMessage(comments.ErrInvalidSeasonValue))
+		return
+	}
+
+	// This checks if the group exists, if the title is in the group and if the user is in the group
+	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	if !ok && err == nil {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	} else if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	title, err := titles.GetTitleById(api.Db, r.Context(), titleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	if err := comments.DeleteCommentSeason(api.Db, r.Context(), commentId, currentUser.Id, season, title); err != nil {
+		if statusCode, ok := comments.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting season comment")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Season %d from comment %s deleted successfully", season, commentId)})
 }

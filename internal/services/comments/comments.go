@@ -286,3 +286,88 @@ func DeleteComment(db *mongodb.DB, ctx context.Context, commentId, userId string
 
 	return deletedCount, nil
 }
+
+// DeleteCommentSeason deletes a comment for a specific season of a TV series.
+//
+// It follows the same TV-series season validation logic as addCommentForTVSeries:
+//   - season must be > 0
+//   - season must exist in the title's seasons list
+//   - the season comment must exist in the stored seasonsComments map
+//
+// If, after deleting the season entry, there are no seasons left, the whole comment document is deleted.
+func DeleteCommentSeason(db *mongodb.DB, ctx context.Context, commentId, userId string, season int, title titles.Title) error {
+	if season <= 0 {
+		return ErrInvalidSeasonValue
+	}
+
+	// This endpoint is specific for TV series season comments
+	if title.Type != "tvSeries" && title.Type != "tvMiniSeries" {
+		return ErrSeasonDoesNotExist
+	}
+
+	seasonAsString := strconv.Itoa(season)
+
+	// Validate that the season exists in the title's seasons list
+	seasonExists := false
+	for _, s := range title.Seasons {
+		if s.Season == seasonAsString {
+			seasonExists = true
+			break
+		}
+	}
+	if !seasonExists {
+		return ErrSeasonDoesNotExist
+	}
+
+	// Fetch the comment by id (and ensure it belongs to the user)
+	existingComment, err := db.GetCommentById(ctx, commentId, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return ErrCommentNotFound
+		}
+		return err
+	}
+
+	// Ensure it has season comments and the requested season exists
+	if existingComment.SeasonsComments == nil {
+		return ErrCommentNotFound
+	}
+	if _, ok := (*existingComment.SeasonsComments)[seasonAsString]; !ok {
+		return ErrCommentNotFound
+	}
+
+	// Delete season entry
+	delete(*existingComment.SeasonsComments, seasonAsString)
+
+	// If no seasons left, delete the whole comment document
+	if len(*existingComment.SeasonsComments) == 0 {
+		deleted, err := db.DeleteComment(ctx, commentId, userId)
+		if err != nil {
+			return err
+		}
+		if deleted == 0 {
+			return ErrCommentNotFound
+		}
+		return nil
+	}
+
+	// Persist updated seasons map
+	converted := mongodb.SeasonsCommentsDb(*existingComment.SeasonsComments)
+	seasonsComments := &converted
+
+	commentDb := mongodb.CommentDb{
+		Id:              commentId,
+		Comment:         existingComment.Comment,
+		SeasonsComments: seasonsComments,
+	}
+
+	_, err = db.UpdateComment(ctx, commentDb, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return ErrCommentNotFound
+		}
+		return err
+	}
+
+	return nil
+}

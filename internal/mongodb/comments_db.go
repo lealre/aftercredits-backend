@@ -62,6 +62,23 @@ func (db *DB) GetUserCommentByTitleId(ctx context.Context, titleId string, userI
 	return comment, nil
 }
 
+func (db *DB) GetCommentById(ctx context.Context, commentId string, userId string) (CommentDb, error) {
+	coll := db.Collection(CommentsCollection)
+
+	filter := bson.M{"_id": commentId, "userId": userId}
+
+	var comment CommentDb
+	err := coll.FindOne(ctx, filter).Decode(&comment)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return CommentDb{}, ErrRecordNotFound
+		}
+		return CommentDb{}, err
+	}
+
+	return comment, nil
+}
+
 func (db *DB) AddComment(ctx context.Context, comment CommentDb) (CommentDb, error) {
 	coll := db.Collection(CommentsCollection)
 
