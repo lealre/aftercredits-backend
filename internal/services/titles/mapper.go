@@ -68,7 +68,7 @@ func MapImdbSeasonsToDbSeasons(seasons []imdb.Seasons) []mongodb.Seasons {
 func MapImdbEpisodesToDbEpisodes(episodes []imdb.Episode) []mongodb.Episode {
 	dbEpisodes := make([]mongodb.Episode, len(episodes))
 	for i, episode := range episodes {
-		dbEpisodes[i] = mongodb.Episode{
+		dbEpisode := mongodb.Episode{
 			ID:    episode.ID,
 			Title: episode.Title,
 			PrimaryImage: mongodb.Image{
@@ -79,6 +79,32 @@ func MapImdbEpisodesToDbEpisodes(episodes []imdb.Episode) []mongodb.Episode {
 			Season:        episode.Season,
 			EpisodeNumber: episode.EpisodeNumber,
 		}
+
+		// Map optional fields
+		if episode.RuntimeSeconds != nil {
+			dbEpisode.RuntimeSeconds = episode.RuntimeSeconds
+		}
+
+		if episode.Plot != nil {
+			dbEpisode.Plot = episode.Plot
+		}
+
+		if episode.Rating != nil {
+			dbEpisode.Rating = &mongodb.Rating{
+				AggregateRating: episode.Rating.AggregateRating,
+				VoteCount:       episode.Rating.VoteCount,
+			}
+		}
+
+		if episode.ReleaseDate != nil {
+			dbEpisode.ReleaseDate = &mongodb.ReleaseDate{
+				Year:  episode.ReleaseDate.Year,
+				Month: episode.ReleaseDate.Month,
+				Day:   episode.ReleaseDate.Day,
+			}
+		}
+
+		dbEpisodes[i] = dbEpisode
 	}
 	return dbEpisodes
 }
@@ -97,7 +123,7 @@ func MapDbSeasonsToImdbSeasons(seasons []mongodb.Seasons) []Seasons {
 func MapDbEpisodesToImdbEpisodes(episodes []mongodb.Episode) []Episode {
 	apiEpisodes := make([]Episode, len(episodes))
 	for i, episode := range episodes {
-		apiEpisodes[i] = Episode{
+		apiEpisode := Episode{
 			ID:    episode.ID,
 			Title: episode.Title,
 			PrimaryImage: Image{
@@ -108,6 +134,31 @@ func MapDbEpisodesToImdbEpisodes(episodes []mongodb.Episode) []Episode {
 			Season:        episode.Season,
 			EpisodeNumber: episode.EpisodeNumber,
 		}
+
+		if episode.RuntimeSeconds != nil {
+			apiEpisode.RuntimeSeconds = episode.RuntimeSeconds
+		}
+
+		if episode.Plot != nil {
+			apiEpisode.Plot = episode.Plot
+		}
+
+		if episode.Rating != nil {
+			apiEpisode.Rating = &Rating{
+				AggregateRating: episode.Rating.AggregateRating,
+				VoteCount:       episode.Rating.VoteCount,
+			}
+		}
+
+		if episode.ReleaseDate != nil {
+			apiEpisode.ReleaseDate = &ReleaseDate{
+				Year:  episode.ReleaseDate.Year,
+				Month: episode.ReleaseDate.Month,
+				Day:   episode.ReleaseDate.Day,
+			}
+		}
+
+		apiEpisodes[i] = apiEpisode
 	}
 	return apiEpisodes
 }
