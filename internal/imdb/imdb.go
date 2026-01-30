@@ -64,7 +64,7 @@ func FetchSeasons(titleID string) ([]byte, error) {
 	return body, nil
 }
 
-func FetchEpisodes(titleID string) ([]byte, error) {
+func FetchEpisodes(titleID string, pageSize int, pageToken string) ([]byte, error) {
 	requestURL := fmt.Sprintf("%s/titles/%s/episodes", imdbFreeApiBaseURL, titleID)
 
 	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
@@ -72,6 +72,16 @@ func FetchEpisodes(titleID string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+
+	// Add query parameters
+	q := req.URL.Query()
+	if pageSize > 0 {
+		q.Set("pageSize", fmt.Sprintf("%d", pageSize))
+	}
+	if pageToken != "" {
+		q.Set("pageToken", pageToken)
+	}
+	req.URL.RawQuery = q.Encode()
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

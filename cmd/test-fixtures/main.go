@@ -91,18 +91,33 @@ func fetchTitleWithSeasonsAndEpisodes(titleID string) (imdb.Title, error) {
 	}
 	title.Seasons = &seasons.Seasons
 
-	// Fetch episodes
+	// Fetch all episodes with pagination
 	log.Printf("  Fetching episodes for %s", titleID)
-	episodesResp, err := imdb.FetchEpisodes(titleID)
-	if err != nil {
-		return imdb.Title{}, err
-	}
+	allEpisodes := []imdb.Episode{}
+	pageSize := 50
+	pageToken := ""
 
-	var episodes imdb.EpisodesResponse
-	if err = json.Unmarshal(episodesResp, &episodes); err != nil {
-		return imdb.Title{}, err
+	for {
+		episodesResp, err := imdb.FetchEpisodes(titleID, pageSize, pageToken)
+		if err != nil {
+			return imdb.Title{}, err
+		}
+
+		var episodes imdb.EpisodesResponse
+		if err = json.Unmarshal(episodesResp, &episodes); err != nil {
+			return imdb.Title{}, err
+		}
+
+		allEpisodes = append(allEpisodes, episodes.Episodes...)
+
+		// If there's no next page token, we're done
+		if episodes.NextPageToken == "" {
+			break
+		}
+
+		pageToken = episodes.NextPageToken
 	}
-	title.Episodes = &episodes.Episodes
+	title.Episodes = &allEpisodes
 
 	return title, nil
 }

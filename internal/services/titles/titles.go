@@ -174,18 +174,34 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 			return Title{}, err
 		}
 
-		episodesBody, err := imdb.FetchEpisodes(titleId)
-		if err != nil {
-			return Title{}, err
-		}
+		// Fetch all episodes with pagination
+		allEpisodes := []imdb.Episode{}
+		pageSize := 50
+		pageToken := ""
 
-		var episodesResp imdb.EpisodesResponse
-		if err := json.Unmarshal(episodesBody, &episodesResp); err != nil {
-			return Title{}, err
+		for {
+			episodesBody, err := imdb.FetchEpisodes(titleId, pageSize, pageToken)
+			if err != nil {
+				return Title{}, err
+			}
+
+			var episodesResp imdb.EpisodesResponse
+			if err := json.Unmarshal(episodesBody, &episodesResp); err != nil {
+				return Title{}, err
+			}
+
+			allEpisodes = append(allEpisodes, episodesResp.Episodes...)
+
+			// If there's no next page token, we're done
+			if episodesResp.NextPageToken == "" {
+				break
+			}
+
+			pageToken = episodesResp.NextPageToken
 		}
 
 		title.Seasons = MapImdbSeasonsToDbSeasons(seasonsResp.Seasons)
-		title.Episodes = MapImdbEpisodesToDbEpisodes(episodesResp.Episodes)
+		title.Episodes = MapImdbEpisodesToDbEpisodes(allEpisodes)
 	}
 
 	// Set missing fields

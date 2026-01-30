@@ -67,8 +67,9 @@ type Interest struct {
 }
 
 type EpisodesResponse struct {
-	Episodes   []Episode `json:"episodes" bson:"episodes"`
-	TotalCount int       `json:"totalCount" bson:"totalCount"`
+	Episodes      []Episode `json:"episodes" bson:"episodes"`
+	TotalCount    int       `json:"totalCount" bson:"totalCount"`
+	NextPageToken string    `json:"nextPageToken,omitempty" bson:"nextPageToken,omitempty"`
 }
 
 type Episode struct {
