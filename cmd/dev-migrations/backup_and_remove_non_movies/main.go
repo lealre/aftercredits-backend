@@ -77,16 +77,18 @@ func main() {
 	fmt.Println("📝 Step 3: Removing non-movie titles from groups...")
 	groupsColl := database.Collection(mongodb.GroupsCollection)
 
-	// Remove titles from all groups using $pull
+	// Build $unset document for all title IDs (titles are stored as a map, not an array)
+	unsetDoc := bson.M{}
+	for _, titleId := range titleIdsToRemove {
+		unsetDoc[fmt.Sprintf("titles.%s", titleId)] = ""
+	}
+
+	// Remove titles from all groups using $unset (since titles is now a map)
 	groupsResult, err := groupsColl.UpdateMany(
 		ctx,
 		bson.M{},
 		bson.M{
-			"$pull": bson.M{
-				"titles": bson.M{
-					"titleId": bson.M{"$in": titleIdsToRemove},
-				},
-			},
+			"$unset": unsetDoc,
 			"$set": bson.M{
 				"updatedAt": time.Now(),
 			},
@@ -96,7 +98,7 @@ func main() {
 		log.Fatalf("Failed to remove titles from groups: %v", err)
 	}
 
-	fmt.Printf("✅ Updated %d groups (removed non-movie titles from titles array)\n", groupsResult.ModifiedCount)
+	fmt.Printf("✅ Updated %d groups (removed non-movie titles from titles map)\n", groupsResult.ModifiedCount)
 
 	// Step 5: Delete titles from titles collection
 	fmt.Println("📝 Step 4: Deleting non-movie titles from titles collection...")
