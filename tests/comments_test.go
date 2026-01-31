@@ -180,7 +180,11 @@ func TestAddComment(t *testing.T) {
 		require.Equal(t, expectedTVSeriesTitle.ID, respNewCommentBody.TitleId)
 		require.Empty(t, respNewCommentBody.Comment)
 		require.NotNil(t, respNewCommentBody.SeasonsComments)
-		require.Equal(t, expectedComment, (*respNewCommentBody.SeasonsComments)["1"])
+		seasonComment := (*respNewCommentBody.SeasonsComments)["1"]
+		require.Equal(t, expectedComment, seasonComment.Comment)
+		require.NotEmpty(t, seasonComment.AddedAt)
+		require.NotEmpty(t, seasonComment.UpdatedAt)
+		require.Equal(t, seasonComment.AddedAt, seasonComment.UpdatedAt)
 		require.NotEmpty(t, respNewCommentBody.CreatedAt)
 		require.Equal(t, respNewCommentBody.CreatedAt, respNewCommentBody.UpdatedAt)
 
@@ -190,7 +194,11 @@ func TestAddComment(t *testing.T) {
 		require.Equal(t, expectedTVSeriesTitle.ID, commentDb.TitleId)
 		require.Nil(t, commentDb.Comment)
 		require.NotNil(t, commentDb.SeasonsComments)
-		require.Equal(t, expectedComment, (*commentDb.SeasonsComments)["1"])
+		seasonCommentDb := (*commentDb.SeasonsComments)["1"]
+		require.Equal(t, expectedComment, seasonCommentDb.Comment)
+		require.NotEmpty(t, seasonCommentDb.AddedAt)
+		require.NotEmpty(t, seasonCommentDb.UpdatedAt)
+		require.Equal(t, seasonCommentDb.AddedAt, seasonCommentDb.UpdatedAt)
 		require.NotEmpty(t, commentDb.CreatedAt)
 		require.Equal(t, commentDb.CreatedAt, commentDb.UpdatedAt)
 	})
@@ -223,7 +231,10 @@ func TestAddComment(t *testing.T) {
 				require.Equal(t, expectedTVSeriesTitle.ID, respNewCommentBody.TitleId)
 				require.Empty(t, respNewCommentBody.Comment)
 				require.NotNil(t, respNewCommentBody.SeasonsComments)
-				require.Equal(t, tt.expectedComment, (*respNewCommentBody.SeasonsComments)[strconv.Itoa(tt.season)])
+				seasonComment := (*respNewCommentBody.SeasonsComments)[strconv.Itoa(tt.season)]
+				require.Equal(t, tt.expectedComment, seasonComment.Comment)
+				require.NotEmpty(t, seasonComment.AddedAt)
+				require.NotEmpty(t, seasonComment.UpdatedAt)
 				require.NotEmpty(t, respNewCommentBody.CreatedAt)
 				require.NotEqual(t, respNewCommentBody.CreatedAt, respNewCommentBody.UpdatedAt)
 				require.True(t, respNewCommentBody.UpdatedAt.After(respNewCommentBody.CreatedAt))
@@ -234,7 +245,10 @@ func TestAddComment(t *testing.T) {
 				require.Equal(t, expectedTVSeriesTitle.ID, commentDb.TitleId)
 				require.Nil(t, commentDb.Comment)
 				require.NotNil(t, commentDb.SeasonsComments)
-				require.Equal(t, tt.expectedComment, (*commentDb.SeasonsComments)[strconv.Itoa(tt.season)])
+				seasonCommentDb := (*commentDb.SeasonsComments)[strconv.Itoa(tt.season)]
+				require.Equal(t, tt.expectedComment, seasonCommentDb.Comment)
+				require.NotEmpty(t, seasonCommentDb.AddedAt)
+				require.NotEmpty(t, seasonCommentDb.UpdatedAt)
 				require.NotEmpty(t, commentDb.CreatedAt)
 				require.NotEqual(t, commentDb.CreatedAt, commentDb.UpdatedAt)
 				require.True(t, commentDb.UpdatedAt.After(commentDb.CreatedAt))
@@ -575,7 +589,11 @@ func TestUpdateComment(t *testing.T) {
 				require.NoError(t, json.NewDecoder(respUpdatedComment.Body).Decode(&respUpdatedCommentBody))
 				require.Equal(t, user.Id, respUpdatedCommentBody.UserId)
 				require.Equal(t, expectedTVSeriesTitle.ID, respUpdatedCommentBody.TitleId)
-				require.Equal(t, tt.expectedComment, (*respUpdatedCommentBody.SeasonsComments)[strconv.Itoa(tt.season)])
+				seasonComment := (*respUpdatedCommentBody.SeasonsComments)[strconv.Itoa(tt.season)]
+				require.Equal(t, tt.expectedComment, seasonComment.Comment)
+				require.NotEmpty(t, seasonComment.AddedAt)
+				require.NotEmpty(t, seasonComment.UpdatedAt)
+				require.True(t, seasonComment.UpdatedAt.After(seasonComment.AddedAt) || seasonComment.UpdatedAt.Equal(seasonComment.AddedAt))
 				require.NotEmpty(t, respUpdatedCommentBody.CreatedAt)
 				require.NotEqual(t, respUpdatedCommentBody.CreatedAt, respUpdatedCommentBody.UpdatedAt)
 				require.True(t, respUpdatedCommentBody.UpdatedAt.After(respUpdatedCommentBody.CreatedAt))
@@ -584,7 +602,11 @@ func TestUpdateComment(t *testing.T) {
 				commentDb := getCommentFromDB(t, respUpdatedCommentBody.Id)
 				require.Equal(t, user.Id, commentDb.UserId)
 				require.Equal(t, expectedTVSeriesTitle.ID, commentDb.TitleId)
-				require.Equal(t, tt.expectedComment, (*commentDb.SeasonsComments)[strconv.Itoa(tt.season)])
+				seasonCommentDb := (*commentDb.SeasonsComments)[strconv.Itoa(tt.season)]
+				require.Equal(t, tt.expectedComment, seasonCommentDb.Comment)
+				require.NotEmpty(t, seasonCommentDb.AddedAt)
+				require.NotEmpty(t, seasonCommentDb.UpdatedAt)
+				require.True(t, seasonCommentDb.UpdatedAt.After(seasonCommentDb.AddedAt) || seasonCommentDb.UpdatedAt.Equal(seasonCommentDb.AddedAt))
 				require.NotEmpty(t, commentDb.CreatedAt)
 				require.NotEqual(t, commentDb.CreatedAt, commentDb.UpdatedAt)
 				require.True(t, commentDb.UpdatedAt.After(commentDb.CreatedAt))
@@ -849,7 +871,10 @@ func TestDeleteCommentSeason(t *testing.T) {
 		require.NotNil(t, commentDb.SeasonsComments)
 		_, ok := (*commentDb.SeasonsComments)["1"]
 		require.False(t, ok, "Expected season 1 to be deleted from SeasonsComments")
-		require.Equal(t, "Comment for season 2", (*commentDb.SeasonsComments)["2"])
+		season2CommentDb := (*commentDb.SeasonsComments)["2"]
+		require.Equal(t, "Comment for season 2", season2CommentDb.Comment)
+		require.NotEmpty(t, season2CommentDb.AddedAt)
+		require.NotEmpty(t, season2CommentDb.UpdatedAt)
 
 		// API assertion: returned comments should only contain season 2
 		respGet := getCommentsFromApi(t, group.Id, expectedTVSeriesTitle.ID, tokenOwnerUser)
@@ -862,7 +887,10 @@ func TestDeleteCommentSeason(t *testing.T) {
 		require.NotNil(t, allComments.Comments[0].SeasonsComments)
 		_, ok = (*allComments.Comments[0].SeasonsComments)["1"]
 		require.False(t, ok, "Expected season 1 to be deleted from API response SeasonsComments")
-		require.Equal(t, "Comment for season 2", (*allComments.Comments[0].SeasonsComments)["2"])
+		season2Comment := (*allComments.Comments[0].SeasonsComments)["2"]
+		require.Equal(t, "Comment for season 2", season2Comment.Comment)
+		require.NotEmpty(t, season2Comment.AddedAt)
+		require.NotEmpty(t, season2Comment.UpdatedAt)
 	})
 
 	t.Run("Deleting last season should delete the whole comment document", func(t *testing.T) {
