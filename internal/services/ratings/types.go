@@ -12,7 +12,13 @@ type Rating struct {
 	UpdatedAt      time.Time       `json:"updatedAt"`
 }
 
-type SeasonsRatings map[string]float32
+type SeasonRating struct {
+	Rating    float32   `json:"rating"`
+	AddedAt   time.Time `json:"addedAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type SeasonsRatings map[string]SeasonRating
 
 type NewRating struct {
 	GroupId string  `json:"groupId"`

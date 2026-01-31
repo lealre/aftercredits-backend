@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -149,11 +150,16 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 	}
 
 	var seasonsRatings *mongodb.SeasonsRatingsDb
+	now := time.Now()
 
 	if !hasExistingRating {
 		// 1.3.1: Creates a new rating with the season rating
 		seasonsRatings = &mongodb.SeasonsRatingsDb{
-			newSeasonAsString: newRating.Note,
+			newSeasonAsString: mongodb.SeasonRatingItemDb{
+				Rating:    newRating.Note,
+				AddedAt:   now,
+				UpdatedAt: now,
+			},
 		}
 	} else {
 		// 1.3.2: Checks if a rating for this specific season already exists
@@ -166,11 +172,19 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 		// 1.3.4: Adds the new season rating to the existing rating
 		if existingRating.SeasonsRatings == nil {
 			seasonsRatings = &mongodb.SeasonsRatingsDb{
-				newSeasonAsString: newRating.Note,
+				newSeasonAsString: mongodb.SeasonRatingItemDb{
+					Rating:    newRating.Note,
+					AddedAt:   now,
+					UpdatedAt: now,
+				},
 			}
 		} else {
 			seasonsRatings = existingRating.SeasonsRatings
-			(*seasonsRatings)[newSeasonAsString] = newRating.Note
+			(*seasonsRatings)[newSeasonAsString] = mongodb.SeasonRatingItemDb{
+				Rating:    newRating.Note,
+				AddedAt:   now,
+				UpdatedAt: now,
+			}
 		}
 	}
 
@@ -178,7 +192,7 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 	var sum float32
 	var count int
 	for _, seasonRating := range *seasonsRatings {
-		sum += seasonRating
+		sum += seasonRating.Rating
 		count++
 	}
 	newOverallRating := sum / float32(count)
@@ -276,7 +290,7 @@ func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, 
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
 		logger.Printf("Updating rating for TV series %s", rating.TitleId)
-		return updateRatingForTVSeries(db, ctx, rating, userId, updateReq)
+		return updateRatingForTVSeries(db, ctx, rating, userId, updateReq, title)
 	} else {
 		logger.Printf("Updating rating for movie %s", rating.TitleId)
 		return updateRatingForMovie(db, ctx, ratingId, userId, updateReq)
@@ -304,24 +318,31 @@ func updateRatingForMovie(db *mongodb.DB, ctx context.Context, ratingId, userId 
 //
 // Steps performed by this method:
 // 1. Validate that a season number is provided in the update request.
-// 2. Ensure the existing rating contains season ratings (sanity check).
-// 3. Verify that the specified season already exists in the stored ratings.
-// 4. Update the rating for the specified season.
-// 5. Recalculate the overall rating as the average of all season ratings.
-// 6. Persist the updated season ratings and overall rating to the database.
-// 7. Map the database model back to the API model and return it.
+// 2. Validate that the season value is valid (greater than zero).
+// 3. Ensure the existing rating contains season ratings (sanity check from API model).
+// 4. Verify that the specified season already exists in the stored ratings (from API model).
+// 5. Fetch the existing rating from DB to preserve timestamps for all seasons.
+// 6. Verify that the rating contains season ratings in DB structure.
+// 7. Verify that the specified season exists in the DB structure.
+// 8. Update the rating for the specified season (preserve AddedAt, update UpdatedAt).
+// 9. Recalculate the overall rating as the average of all season ratings.
+// 10. Prepare updated rating for persistence.
+// 11. Persist the updated season ratings and overall rating to the database.
+// 12. Map the database model back to the API model and return it.
 //
 // Possible errors returned:
 //   - ErrSeasonRequired: if no season is provided in the update request.
+//   - ErrInvalidSeasonValue: if the season value is invalid (less than or equal to zero).
 //   - ErrRatingNotFound: if the rating does not contain season ratings.
 //   - ErrSeasonDoesNotExist: if the specified season is not present in the rating.
-//   - Any error returned by db.UpdateRating when persisting the update.
+//   - Any error returned by db.GetRatingById or db.UpdateRating when fetching or persisting the update.
 func updateRatingForTVSeries(
 	db *mongodb.DB,
 	ctx context.Context,
 	rating Rating,
 	userId string,
 	updateReq UpdateRatingRequest,
+	title titles.Title,
 ) (Rating, error) {
 
 	// 1. Season is required for updating a TV series rating
@@ -329,47 +350,77 @@ func updateRatingForTVSeries(
 		return Rating{}, ErrSeasonRequired
 	}
 
-	// 2. Sanity check: season ratings must exist on the rating
+	// 2. Validate that the season value
+	if *updateReq.Season <= 0 {
+		return Rating{}, ErrInvalidSeasonValue
+	}
+
+	newSeasonAsString := strconv.Itoa(*updateReq.Season)
+
+	// 3. Sanity check: season ratings must exist on the rating
 	if rating.SeasonsRatings == nil {
 		return Rating{}, ErrRatingNotFound
 	}
 
-	// 3. Check if the requested season exists in the current ratings
-	newSeasonAsString := strconv.Itoa(*updateReq.Season)
+	// 4. Check if the requested season exists in the current ratings
 	if _, exists := (*rating.SeasonsRatings)[newSeasonAsString]; !exists {
-		return Rating{}, ErrSeasonDoesNotExist
+		return Rating{}, ErrRatingNotFound
 	}
 
-	// 4. Update the rating for the specified season
-	(*rating.SeasonsRatings)[newSeasonAsString] = updateReq.Note
+	// 5. Fetch the existing rating from DB to preserve timestamps for all seasons
+	existingRatingDb, err := db.GetRatingById(ctx, rating.Id, userId)
+	if err != nil {
+		return Rating{}, err
+	}
 
-	// 5. Recalculate the overall rating (average of all season ratings)
+	// 6. Verify that the rating contains season ratings in DB structure
+	if existingRatingDb.SeasonsRatings == nil {
+		return Rating{}, ErrRatingNotFound
+	}
+
+	// 7. Verify that the specified season exists in the DB structure
+	existingSeasonRating, exists := (*existingRatingDb.SeasonsRatings)[newSeasonAsString]
+	if !exists {
+		return Rating{}, ErrRatingNotFound
+	}
+
+	// 8. Update the rating for the specified season (preserve AddedAt, update UpdatedAt)
+	now := time.Now()
+	// Start with existing DB structure to preserve all timestamps
+	seasonsRatings := existingRatingDb.SeasonsRatings
+	if seasonsRatings == nil {
+		seasonsRatings = &mongodb.SeasonsRatingsDb{}
+	}
+
+	// Update only the season being modified
+	(*seasonsRatings)[newSeasonAsString] = mongodb.SeasonRatingItemDb{
+		Rating:    updateReq.Note,
+		AddedAt:   existingSeasonRating.AddedAt,
+		UpdatedAt: now,
+	}
+
+	// 9. Recalculate the overall rating (average of all season ratings)
 	var sum float32
 	var count int
-	for _, seasonRating := range *rating.SeasonsRatings {
-		sum += seasonRating
+	for _, seasonRating := range *seasonsRatings {
+		sum += seasonRating.Rating
 		count++
 	}
 	newOverallRating := sum / float32(count)
 
-	// 6. Prepare updated rating for persistence
-	rating.Note = newOverallRating
-
-	converted := mongodb.SeasonsRatingsDb(*rating.SeasonsRatings)
-	seasonsRatings := &converted
-
+	// 10. Prepare updated rating for persistence
 	ratingDb := mongodb.RatingDb{
 		Id:             rating.Id,
 		Note:           newOverallRating,
 		SeasonsRatings: seasonsRatings,
 	}
 
-	// 7. Update the rating in the database
+	// 11. Persist the updated season ratings and overall rating to the database
 	updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
 	if err != nil {
 		return Rating{}, err
 	}
 
-	// 8. Map database model to API model and return
+	// 12. Map database model back to the API model and return
 	return MapDbRatingDbToApiRating(updatedRatingDb), nil
 }
