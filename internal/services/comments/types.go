@@ -12,7 +12,13 @@ type Comment struct {
 	UpdatedAt       time.Time        `json:"updatedAt"`
 }
 
-type SeasonsComments map[string]string
+type SeasonComment struct {
+	Comment   string    `json:"comment"`
+	AddedAt   time.Time `json:"addedAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type SeasonsComments map[string]SeasonComment
 
 type NewComment struct {
 	GroupId string `json:"groupId"`

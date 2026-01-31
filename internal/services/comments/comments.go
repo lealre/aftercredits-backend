@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -126,6 +127,7 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 	}
 
 	var commentDb mongodb.CommentDb
+	now := time.Now()
 	if !hasComment {
 		// 4.1. Creates a new comment with the season comment
 		newCommentDb := mongodb.CommentDb{
@@ -133,7 +135,11 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 			UserId:  userId,
 			Comment: nil,
 			SeasonsComments: &mongodb.SeasonsCommentsDb{
-				seasonAsString: newComment.Comment,
+				seasonAsString: mongodb.SeasonCommentItemDb{
+					Comment:   newComment.Comment,
+					AddedAt:   now,
+					UpdatedAt: now,
+				},
 			},
 		}
 
@@ -153,11 +159,19 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 				return Comment{}, ErrSeasonCommentAlreadyExists
 			}
 			// 5.3. Adds the new season comment to the existing comment
-			(*existingComment.SeasonsComments)[seasonAsString] = newComment.Comment
+			(*existingComment.SeasonsComments)[seasonAsString] = mongodb.SeasonCommentItemDb{
+				Comment:   newComment.Comment,
+				AddedAt:   now,
+				UpdatedAt: now,
+			}
 		} else {
 			// 5.3. Adds the new season comment to the existing comment
 			existingComment.SeasonsComments = &mongodb.SeasonsCommentsDb{
-				seasonAsString: newComment.Comment,
+				seasonAsString: mongodb.SeasonCommentItemDb{
+					Comment:   newComment.Comment,
+					AddedAt:   now,
+					UpdatedAt: now,
+				},
 			}
 		}
 		// 5.4. Updates the existing comment in the database
@@ -224,13 +238,14 @@ func updateCommentForMovie(db *mongodb.DB, ctx context.Context, commentId, userI
 //  2. Fetches the existing comment for the given user and title.
 //  3. Ensures that the existing comment has season comments.
 //  4. Verifies that the specified season exists within the stored season comments.
-//  5. Updates the comment for the specified season.
-//  6. Persists the updated season comments to the database.
+//  5. Fetches the existing comment from DB to preserve timestamps for all seasons.
+//  6. Updates the comment for the specified season (preserve AddedAt, update UpdatedAt).
+//  7. Persists the updated season comments to the database.
 //
 // Possible errors:
 //   - ErrSeasonRequired: if no season is provided in the update request.
 //   - ErrCommentNotFound: if the comment or the specified season comment does not exist.
-//   - Any error returned by db.UpdateComment when persisting the update.
+//   - Any error returned by db.GetCommentById or db.UpdateComment when fetching or persisting the update.
 func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
 	// 1. Validate that a season number is provided in the update request
 	if updateReq.Season == nil {
@@ -258,13 +273,42 @@ func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, us
 		return Comment{}, ErrCommentNotFound
 	}
 
-	// 5. Update the comment for the specified season
-	(*existingComment.SeasonsComments)[seasonAsString] = updateReq.Comment
+	// 5. Fetch the existing comment from DB to preserve timestamps for all seasons
+	existingCommentDb, err := db.GetCommentById(ctx, commentId, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Comment{}, ErrCommentNotFound
+		}
+		return Comment{}, err
+	}
 
-	// 6. Persist the updated season comments to the database
-	converted := mongodb.SeasonsCommentsDb(*existingComment.SeasonsComments)
-	seasonsComments := &converted
+	// 6. Verify that the rating contains season comments in DB structure
+	if existingCommentDb.SeasonsComments == nil {
+		return Comment{}, ErrCommentNotFound
+	}
 
+	// Verify that the specified season exists in the DB structure
+	existingSeasonComment, exists := (*existingCommentDb.SeasonsComments)[seasonAsString]
+	if !exists {
+		return Comment{}, ErrCommentNotFound
+	}
+
+	// Update the comment for the specified season (preserve AddedAt, update UpdatedAt)
+	now := time.Now()
+	// Start with existing DB structure to preserve all timestamps
+	seasonsComments := existingCommentDb.SeasonsComments
+	if seasonsComments == nil {
+		seasonsComments = &mongodb.SeasonsCommentsDb{}
+	}
+
+	// Update only the season being modified
+	(*seasonsComments)[seasonAsString] = mongodb.SeasonCommentItemDb{
+		Comment:   updateReq.Comment,
+		AddedAt:   existingSeasonComment.AddedAt,
+		UpdatedAt: now,
+	}
+
+	// 7. Persist the updated season comments to the database
 	commentDb := mongodb.CommentDb{
 		Id:              commentId,
 		SeasonsComments: seasonsComments,

@@ -22,7 +22,13 @@ type CommentDb struct {
 	UpdatedAt       time.Time          `json:"updatedAt" bson:"updatedAt"`
 }
 
-type SeasonsCommentsDb map[string]string
+type SeasonCommentItemDb struct {
+	Comment   string    `json:"comment" bson:"comment"`
+	AddedAt   time.Time `json:"addedAt" bson:"addedAt"`
+	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+}
+
+type SeasonsCommentsDb map[string]SeasonCommentItemDb
 
 // ----- Methods for the database -----
 

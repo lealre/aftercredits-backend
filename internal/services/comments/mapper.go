@@ -5,7 +5,14 @@ import "github.com/lealre/movies-backend/internal/mongodb"
 func MapDbCommentToApiComment(commentDb mongodb.CommentDb) Comment {
 	var seasonsComments *SeasonsComments
 	if commentDb.SeasonsComments != nil {
-		converted := SeasonsComments(*commentDb.SeasonsComments)
+		converted := make(SeasonsComments)
+		for season, seasonCommentDb := range *commentDb.SeasonsComments {
+			converted[season] = SeasonComment{
+				Comment:   seasonCommentDb.Comment,
+				AddedAt:   seasonCommentDb.AddedAt,
+				UpdatedAt: seasonCommentDb.UpdatedAt,
+			}
+		}
 		seasonsComments = &converted
 	}
 
