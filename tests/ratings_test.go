@@ -191,7 +191,11 @@ func TestAddRating(t *testing.T) {
 		require.NotEmpty(t, respNewRatingBody.CreatedAt)
 		require.Equal(t, respNewRatingBody.CreatedAt, respNewRatingBody.UpdatedAt)
 		require.NotEmpty(t, respNewRatingBody.SeasonsRatings)
-		require.Equal(t, expectedNoteSeasonOne, (*respNewRatingBody.SeasonsRatings)[strconv.Itoa(expectedSeason)])
+		seasonRating := (*respNewRatingBody.SeasonsRatings)[strconv.Itoa(expectedSeason)]
+		require.Equal(t, expectedNoteSeasonOne, seasonRating.Rating)
+		require.NotEmpty(t, seasonRating.AddedAt)
+		require.NotEmpty(t, seasonRating.UpdatedAt)
+		require.Equal(t, seasonRating.AddedAt, seasonRating.UpdatedAt)
 
 		// Database assertion
 		ratingDb := getRating(t, respNewRatingBody.Id)
@@ -201,7 +205,11 @@ func TestAddRating(t *testing.T) {
 		require.NotEmpty(t, ratingDb.CreatedAt)
 		require.Equal(t, ratingDb.CreatedAt, ratingDb.UpdatedAt)
 		require.NotEmpty(t, ratingDb.SeasonsRatings)
-		require.Equal(t, expectedNoteSeasonOne, (*ratingDb.SeasonsRatings)[strconv.Itoa(expectedSeason)])
+		seasonRatingItem := (*ratingDb.SeasonsRatings)[strconv.Itoa(expectedSeason)]
+		require.Equal(t, expectedNoteSeasonOne, seasonRatingItem.Rating)
+		require.NotEmpty(t, seasonRatingItem.AddedAt)
+		require.NotEmpty(t, seasonRatingItem.UpdatedAt)
+		require.Equal(t, seasonRatingItem.AddedAt, seasonRatingItem.UpdatedAt)
 	})
 
 	t.Run("Adding a rating for a TV series for other season should update the rating sucessfully", func(t *testing.T) {
@@ -238,7 +246,10 @@ func TestAddRating(t *testing.T) {
 				require.NotEqual(t, respNewRatingBody.CreatedAt, respNewRatingBody.UpdatedAt) // UpdatedAt should be different from CreatedAt now
 				require.True(t, respNewRatingBody.UpdatedAt.After(respNewRatingBody.CreatedAt))
 				require.NotEmpty(t, respNewRatingBody.SeasonsRatings)
-				require.Equal(t, tt.expectedNote, (*respNewRatingBody.SeasonsRatings)[strconv.Itoa(tt.season)])
+				seasonRating := (*respNewRatingBody.SeasonsRatings)[strconv.Itoa(tt.season)]
+				require.Equal(t, tt.expectedNote, seasonRating.Rating)
+				require.NotEmpty(t, seasonRating.AddedAt)
+				require.NotEmpty(t, seasonRating.UpdatedAt)
 
 				// Database assertion
 				ratingDb := getRating(t, respNewRatingBody.Id)
@@ -249,7 +260,10 @@ func TestAddRating(t *testing.T) {
 				require.NotEqual(t, ratingDb.CreatedAt, ratingDb.UpdatedAt) // UpdatedAt should be different from CreatedAt now
 				require.True(t, ratingDb.UpdatedAt.After(ratingDb.CreatedAt))
 				require.NotEmpty(t, ratingDb.SeasonsRatings)
-				require.Equal(t, tt.expectedNote, (*ratingDb.SeasonsRatings)[strconv.Itoa(tt.season)])
+				seasonRatingItem := (*ratingDb.SeasonsRatings)[strconv.Itoa(tt.season)]
+				require.Equal(t, tt.expectedNote, seasonRatingItem.Rating)
+				require.NotEmpty(t, seasonRatingItem.AddedAt)
+				require.NotEmpty(t, seasonRatingItem.UpdatedAt)
 			})
 		}
 	})
@@ -476,8 +490,8 @@ func TestUpdateRating(t *testing.T) {
 			newNote:  float32(3),
 			expectedNote: func(seasonsRatings *ratings.SeasonsRatings) float32 {
 				var sum float32
-				for _, note := range *seasonsRatings {
-					sum += note
+				for _, seasonRating := range *seasonsRatings {
+					sum += seasonRating.Rating
 				}
 				return sum / float32(len(*seasonsRatings))
 			},
@@ -499,28 +513,36 @@ func TestUpdateRating(t *testing.T) {
 			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
 			require.Equal(t, user.Id, respUpdatedRatingBody.UserId)
 			require.Equal(t, expectedTVSeriesTitle.ID, respUpdatedRatingBody.TitleId)
-			require.Equal(t, tt.newNote, (*respUpdatedRatingBody.SeasonsRatings)[strconv.Itoa(tt.season)])
+			seasonRating := (*respUpdatedRatingBody.SeasonsRatings)[strconv.Itoa(tt.season)]
+			require.Equal(t, tt.newNote, seasonRating.Rating)
 			require.Equal(t, tt.expectedNote(respUpdatedRatingBody.SeasonsRatings), respUpdatedRatingBody.Note)
 			require.NotEmpty(t, respUpdatedRatingBody.CreatedAt)
 			require.NotEqual(t, respUpdatedRatingBody.CreatedAt, respUpdatedRatingBody.UpdatedAt)
 			require.True(t, respUpdatedRatingBody.UpdatedAt.After(respUpdatedRatingBody.CreatedAt))
 			require.NotEmpty(t, respUpdatedRatingBody.SeasonsRatings)
+			require.NotEmpty(t, seasonRating.AddedAt)
+			require.NotEmpty(t, seasonRating.UpdatedAt)
+			require.True(t, seasonRating.UpdatedAt.After(seasonRating.AddedAt) || seasonRating.UpdatedAt.Equal(seasonRating.AddedAt))
 
 			// Database assertion
 			ratingDb := getRating(t, respUpdatedRatingBody.Id)
 			require.Equal(t, user.Id, ratingDb.UserId)
 			require.Equal(t, expectedTVSeriesTitle.ID, ratingDb.TitleId)
-			require.Equal(t, tt.newNote, (*ratingDb.SeasonsRatings)[strconv.Itoa(tt.season)])
+			seasonRatingItem := (*ratingDb.SeasonsRatings)[strconv.Itoa(tt.season)]
+			require.Equal(t, tt.newNote, seasonRatingItem.Rating)
 			require.Equal(t, tt.expectedNote(respUpdatedRatingBody.SeasonsRatings), ratingDb.Note)
 			require.NotEmpty(t, ratingDb.CreatedAt)
 			require.NotEqual(t, ratingDb.CreatedAt, ratingDb.UpdatedAt)
 			require.True(t, ratingDb.UpdatedAt.After(ratingDb.CreatedAt))
 			require.NotEmpty(t, ratingDb.SeasonsRatings)
+			require.NotEmpty(t, seasonRatingItem.AddedAt)
+			require.NotEmpty(t, seasonRatingItem.UpdatedAt)
+			require.True(t, seasonRatingItem.UpdatedAt.After(seasonRatingItem.AddedAt) || seasonRatingItem.UpdatedAt.Equal(seasonRatingItem.AddedAt))
 		})
 	}
 
-	t.Run("Update a TV series rating with season that does not exist should return 400", func(t *testing.T) {
-		invalidSeasons := []int{0, -1, 3}
+	t.Run("Update a TV series rating with invalid season value should return 400", func(t *testing.T) {
+		invalidSeasons := []int{0, -1}
 
 		for _, season := range invalidSeasons {
 			invalidSeason := season
@@ -535,8 +557,24 @@ func TestUpdateRating(t *testing.T) {
 
 			var respUpdatedRatingBody api.ErrorResponse
 			require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
-			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrSeasonDoesNotExist.Error()[1:])
+			require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrInvalidSeasonValue.Error()[1:])
 		}
+	})
+
+	t.Run("Update a TV series rating with season that has no rating should return 404", func(t *testing.T) {
+		seasonWithoutRating := 3
+		updateRequestRating := ratings.UpdateRatingRequest{
+			Note:   float32(10),
+			Season: &seasonWithoutRating,
+		}
+
+		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
+		defer respUpdatedRating.Body.Close()
+		require.Equal(t, http.StatusNotFound, respUpdatedRating.StatusCode)
+
+		var respUpdatedRatingBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
+		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrRatingNotFound.Error()[1:])
 	})
 
 	t.Run("Update a TV series rating without season value in request should return 400", func(t *testing.T) {
