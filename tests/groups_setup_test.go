@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/stretchr/testify/require"
@@ -66,7 +67,7 @@ func addUserToGroup(t *testing.T, addUserBody groups.AddUserToGroupRequest, grou
 	require.Equal(t, http.StatusOK, respGroup.StatusCode)
 }
 
-func addTitleToGroup(t *testing.T, newTitle groups.AddTitleToGroupRequest, token string) {
+func addTitleToGroup(t *testing.T, newTitle groups.AddTitleToGroupRequest, token string) api.DefaultResponse {
 	jsonData, err := json.Marshal(newTitle)
 	require.NoError(t, err)
 
@@ -83,4 +84,28 @@ func addTitleToGroup(t *testing.T, newTitle groups.AddTitleToGroupRequest, token
 	require.NoError(t, err)
 	defer respGroupAddTitle.Body.Close()
 	require.Equal(t, http.StatusOK, respGroupAddTitle.StatusCode)
+
+	var respGroupTitlesBody api.DefaultResponse
+	require.NoError(t, json.NewDecoder(respGroupAddTitle.Body).Decode(&respGroupTitlesBody))
+
+	return respGroupTitlesBody
+
+}
+
+func patchGroupTitleWatched(t *testing.T, groupId string, pathBody []byte, token string) groups.GroupTitle {
+	req, err := http.NewRequest(http.MethodPatch,
+		testServer.URL+"/groups/"+groupId+"/titles",
+		bytes.NewBuffer(pathBody),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	respGroupSetWatched, err := client.Do(req)
+	require.NoError(t, err)
+	defer respGroupSetWatched.Body.Close()
+	require.Equal(t, http.StatusOK, respGroupSetWatched.StatusCode)
+	var resp groups.GroupTitle
+	require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&resp))
+	return resp
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/imdb"
+	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -148,6 +149,7 @@ func GetPageOfTitles(
 
 func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, error) {
 	// TODO: Handle the case where the titles id is returning nothing from IMDB API
+	logger := logx.FromContext(ctx)
 
 	body, err := imdb.FetchTitle(titleId)
 	if err != nil {
@@ -157,6 +159,49 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 	var title mongodb.TitleDb
 	if err := json.Unmarshal(body, &title); err != nil {
 		return Title{}, err
+	}
+
+	// If title is a TV series, fetch seasons/episodes from IMDB (for validation purposes)
+	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
+		logger.Printf("Title %s is a TV series, fetching seasons/episodes from IMDB", titleId)
+		seasonsBody, err := imdb.FetchSeasons(titleId)
+		if err != nil {
+			return Title{}, err
+		}
+
+		var seasonsResp imdb.SeasonsResponse
+		if err := json.Unmarshal(seasonsBody, &seasonsResp); err != nil {
+			return Title{}, err
+		}
+
+		// Fetch all episodes with pagination
+		allEpisodes := []imdb.Episode{}
+		pageSize := 50
+		pageToken := ""
+
+		for {
+			episodesBody, err := imdb.FetchEpisodes(titleId, pageSize, pageToken)
+			if err != nil {
+				return Title{}, err
+			}
+
+			var episodesResp imdb.EpisodesResponse
+			if err := json.Unmarshal(episodesBody, &episodesResp); err != nil {
+				return Title{}, err
+			}
+
+			allEpisodes = append(allEpisodes, episodesResp.Episodes...)
+
+			// If there's no next page token, we're done
+			if episodesResp.NextPageToken == "" {
+				break
+			}
+
+			pageToken = episodesResp.NextPageToken
+		}
+
+		title.Seasons = MapImdbSeasonsToDbSeasons(seasonsResp.Seasons)
+		title.Episodes = MapImdbEpisodesToDbEpisodes(allEpisodes)
 	}
 
 	// Set missing fields

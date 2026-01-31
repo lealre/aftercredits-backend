@@ -23,6 +23,7 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("POST /login", a.LoginHandler)
 
 	mux.HandleFunc("GET /users", a.GetUsers)
+	mux.HandleFunc("GET /users/me", a.GetUserMe)
 	mux.HandleFunc("GET /users/{id}", a.GetUserById)
 	mux.HandleFunc("POST /users", a.CreateUser)
 	mux.HandleFunc("PATCH /users/{id}", a.UpdateUserInfo)
@@ -42,6 +43,7 @@ func NewServer(db *mongo.Client) http.Handler {
 	mux.HandleFunc("GET /groups/{groupId}/titles/{titleId}/comments", a.GetCommentsByTitleIDFromGroup)
 	mux.HandleFunc("PATCH /groups/{groupId}/titles/{titleId}/comments/{commentId}", a.UpdateComment)
 	mux.HandleFunc("DELETE /groups/{groupId}/titles/{titleId}/comments/{commentId}", a.DeleteComment)
+	mux.HandleFunc("DELETE /groups/{groupId}/titles/{titleId}/comments/{commentId}/seasons/{season}", a.DeleteCommentSeason)
 
 	mux.HandleFunc("GET /titles", a.GetTitles)
 	mux.HandleFunc("POST /titles", a.AddTitle)

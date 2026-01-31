@@ -28,15 +28,14 @@ func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.Name) == "" {
-		respondWithError(w, http.StatusBadRequest, "Name is required")
-		return
-	}
-
 	group, err := groups.CreateGroup(api.Db, r.Context(), req, currentUser.Id)
 	if err != nil {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to create group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -60,7 +59,7 @@ func (api *API) GetGroupById(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to get group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -95,7 +94,7 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -105,7 +104,7 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking user")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -154,7 +153,7 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 	titles, err := groups.GetTitlesFromGroup(api.Db, r.Context(), groupId, currentUser.Id, size, page, orderBy, watched, ascending)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while getting titles from group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -178,15 +177,15 @@ func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 			return
 		}
-		logger.Printf("ERROR : %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
 	groupUsers, err := groups.GetUsersFromGroup(api.Db, r.Context(), groupId, currentUser.Id)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while getting users from group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -214,7 +213,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -231,7 +230,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	titleExists, err := api.Db.TitleExists(r.Context(), titleID)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -240,7 +239,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		_, err = titles.AddNewTitle(api.Db, r.Context(), titleID)
 		if err != nil {
 			logger.Printf("ERROR: adding new title %s: %v", titleID, err)
-			respondWithError(w, http.StatusInternalServerError, "Error adding title")
+			respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 			return
 		}
 	} else {
@@ -248,19 +247,19 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		_, err = titles.GetTitleById(api.Db, r.Context(), titleID)
 		if err != nil {
 			logger.Printf("ERROR: getting title %s: %v", titleID, err)
-			respondWithError(w, http.StatusInternalServerError, "Error getting title")
+			respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 			return
 		}
 	}
 
 	err = groups.AddTitleToGroup(api.Db, r.Context(), groupId, titleID, currentUser.Id)
 	if err != nil {
-		if errors.Is(err, groups.ErrTitleAlreadyInGroup) {
-			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error adding title to group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -277,15 +276,6 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-		return
-	} else if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to add user to group")
-		return
-	}
-
 	var req groups.UpdateGroupTitleWatchedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Printf("ERROR: %v", err)
@@ -297,23 +287,30 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if ok, err := api.Db.TitleExists(r.Context(), req.TitleId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", req.TitleId))
+	if ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, req.TitleId, currentUser.Id); !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, req.TitleId))
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
-	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, req.TitleId, currentUser.Id, req.Watched, req.WatchedAt)
+	title, err := titles.GetTitleById(api.Db, r.Context(), req.TitleId)
 	if err != nil {
-		if err == groups.ErrUpdatingWatchedAtWhenWatchedIsFalse {
-			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, title, currentUser.Id, req.Watched, req.WatchedAt, req.Season)
+	if err != nil {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error updating group title watched")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -341,7 +338,7 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "An unexpected error occurred")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
@@ -350,18 +347,18 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error while checking title")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
 	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if err != nil {
-		if errors.Is(err, groups.ErrTitleNotInGroup) {
-			respondWithError(w, http.StatusBadRequest, formatErrorMessage(err))
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Error removing title from group")
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 

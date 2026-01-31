@@ -82,51 +82,7 @@ func resetDB(t *testing.T) {
 	}
 
 	// Recreate indexes after dropping collections
-	createIndexes(t, db)
-}
-
-func createIndexes(t *testing.T, db *mongo.Database) {
-	t.Helper()
-
-	ctx := context.Background()
-
-	// Create unique index on username (sparse to allow null values)
-	usernameIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "username", Value: 1}},
-		Options: options.Index().SetUnique(true).SetSparse(true),
-	}
-	_, err := db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, usernameIndexModel)
-	if err != nil {
-		t.Fatalf("failed to create unique index on username: %v", err)
-	}
-
-	// Create unique index on email (sparse to allow null values)
-	emailIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "email", Value: 1}},
-		Options: options.Index().SetUnique(true).SetSparse(true),
-	}
-	_, err = db.Collection(mongodb.UsersCollection).Indexes().CreateOne(ctx, emailIndexModel)
-	if err != nil {
-		t.Fatalf("failed to create unique index on email: %v", err)
-	}
-
-	// Create unique index on ratings collection
-	ratingsIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
-		Options: options.Index().SetUnique(true),
-	}
-	_, err = db.Collection(mongodb.RatingsCollection).Indexes().CreateOne(ctx, ratingsIndexModel)
-	if err != nil {
-		t.Fatalf("failed to create unique index on ratings collection: %v", err)
-	}
-
-	// Create unique index on comments collection
-	commentsIndexModel := mongo.IndexModel{
-		Keys:    bson.D{{Key: "userId", Value: 1}, {Key: "titleId", Value: 1}},
-		Options: options.Index().SetUnique(true),
-	}
-	_, err = db.Collection(mongodb.CommentsCollection).Indexes().CreateOne(ctx, commentsIndexModel)
-	if err != nil {
-		t.Fatalf("failed to create unique index on comments collection: %v", err)
+	if err := mongodb.CreateAllIndexes(ctx, db, false); err != nil {
+		t.Fatalf("failed to create indexes: %v", err)
 	}
 }

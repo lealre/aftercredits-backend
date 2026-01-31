@@ -187,18 +187,24 @@ func TestDeleteUser(t *testing.T) {
 	t.Run("Attempting to delete another user's account returns 403 Forbidden", func(t *testing.T) {
 		resetDB(t)
 
-		_, token := addUser(t, users.NewUserRequest{
+		userOne, _ := addUser(t, users.NewUserRequest{
 			Name:     "testname",
 			Username: "testuser",
 			Password: "testpass",
 		})
 
+		_, tokenUserTwo := addUser(t, users.NewUserRequest{
+			Name:     "testnametwo",
+			Username: "testusertwo",
+			Password: "testpasstwo",
+		})
+
 		req, err := http.NewRequest(http.MethodDelete,
-			testServer.URL+"/users/123",
+			testServer.URL+"/users/"+userOne.Id,
 			nil,
 		)
 		require.NoError(t, err)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", "Bearer "+tokenUserTwo)
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
@@ -297,7 +303,7 @@ func TestGetUsers(t *testing.T) {
 		})
 
 		req, err := http.NewRequest(http.MethodGet,
-			testServer.URL+"/users/"+user.Id,
+			testServer.URL+"/users/me",
 			nil,
 		)
 		require.NoError(t, err)

@@ -19,17 +19,33 @@ func MapDbGroupToApiGroupResponse(group mongodb.GroupDb) GroupResponse {
 	return groupResponse
 }
 
-func MapDbGroupTitleToApiGroupTitle(title mongodb.GroupTitleDb) GroupTitle {
+func MapDbGroupTitleToApiGroupTitle(title mongodb.GroupTitleItemDb) GroupTitle {
 	watched := title.Watched
 	if !watched {
 		watched = false
 	}
 
-	return GroupTitle{
-		Id:        title.Id,
+	groupTitle := GroupTitle{
+		Id:        title.TitleId,
 		Watched:   watched,
 		AddedAt:   title.AddedAt,
 		UpdatedAt: title.UpdatedAt,
 		WatchedAt: title.WatchedAt,
 	}
+
+	// Map seasons watched from database to API type
+	if title.SeasonsWatched != nil {
+		seasonsWatched := make(SeasonsWatched)
+		for seasonKey, seasonDb := range *title.SeasonsWatched {
+			seasonsWatched[seasonKey] = SeasonWatched{
+				Watched:   seasonDb.Watched,
+				WatchedAt: seasonDb.WatchedAt,
+				AddedAt:   seasonDb.AddedAt,
+				UpdatedAt: seasonDb.UpdatedAt,
+			}
+		}
+		groupTitle.SeasonsWatched = &seasonsWatched
+	}
+
+	return groupTitle
 }

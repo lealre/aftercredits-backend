@@ -13,6 +13,7 @@ import (
 )
 
 var ErrRecordNotFound = errors.New("record not found in the database")
+var ErrDuplicatedRecord = errors.New("duplicated record not allowed")
 
 const (
 	TitlesCollection   = "titles"

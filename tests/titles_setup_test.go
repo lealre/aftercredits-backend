@@ -13,7 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-const TILES_FIXTURES_PATH = "fixtures/titles.json"
+const MOVIE_TILES_FIXTURES_PATH = "fixtures/movieTitles.json"
+const TV_SERIES_TILES_FIXTURES_PATH = "fixtures/tvSeriesTitles.json"
 
 func seedTitles(t *testing.T, titles []imdb.Title) {
 	t.Helper()
@@ -35,7 +36,28 @@ func seedTitles(t *testing.T, titles []imdb.Title) {
 func loadTitlesFixture(t *testing.T) []imdb.Title {
 	t.Helper()
 
-	absPath, err := filepath.Abs(TILES_FIXTURES_PATH)
+	absPath, err := filepath.Abs(MOVIE_TILES_FIXTURES_PATH)
+	if err != nil {
+		t.Fatalf("failed to get abs path: %v", err)
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		t.Fatalf("failed to read fixture file %s: %v", absPath, err)
+	}
+
+	var docs []imdb.Title
+	if err := json.Unmarshal(data, &docs); err != nil {
+		t.Fatalf("failed to unmarshal fixture JSON: %v", err)
+	}
+
+	return docs
+}
+
+func loadTVSeriesTitlesFixture(t *testing.T) []imdb.Title {
+	t.Helper()
+
+	absPath, err := filepath.Abs(TV_SERIES_TILES_FIXTURES_PATH)
 	if err != nil {
 		t.Fatalf("failed to get abs path: %v", err)
 	}
