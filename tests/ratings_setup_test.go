@@ -42,6 +42,23 @@ func addRating(t *testing.T, newRating ratings.NewRating, innerToken string) *ht
 	return resp
 }
 
+func addRatingAndGetResult(t *testing.T, groupId, titleId string, note float32, season *int, token string) ratings.Rating {
+	newRating := ratings.NewRating{
+		GroupId: groupId,
+		TitleId: titleId,
+		Note:    note,
+		Season:  season,
+	}
+
+	resp := addRating(t, newRating, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	var rating ratings.Rating
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&rating))
+	return rating
+}
+
 func updateRating(t *testing.T, ratingUppdate ratings.UpdateRatingRequest, ratingId, innerToken string) *http.Response {
 	jsonData, err := json.Marshal(ratingUppdate)
 	require.NoError(t, err)

@@ -4,7 +4,9 @@
 // works for JSON (API) and MongoDB (storage).
 package imdb
 
-import "time"
+import (
+	"time"
+)
 
 type Title struct {
 	ID              string      `json:"id" bson:"_id"`
@@ -23,10 +25,10 @@ type Title struct {
 	OriginCountries []CodeName  `json:"originCountries" bson:"originCountries"`
 	SpokenLanguages []CodeName  `json:"spokenLanguages" bson:"spokenLanguages"`
 	Interests       []Interest  `json:"interests" bson:"interests"`
-	Watched         bool        `json:"watched" bson:"watched"`
+	Seasons         *[]Seasons  `json:"seasons,omitempty"`
+	Episodes        *[]Episode  `json:"episodes,omitempty"`
 	AddedAt         *time.Time  `json:"addedAt,omitempty" bson:"addedAt,omitempty"`
 	UpdatedAt       *time.Time  `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
-	WatchedAt       *time.Time  `json:"watchedAt,omitempty" bson:"watchedAt,omitempty"`
 }
 
 type Image struct {
@@ -62,4 +64,37 @@ type Interest struct {
 	ID         string `json:"id" bson:"id"`
 	Name       string `json:"name" bson:"name"`
 	IsSubgenre bool   `json:"isSubgenre,omitempty" bson:"isSubgenre,omitempty"`
+}
+
+type EpisodesResponse struct {
+	Episodes      []Episode `json:"episodes" bson:"episodes"`
+	TotalCount    int       `json:"totalCount" bson:"totalCount"`
+	NextPageToken string    `json:"nextPageToken,omitempty" bson:"nextPageToken,omitempty"`
+}
+
+type Episode struct {
+	ID             string       `json:"id" bson:"id"`
+	Title          string       `json:"title" bson:"title"`
+	PrimaryImage   Image        `json:"primaryImage" bson:"primaryImage"`
+	Season         string       `json:"season" bson:"season"`
+	EpisodeNumber  int          `json:"episodeNumber" bson:"episodeNumber"`
+	RuntimeSeconds *int         `json:"runtimeSeconds,omitempty" bson:"runtimeSeconds,omitempty"`
+	Plot           *string      `json:"plot,omitempty" bson:"plot,omitempty"`
+	Rating         *Rating      `json:"rating,omitempty" bson:"rating,omitempty"`
+	ReleaseDate    *ReleaseDate `json:"releaseDate,omitempty" bson:"releaseDate,omitempty"`
+}
+
+type ReleaseDate struct {
+	Year  int `json:"year" bson:"year"`
+	Month int `json:"month" bson:"month"`
+	Day   int `json:"day" bson:"day"`
+}
+
+type SeasonsResponse struct {
+	Seasons []Seasons `json:"seasons" bson:"seasons"`
+}
+
+type Seasons struct {
+	Season       string `json:"season" bson:"season"`
+	EpisodeCount int    `json:"episodeCount" bson:"episodeCount"`
 }

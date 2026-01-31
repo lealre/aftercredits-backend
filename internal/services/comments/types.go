@@ -3,18 +3,28 @@ package comments
 import "time"
 
 type Comment struct {
-	Id        string    `json:"id"`
-	TitleId   string    `json:"titleId"`
-	UserId    string    `json:"userId"`
+	Id              string           `json:"id"`
+	TitleId         string           `json:"titleId"`
+	UserId          string           `json:"userId"`
+	Comment         *string          `json:"comment,omitempty"`
+	SeasonsComments *SeasonsComments `json:"seasonsComments,omitempty"`
+	CreatedAt       time.Time        `json:"createdAt"`
+	UpdatedAt       time.Time        `json:"updatedAt"`
+}
+
+type SeasonComment struct {
 	Comment   string    `json:"comment"`
-	CreatedAt time.Time `json:"createdAt"`
+	AddedAt   time.Time `json:"addedAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+type SeasonsComments map[string]SeasonComment
 
 type NewComment struct {
 	GroupId string `json:"groupId"`
 	TitleId string `json:"titleId"`
 	Comment string `json:"comment"`
+	Season  *int   `json:"season,omitempty"`
 }
 
 type AllCommentsFromTitle struct {
@@ -23,4 +33,5 @@ type AllCommentsFromTitle struct {
 
 type UpdateCommentRequest struct {
 	Comment string `json:"comment"`
+	Season  *int   `json:"season,omitempty"`
 }
