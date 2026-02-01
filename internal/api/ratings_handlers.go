@@ -9,6 +9,7 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
+	"github.com/lealre/movies-backend/internal/services/titles"
 )
 
 func (api *API) GetRatingById(w http.ResponseWriter, r *http.Request) {
@@ -98,4 +99,77 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, updatedRating)
+}
+
+func (api *API) DeleteRating(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentuser := auth.GetUserFromContext(r.Context())
+
+	ratingId := r.PathValue("id")
+	if ratingId == "" {
+		respondWithError(w, http.StatusBadRequest, "Rating id is required")
+		return
+	}
+
+	_, err := ratings.DeleteRating(api.Db, r.Context(), ratingId, currentuser.Id)
+	if err != nil {
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting rating")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Rating with id %s deleted successfully", ratingId)})
+}
+
+func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentuser := auth.GetUserFromContext(r.Context())
+
+	ratingId := r.PathValue("id")
+	if ratingId == "" {
+		respondWithError(w, http.StatusBadRequest, "Rating id is required")
+		return
+	}
+
+	seasonStr := r.PathValue("season")
+	if seasonStr == "" {
+		respondWithError(w, http.StatusBadRequest, "Season number is required")
+		return
+	}
+
+	// Get the rating to find the titleId
+	rating, err := ratings.GetRatingById(api.Db, r.Context(), ratingId, currentuser.Id)
+	if err != nil {
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	// Get the title to validate season
+	title, err := titles.GetTitleById(api.Db, r.Context(), rating.TitleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	if err := ratings.DeleteRatingSeason(api.Db, r.Context(), ratingId, currentuser.Id, seasonStr, title); err != nil {
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting season rating")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Season %s from rating %s deleted successfully", seasonStr, ratingId)})
 }

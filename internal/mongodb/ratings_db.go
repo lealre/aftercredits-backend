@@ -104,19 +104,6 @@ func (db *DB) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId s
 	return rating, nil
 }
 
-func (db *DB) DeleteRatingsByTitleId(ctx context.Context, titleId string) (int64, error) {
-	coll := db.Collection(RatingsCollection)
-
-	filter := bson.M{"titleId": titleId}
-
-	result, err := coll.DeleteMany(ctx, filter)
-	if err != nil {
-		return 0, err
-	}
-
-	return result.DeletedCount, nil
-}
-
 func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string) (RatingDb, error) {
 	coll := db.Collection(RatingsCollection)
 
@@ -163,4 +150,24 @@ func (db *DB) GetRatings(ctx context.Context, args ...any) ([]RatingDb, error) {
 	}
 
 	return ratingsDb, nil
+}
+
+func (db *DB) DeleteRating(ctx context.Context, ratingId, userId string) (int64, error) {
+	coll := db.Collection(RatingsCollection)
+
+	filter := bson.M{"_id": ratingId, "userId": userId}
+
+	result, err := coll.DeleteOne(ctx, filter)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return 0, ErrRecordNotFound
+		}
+		return 0, err
+	}
+
+	if result.DeletedCount == 0 {
+		return 0, ErrRecordNotFound
+	}
+
+	return result.DeletedCount, nil
 }

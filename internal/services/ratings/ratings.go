@@ -29,6 +29,9 @@ func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([
 func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string) (Rating, error) {
 	ratingDb, err := db.GetRatingById(ctx, ratingId, userId)
 	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return Rating{}, ErrRatingNotFound
+		}
 		return Rating{}, err
 	}
 
@@ -423,4 +426,133 @@ func updateRatingForTVSeries(
 
 	// 12. Map database model back to the API model and return
 	return MapDbRatingDbToApiRating(updatedRatingDb), nil
+}
+
+// DeleteRating deletes an entire rating for a movie or TV series.
+//
+// It performs basic validation and then calls the database layer to delete the rating.
+// This function handles both movies and TV series ratings by deleting the entire rating document.
+//
+// Returns:
+//   - int64: The number of deleted documents (should be 1 if successful, 0 if not found)
+//   - error: Returns ErrRatingNotFound if the rating doesn't exist, or any database error
+func DeleteRating(db *mongodb.DB, ctx context.Context, ratingId, userId string) (int64, error) {
+	deletedCount, err := db.DeleteRating(ctx, ratingId, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return 0, ErrRatingNotFound
+		}
+		return 0, err
+	}
+
+	if deletedCount == 0 {
+		return 0, ErrRatingNotFound
+	}
+
+	return deletedCount, nil
+}
+
+// DeleteRatingSeason deletes a rating for a specific season of a TV series.
+//
+// It follows the same TV-series season validation logic as addRatingForTVSeries:
+//   - season must be > 0
+//   - season must exist in the title's seasons list
+//   - the season rating must exist in the stored seasonsRatings map
+//
+// If, after deleting the season entry, there are no seasons left, the whole rating document is deleted.
+// Otherwise, the overall rating is recalculated as the average of remaining season ratings.
+//
+// Returns:
+//   - error: Returns various errors based on validation failures:
+//   - ErrInvalidSeasonValue: if season <= 0
+//   - ErrSeasonDoesNotExist: if the season doesn't exist in the title
+//   - ErrRatingNotFound: if the rating or season rating doesn't exist
+func DeleteRatingSeason(db *mongodb.DB, ctx context.Context, ratingId, userId string, seasonStr string, title titles.Title) error {
+	season, err := strconv.Atoi(seasonStr)
+	if err != nil {
+		return ErrInvalidSeasonValue
+	}
+
+	// 1. Validate season value
+	if season <= 0 {
+		return ErrInvalidSeasonValue
+	}
+
+	// 2. Check if title is a TV series
+	if title.Type != "tvSeries" && title.Type != "tvMiniSeries" {
+		return ErrSeasonDoesNotExist
+	}
+
+	// 3. Check if the season exists in the title
+	seasonAsString := strconv.Itoa(season)
+	seasonExistsInTitle := false
+	for _, s := range title.Seasons {
+		if s.Season == seasonAsString {
+			seasonExistsInTitle = true
+			break
+		}
+	}
+	if !seasonExistsInTitle {
+		return ErrSeasonDoesNotExist
+	}
+
+	// 4. Get the existing rating
+	existingRating, err := db.GetRatingById(ctx, ratingId, userId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return ErrRatingNotFound
+		}
+		return err
+	}
+
+	// 5. Ensure it's a TV series rating with seasonsRatings
+	if existingRating.SeasonsRatings == nil {
+		return ErrRatingNotFound
+	}
+
+	// 6. Check if the specific season rating exists
+	if _, exists := (*existingRating.SeasonsRatings)[seasonAsString]; !exists {
+		return ErrRatingNotFound
+	}
+
+	// 7. Delete the season rating
+	delete((*existingRating.SeasonsRatings), seasonAsString)
+
+	// 8. If no other season ratings left, delete the whole document
+	if len(*existingRating.SeasonsRatings) == 0 {
+		_, err := db.DeleteRating(ctx, ratingId, userId)
+		if err != nil {
+			if err == mongodb.ErrRecordNotFound {
+				return ErrRatingNotFound
+			}
+			return err
+		}
+		return nil
+	}
+
+	// 9. Recalculate the overall rating (average of remaining season ratings)
+	var sum float32
+	var count int
+	for _, seasonRating := range *existingRating.SeasonsRatings {
+		sum += seasonRating.Rating
+		count++
+	}
+	newOverallRating := sum / float32(count)
+
+	// 10. Update the existing rating with remaining seasons and new overall rating
+	ratingDb := mongodb.RatingDb{
+		Id:             ratingId,
+		Note:           newOverallRating,
+		SeasonsRatings: existingRating.SeasonsRatings,
+	}
+
+	_, err = db.UpdateRating(ctx, ratingDb, userId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			return ErrRatingNotFound
+		}
+		return err
+	}
+
+	return nil
 }
