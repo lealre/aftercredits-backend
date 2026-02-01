@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,10 +10,13 @@ import (
 	"time"
 
 	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/imdb"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestAddRating(t *testing.T) {
@@ -589,5 +593,270 @@ func TestUpdateRating(t *testing.T) {
 		var respUpdatedRatingBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respUpdatedRating.Body).Decode(&respUpdatedRatingBody))
 		require.Contains(t, respUpdatedRatingBody.ErrorMessage, ratings.ErrSeasonRequired.Error()[1:])
+	})
+}
+
+func TestDeleteRating(t *testing.T) {
+	resetDB(t)
+
+	// =========================================================
+	// 		TEST SETUP - DELETING RATINGS
+	// =========================================================
+
+	// Create a new user
+	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add titles to database
+	movieTitles := loadTitlesFixture(t)
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	allTitles := append(movieTitles, tvSeriesTitles...)
+	seedTitles(t, allTitles)
+
+	expectedMovieTitle := movieTitles[0]
+	expectedTVSeriesTitle := tvSeriesTitles[0]
+
+	// Add titles to group
+	for _, title := range []string{expectedMovieTitle.ID, expectedTVSeriesTitle.ID} {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title),
+			GroupId: group.Id,
+		}, tokenOwnerUser)
+	}
+
+	// User not in group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// =========================================================
+	// 		TEST DELETING RATINGS - MOVIES
+	// =========================================================
+
+	t.Run("Deleting a movie rating successfully", func(t *testing.T) {
+		// Add a rating for the movie
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(5), nil, tokenOwnerUser)
+
+		// Delete the rating
+		respDeleted := deleteRating(t, ratingToDelete.Id, tokenOwnerUser)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
+
+		var respBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Equal(t, fmt.Sprintf("Rating with id %s deleted successfully", ratingToDelete.Id), respBody.Message)
+
+		// DB assertion: rating should not exist
+		ctx := context.Background()
+		db := testClient.Database(TEST_DB_NAME)
+		coll := db.Collection(mongodb.RatingsCollection)
+		var ratingDb mongodb.RatingDb
+		err := coll.FindOne(ctx, bson.M{"_id": ratingToDelete.Id}).Decode(&ratingDb)
+		require.Error(t, err, "Expected rating to be deleted from database")
+	})
+
+	t.Run("Deleting a rating that does not exist should return 404", func(t *testing.T) {
+		nonExistentRatingId := "507f1f77bcf86cd799439011"
+		respDeleted := deleteRating(t, nonExistentRatingId, tokenOwnerUser)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeleted.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", nonExistentRatingId))
+	})
+
+	t.Run("Deleting a rating that belongs to another user should return 404", func(t *testing.T) {
+		// Add a rating for the movie by the owner
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(5), nil, tokenOwnerUser)
+
+		// Try to delete it with another user's token
+		respDeleted := deleteRating(t, ratingToDelete.Id, tokenUserNotInGroup)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeleted.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", ratingToDelete.Id))
+	})
+
+	// =========================================================
+	// 		TEST DELETING RATINGS - TV SERIES (ENTIRE RATING)
+	// =========================================================
+
+	t.Run("Deleting a TV series rating successfully (entire rating)", func(t *testing.T) {
+		// Add ratings for TV series (season 1 and season 2)
+		season1 := 1
+		season2 := 2
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(5), &season1, tokenOwnerUser)
+		_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(8), &season2, tokenOwnerUser)
+
+		// Delete the entire rating
+		respDeleted := deleteRating(t, ratingToDelete.Id, tokenOwnerUser)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
+
+		var respBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Equal(t, fmt.Sprintf("Rating with id %s deleted successfully", ratingToDelete.Id), respBody.Message)
+
+		// DB assertion: rating should not exist
+		ctx := context.Background()
+		db := testClient.Database(TEST_DB_NAME)
+		coll := db.Collection(mongodb.RatingsCollection)
+		var ratingDb mongodb.RatingDb
+		err := coll.FindOne(ctx, bson.M{"_id": ratingToDelete.Id}).Decode(&ratingDb)
+		require.Error(t, err, "Expected rating to be deleted from database")
+	})
+}
+
+func TestDeleteRatingSeason(t *testing.T) {
+	resetDB(t)
+
+	// =========================================================
+	// 		TEST SETUP - DELETING SEASON RATINGS
+	// =========================================================
+
+	// Create a new user
+	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add titles to database
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	seedTitles(t, tvSeriesTitles)
+
+	expectedTVSeriesTitle := tvSeriesTitles[0]
+	expectedTVSeriesTitle2 := tvSeriesTitles[1]
+
+	// Add tv series titles to group
+	for _, title := range []imdb.Title{expectedTVSeriesTitle, expectedTVSeriesTitle2} {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
+			GroupId: group.Id,
+		}, tokenOwnerUser)
+	}
+
+	// User not in group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// Create a TV series rating with seasons 1 and 2
+	season1 := 1
+	season2 := 2
+	ratingSeason1 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(5), &season1, tokenOwnerUser)
+	ratingSeason2 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(8), &season2, tokenOwnerUser)
+	require.Equal(t, ratingSeason1.Id, ratingSeason2.Id, "Expected same rating id for multiple seasons of the same TV series")
+
+	ratingId := ratingSeason1.Id
+
+	// ======================================================================
+	// 		TEST DELETING SEASON RATINGS
+	// ======================================================================
+
+	t.Run("Deleting a season rating successfully", func(t *testing.T) {
+		respDeleted := deleteRatingSeason(t, ratingId, tokenOwnerUser, season1)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
+
+		var respBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Equal(t, fmt.Sprintf("Season %d from rating %s deleted successfully", season1, ratingId), respBody.Message)
+
+		// DB assertion: rating still exists, but season 1 was removed
+		ratingDb := getRating(t, ratingId)
+		require.NotNil(t, ratingDb.SeasonsRatings)
+		_, ok := (*ratingDb.SeasonsRatings)["1"]
+		require.False(t, ok, "Expected season 1 to be deleted from SeasonsRatings")
+		season2RatingDb := (*ratingDb.SeasonsRatings)["2"]
+		require.Equal(t, float32(8), season2RatingDb.Rating)
+		require.NotEmpty(t, season2RatingDb.AddedAt)
+		require.NotEmpty(t, season2RatingDb.UpdatedAt)
+		// Overall rating should be recalculated (only season 2 remains)
+		require.Equal(t, float32(8), ratingDb.Note)
+	})
+
+	t.Run("Deleting last season should delete the whole rating document", func(t *testing.T) {
+		onlySeason := 1
+		ratingOnlySeason := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle2.ID, float32(7), &onlySeason, tokenOwnerUser)
+
+		respDeleted := deleteRatingSeason(t, ratingOnlySeason.Id, tokenOwnerUser, onlySeason)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
+
+		var respBody api.DefaultResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Equal(t, fmt.Sprintf("Season %d from rating %s deleted successfully", onlySeason, ratingOnlySeason.Id), respBody.Message)
+
+		// DB assertion: rating should not exist
+		ctx := context.Background()
+		db := testClient.Database(TEST_DB_NAME)
+		coll := db.Collection(mongodb.RatingsCollection)
+		var ratingDb mongodb.RatingDb
+		err := coll.FindOne(ctx, bson.M{"_id": ratingOnlySeason.Id}).Decode(&ratingDb)
+		require.Error(t, err, "Expected rating to be deleted from database")
+	})
+
+	t.Run("Deleting a season rating with invalid season should return 400", func(t *testing.T) {
+		respDeleted := deleteRatingSeason(t, ratingId, tokenOwnerUser, 0)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respDeleted.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, ratings.ErrInvalidSeasonValue.Error()[1:])
+	})
+
+	t.Run("Deleting a season rating that does not exist should return 404", func(t *testing.T) {
+		nonExistentSeason := 100
+		respDeleted := deleteRatingSeason(t, ratingId, tokenOwnerUser, nonExistentSeason)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusBadRequest, respDeleted.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, ratings.ErrSeasonDoesNotExist.Error()[1:])
+	})
+
+	t.Run("Deleting a season rating from a rating that does not exist should return 404", func(t *testing.T) {
+		nonExistentRatingId := "507f1f77bcf86cd799439011"
+		respDeleted := deleteRatingSeason(t, nonExistentRatingId, tokenOwnerUser, season1)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeleted.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", nonExistentRatingId))
+	})
+
+	t.Run("Deleting a season rating that belongs to another user should return 404", func(t *testing.T) {
+		// Add a rating for TV series by the owner
+		season1 := 1
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(5), &season1, tokenOwnerUser)
+
+		// Try to delete it with another user's token
+		respDeleted := deleteRatingSeason(t, ratingToDelete.Id, tokenUserNotInGroup, season1)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeleted.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", ratingToDelete.Id))
 	})
 }

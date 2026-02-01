@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -57,6 +58,36 @@ func addRatingAndGetResult(t *testing.T, groupId, titleId string, note float32, 
 	var rating ratings.Rating
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&rating))
 	return rating
+}
+
+func deleteRating(t *testing.T, ratingId, innerToken string) *http.Response {
+	req, err := http.NewRequest(http.MethodDelete,
+		testServer.URL+"/ratings/"+ratingId,
+		nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+innerToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	return resp
+}
+
+func deleteRatingSeason(t *testing.T, ratingId, innerToken string, season int) *http.Response {
+	req, err := http.NewRequest(http.MethodDelete,
+		testServer.URL+"/ratings/"+ratingId+"/seasons/"+strconv.Itoa(season),
+		nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+innerToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	return resp
 }
 
 func updateRating(t *testing.T, ratingUppdate ratings.UpdateRatingRequest, ratingId, innerToken string) *http.Response {
