@@ -91,6 +91,7 @@ func GetTitlesFromGroup(
 	orderBy string,
 	watched *bool,
 	ascending *bool,
+	titleType *string,
 ) (generics.Page[GroupTitleDetail], error) {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
@@ -110,6 +111,47 @@ func GetTitlesFromGroup(
 
 		titleGroupMap[title.TitleId] = title
 		allTitlesIds = append(allTitlesIds, title.TitleId)
+	}
+
+	// Filter by titleType if specified
+	if titleType != nil && len(allTitlesIds) > 0 {
+		// Fetch title types from database with lightweight projection
+		titleTypes, err := db.GetTitleTypes(ctx, allTitlesIds)
+		if err != nil {
+			return generics.Page[GroupTitleDetail]{}, err
+		}
+
+		// Filter allTitlesIds based on titleType
+		filteredTitlesIds := []string{}
+		filteredTitleGroupMap := make(map[string]mongodb.GroupTitleItemDb)
+
+		for _, titleId := range allTitlesIds {
+			titleTypeValue, exists := titleTypes[titleId]
+			if !exists {
+				// Skip titles that don't exist in database
+				continue
+			}
+
+			shouldInclude := false
+			if *titleType == "serie" {
+				// Include tvSeries or tvMiniSeries
+				shouldInclude = titleTypeValue == "tvSeries" || titleTypeValue == "tvMiniSeries"
+			} else if *titleType == "movie" {
+				// Include only movies
+				shouldInclude = titleTypeValue == "movie"
+			} else {
+				// Invalid titleType value, include all (same as no filter)
+				shouldInclude = true
+			}
+
+			if shouldInclude {
+				filteredTitlesIds = append(filteredTitlesIds, titleId)
+				filteredTitleGroupMap[titleId] = titleGroupMap[titleId]
+			}
+		}
+
+		allTitlesIds = filteredTitlesIds
+		titleGroupMap = filteredTitleGroupMap
 	}
 
 	// Check this after the watched/unwatched filter, to include that case as well

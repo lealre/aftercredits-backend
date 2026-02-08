@@ -191,3 +191,44 @@ func (db *DB) AggregateTitles(ctx context.Context, pipeline mongo.Pipeline) ([]T
 
 	return dbTitles, nil
 }
+
+// GetTitleTypes fetches title types from the database for the given title IDs.
+// Returns a map of titleId -> type.
+func (db *DB) GetTitleTypes(ctx context.Context, titleIds []string) (map[string]string, error) {
+	if len(titleIds) == 0 {
+		return make(map[string]string), nil
+	}
+
+	coll := db.Collection(TitlesCollection)
+
+	// Use projection to fetch only _id and type fields
+	projection := bson.M{
+		"_id":  1,
+		"type": 1,
+	}
+
+	filter := bson.M{
+		"_id": bson.M{"$in": titleIds},
+	}
+
+	opts := options.Find().SetProjection(projection)
+	cursor, err := coll.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	titleTypes := make(map[string]string)
+	for cursor.Next(ctx) {
+		var doc struct {
+			ID   string `bson:"_id"`
+			Type string `bson:"type"`
+		}
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		titleTypes[doc.ID] = doc.Type
+	}
+
+	return titleTypes, cursor.Err()
+}

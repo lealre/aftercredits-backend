@@ -138,6 +138,11 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 	orderBy := r.URL.Query().Get("orderBy")
 	ascending := parseUrlQueryToBool(r.URL.Query().Get("ascending"))
 	watched := parseUrlQueryToBool(r.URL.Query().Get("watched"))
+	titleType := r.URL.Query().Get("titleType")
+	var titleTypePtr *string
+	if titleType != "" {
+		titleTypePtr = &titleType
+	}
 
 	_, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
 	if err != nil {
@@ -150,7 +155,7 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	titles, err := groups.GetTitlesFromGroup(api.Db, r.Context(), groupId, currentUser.Id, size, page, orderBy, watched, ascending)
+	titles, err := groups.GetTitlesFromGroup(api.Db, r.Context(), groupId, currentUser.Id, size, page, orderBy, watched, ascending, titleTypePtr)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
