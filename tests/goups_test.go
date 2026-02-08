@@ -993,6 +993,14 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.Empty(t, seasonWatched.WatchedAt, "Expected season WatchedAt in db to be empty")
 		require.NotEmpty(t, seasonWatched.AddedAt, "Expected season AddedAt in db to not be empty")
 		require.NotEmpty(t, seasonWatched.UpdatedAt, "Expected season UpdatedAt in db to not be empty")
+
+		// Verify top-level watched is true
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when season is watched")
+		require.Nil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to be nil when season has no watchedAt")
+
+		// Database assertion for top-level fields
+		require.True(t, titleToAssert.Watched, "Expected top-level Watched in db to be true")
+		require.Nil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be nil")
 	})
 
 	t.Run("Set watchedAt field for a TV series season with watched already set as true successfully", func(t *testing.T) {
@@ -1027,6 +1035,16 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.True(t, seasonExists, "Expected season %d to exist in SeasonsWatched", season)
 		require.True(t, seasonWatched.Watched, "Expected season Watched in db to be true")
 		require.Equal(t, &testDate, seasonWatched.WatchedAt, "Expected season WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, seasonWatched.WatchedAt)
+
+		// Verify top-level watched and watchedAt
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when season is watched")
+		require.NotNil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to not be nil")
+		require.Equal(t, testDate, *respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to match season's WatchedAt")
+
+		// Database assertion for top-level fields
+		require.True(t, titleToAssert.Watched, "Expected top-level Watched in db to be true")
+		require.NotNil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to not be nil")
+		require.Equal(t, testDate, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to match season's WatchedAt")
 	})
 
 	t.Run("Set TV series season watched as false should set watchedAt as empty successfully", func(t *testing.T) {
@@ -1058,6 +1076,14 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.True(t, seasonExists, "Expected season %d to exist in SeasonsWatched", season)
 		require.False(t, seasonWatched.Watched, "Expected season Watched in db to be false")
 		require.Empty(t, seasonWatched.WatchedAt, "Expected season WatchedAt in db to be empty when watched is false")
+
+		// Verify top-level watched is false when season is unwatched
+		require.False(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be false when season is unwatched")
+		require.Nil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to be nil when season is unwatched")
+
+		// Database assertion for top-level fields
+		require.False(t, titleToAssert.Watched, "Expected top-level Watched in db to be false")
+		require.Nil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be nil")
 	})
 
 	t.Run("Setting watchedAt for TV series season when watched is false should return 400", func(t *testing.T) {
@@ -1201,6 +1227,202 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.True(t, season2Exists, "Expected season 2 to exist in SeasonsWatched")
 		require.True(t, season2Watched.Watched, "Expected season 2 Watched in db to be true")
 		require.NotEmpty(t, season2Watched.AddedAt, "Expected season 2 AddedAt in db to not be empty")
+	})
+
+	t.Run("Setting a season as watched should update top-level watched to true", func(t *testing.T) {
+		// Reset: Set season 1 to unwatched first
+		watched := false
+		season1 := 1
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season1,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		_ = patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Now set season 1 to watched
+		watched = true
+		testDate1 := time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC)
+		pathBody, err = json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season1,
+			Watched: &watched,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate1,
+			},
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Verify top-level watched is true
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when at least one season is watched")
+
+		// Verify top-level watchedAt matches the season's watchedAt
+		require.NotNil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to not be nil")
+		require.Equal(t, testDate1, *respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to match season's WatchedAt")
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		require.True(t, titleToAssert.Watched, "Expected top-level Watched in db to be true")
+		require.NotNil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to not be nil")
+		require.Equal(t, testDate1, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to match season's WatchedAt")
+	})
+
+	t.Run("Setting all seasons to unwatched should update top-level watched to false", func(t *testing.T) {
+		// First, set season 1 to watched
+		watched := true
+		season1 := 1
+		testDate1 := time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season1,
+			Watched: &watched,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate1,
+			},
+		})
+		require.NoError(t, err)
+		_ = patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Set all possible seasons to unwatched (seasons 1, 2, and 3)
+		watched = false
+		seasons := []int{1, 2, 3}
+		for _, season := range seasons {
+			pathBody, err = json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+				TitleId: expectedTVSeriesTitle.ID,
+				Season:  &season,
+				Watched: &watched,
+			})
+			require.NoError(t, err)
+			_ = patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+		}
+
+		// Get the final state after setting all seasons to unwatched
+		pathBody, err = json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season1,
+			Watched: &watched,
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Verify top-level watched is false
+		require.False(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be false when all seasons are unwatched")
+
+		// Verify top-level watchedAt is nil
+		require.Nil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to be nil when no seasons are watched")
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		require.False(t, titleToAssert.Watched, "Expected top-level Watched in db to be false")
+		require.Nil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be nil")
+	})
+
+	t.Run("Top-level watchedAt should be the latest date from all watched seasons", func(t *testing.T) {
+		// Set season 1 to watched with an earlier date
+		watched := true
+		season1 := 1
+		testDate1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season1,
+			Watched: &watched,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate1,
+			},
+		})
+		require.NoError(t, err)
+		_ = patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Set season 2 to watched with a later date
+		season2 := 2
+		testDate2 := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		pathBody, err = json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season2,
+			Watched: &watched,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate2,
+			},
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Verify top-level watched is true
+		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when seasons are watched")
+
+		// Verify top-level watchedAt is the latest date (testDate2)
+		require.NotNil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to not be nil")
+		require.Equal(t, testDate2, *respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to be the latest date from all seasons")
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		require.True(t, titleToAssert.Watched, "Expected top-level Watched in db to be true")
+		require.NotNil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to not be nil")
+		require.Equal(t, testDate2, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be the latest date")
+	})
+
+	t.Run("Updating a season with an earlier date should not change top-level watchedAt if another season has a later date", func(t *testing.T) {
+		// Season 2 is already watched with testDate2 (2025-01-20)
+		// Now set season 1 to watched with an earlier date (2025-01-10)
+		watched := true
+		season1 := 1
+		testDate1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season1,
+			Watched: &watched,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate1,
+			},
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Verify top-level watchedAt is still the latest date (testDate2 from season 2)
+		testDate2 := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		require.NotNil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to not be nil")
+		require.Equal(t, testDate2, *respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to remain the latest date from all seasons")
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		require.Equal(t, testDate2, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to remain the latest date")
+	})
+
+	t.Run("Updating a season with a later date should update top-level watchedAt", func(t *testing.T) {
+		// Set season 3 to watched with an even later date
+		watched := true
+		season3 := 3
+		testDate3 := time.Date(2025, 1, 25, 0, 0, 0, 0, time.UTC)
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season3,
+			Watched: &watched,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &testDate3,
+			},
+		})
+		require.NoError(t, err)
+		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
+
+		// Verify top-level watchedAt is now the latest date (testDate3)
+		require.NotNil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to not be nil")
+		require.Equal(t, testDate3, *respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to be updated to the latest date")
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to be in group titles db")
+		require.Equal(t, testDate3, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be updated to the latest date")
 	})
 }
 

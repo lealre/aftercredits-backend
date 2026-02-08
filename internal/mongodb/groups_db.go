@@ -404,8 +404,58 @@ func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId st
 		return nil, err
 	}
 
+	// Calculate and update top-level watched and watchedAt fields based on all seasons
+	updatedTitle, exists := updatedGroup.Titles[titleKey]
+	if !exists {
+		return nil, ErrRecordNotFound
+	}
+
+	// Calculate top-level watched: true if at least one season is watched
+	topLevelWatched := false
+	var topLevelWatchedAt *time.Time
+
+	if updatedTitle.SeasonsWatched != nil {
+		for _, seasonWatched := range *updatedTitle.SeasonsWatched {
+			if seasonWatched.Watched {
+				topLevelWatched = true
+				// Find the latest watchedAt date
+				if seasonWatched.WatchedAt != nil {
+					if topLevelWatchedAt == nil || seasonWatched.WatchedAt.After(*topLevelWatchedAt) {
+						topLevelWatchedAt = seasonWatched.WatchedAt
+					}
+				}
+			}
+		}
+	}
+
+	// Update top-level watched and watchedAt fields
+	topLevelUpdateDoc := bson.M{
+		fmt.Sprintf("titles.%s.watched", titleId):   topLevelWatched,
+		fmt.Sprintf("titles.%s.watchedAt", titleId): topLevelWatchedAt,
+		fmt.Sprintf("titles.%s.updatedAt", titleId): now,
+		"updatedAt": now,
+	}
+
+	opts2 := options.FindOneAndUpdate()
+	opts2.SetReturnDocument(options.After)
+
+	var finalGroup GroupDb
+	err = coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": groupId},
+		bson.M{"$set": topLevelUpdateDoc},
+		opts2,
+	).Decode(&finalGroup)
+
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+
 	// Return the updated title from the map using direct key access
-	if title, exists := updatedGroup.Titles[titleKey]; exists {
+	if title, exists := finalGroup.Titles[titleKey]; exists {
 		return &title, nil
 	}
 
