@@ -76,10 +76,10 @@ if ! tar -czf "${COMPRESSED_PATH}" -C "${TEMP_DIR}" "${BACKUP_NAME}.archive" 2>&
   exit 1
 fi
 
-# Upload to Dropbox using rclone
-log "☁️  Uploading to Dropbox..."
-if ! rclone copy "${COMPRESSED_PATH}" "dropbox:aftercredits_backups" -v 2>&1; then
-  log "❌ Upload to Dropbox failed"
+# Upload to Google Drive using rclone
+log "☁️  Uploading to Google Drive..."
+if ! rclone copy "${COMPRESSED_PATH}" "drive-pi:aftercredits_backups" -v 2>&1; then
+  log "❌ Upload to Google Drive failed"
   exit 1
 fi
 
@@ -87,6 +87,6 @@ fi
 log "🧹 Cleaning up temporary files..."
 rm -f "${ARCHIVE_PATH}" "${COMPRESSED_PATH}"
 
-log "✅ Backup completed and uploaded to Dropbox:"
-log "   dropbox:aftercredits_backups/${BACKUP_NAME}.tar.gz"
+log "✅ Backup completed and uploaded to Google Drive:"
+log "   drive-pi:aftercredits_backups/${BACKUP_NAME}.tar.gz"
 log "=========================================="
