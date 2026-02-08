@@ -98,3 +98,7 @@ type Seasons struct {
 	Season       string `json:"season" bson:"season"`
 	EpisodeCount int    `json:"episodeCount" bson:"episodeCount"`
 }
+
+type BatchTitlesResponse struct {
+	Titles []Title `json:"titles" bson:"titles"`
+}

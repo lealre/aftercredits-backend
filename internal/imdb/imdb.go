@@ -101,3 +101,45 @@ func FetchEpisodes(titleID string, pageSize int, pageToken string) ([]byte, erro
 
 	return body, nil
 }
+
+func FetchBatchTitles(titleIDs []string) ([]byte, error) {
+	if len(titleIDs) == 0 {
+		return nil, fmt.Errorf("no title IDs provided")
+	}
+	if len(titleIDs) > 5 {
+		return nil, fmt.Errorf("batch size cannot exceed 5 titles")
+	}
+
+	requestURL := fmt.Sprintf("%s/titles:batchGet", imdbFreeApiBaseURL)
+
+	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	// Add query parameters for each title ID
+	q := req.URL.Query()
+	for _, titleID := range titleIDs {
+		q.Add("titleIds", titleID)
+	}
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("non-2xx status: %s - %s", resp.Status, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return body, nil
+}
