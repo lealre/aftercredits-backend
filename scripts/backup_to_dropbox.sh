@@ -1,0 +1,92 @@
+#!/bin/bash
+set -e
+
+# Get script directory and set paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+# Function to log with timestamp (prints to console)
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+log "=========================================="
+log "📦 Starting MongoDB backup..."
+
+# Load .env from project root
+if [ ! -f "${ENV_FILE}" ]; then
+  log "❌ .env file not found at ${ENV_FILE}"
+  exit 1
+fi
+
+export $(grep -v '^#' "${ENV_FILE}" | xargs)
+
+# Set defaults if not provided
+MONGO_HOST=${MONGO_HOST:-localhost}
+MONGO_PORT=${MONGO_PORT:-27017}
+MONGODB_DB=${MONGODB_DB:-brunan}
+
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+BACKUP_NAME="mongo_dump_${TIMESTAMP}"
+TEMP_DIR="/tmp"
+ARCHIVE_PATH="${TEMP_DIR}/${BACKUP_NAME}.archive"
+COMPRESSED_PATH="${TEMP_DIR}/${BACKUP_NAME}.tar.gz"
+
+# Build MongoDB URI
+if [ -n "${MONGO_USER}" ] && [ -n "${MONGO_PASSWORD}" ]; then
+  MONGO_URI="mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/?authSource=admin"
+else
+  MONGO_URI="mongodb://${MONGO_HOST}:${MONGO_PORT}"
+fi
+
+# Try to use mongodump directly first
+if command -v mongodump &> /dev/null; then
+  log "📥 Using mongodump directly..."
+  if ! mongodump --uri "${MONGO_URI}" --archive="${ARCHIVE_PATH}" 2>&1; then
+    log "❌ mongodump failed"
+    exit 1
+  fi
+# Otherwise, try using docker exec if container is running
+elif docker ps --format '{{.Names}}' | grep -q "^aftercredits-mongo$"; then
+  log "📥 Using mongodump via Docker container..."
+  if ! docker exec aftercredits-mongo mongodump \
+    -u "${MONGO_USER}" \
+    -p "${MONGO_PASSWORD}" \
+    --authenticationDatabase admin \
+    --archive="/tmp/${BACKUP_NAME}.archive" 2>&1; then
+    log "❌ mongodump via Docker failed"
+    exit 1
+  fi
+  if ! docker cp "aftercredits-mongo:/tmp/${BACKUP_NAME}.archive" "${ARCHIVE_PATH}" 2>&1; then
+    log "❌ Failed to copy archive from Docker container"
+    exit 1
+  fi
+  docker exec aftercredits-mongo rm -f "/tmp/${BACKUP_NAME}.archive" 2>&1
+else
+  log "❌ mongodump not found and Docker container 'aftercredits-mongo' is not running"
+  log "   Please install mongodb-tools or start the Docker container"
+  exit 1
+fi
+
+# Compress the archive
+log "🗜️  Compressing backup..."
+if ! tar -czf "${COMPRESSED_PATH}" -C "${TEMP_DIR}" "${BACKUP_NAME}.archive" 2>&1; then
+  log "❌ Compression failed"
+  exit 1
+fi
+
+# Upload to Dropbox using rclone
+log "☁️  Uploading to Dropbox..."
+if ! rclone copy "${COMPRESSED_PATH}" "dropbox:aftercredits_backups" -v 2>&1; then
+  log "❌ Upload to Dropbox failed"
+  exit 1
+fi
+
+# Cleanup
+log "🧹 Cleaning up temporary files..."
+rm -f "${ARCHIVE_PATH}" "${COMPRESSED_PATH}"
+
+log "✅ Backup completed and uploaded to Dropbox:"
+log "   dropbox:aftercredits_backups/${BACKUP_NAME}.tar.gz"
+log "=========================================="
