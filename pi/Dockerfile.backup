@@ -1,0 +1,22 @@
+FROM alpine:latest
+
+# Install required tools
+RUN apk add --no-cache \
+    mongodb-tools \
+    rclone \
+    bash \
+    tar \
+    gzip
+
+# Create app directory
+WORKDIR /app
+
+# Copy backup script from pi folder (simplified version that uses env vars)
+COPY pi/backup_to_drive.sh /app/backup_to_drive.sh
+
+# Make script executable
+RUN chmod +x /app/backup_to_drive.sh
+
+# Set default command
+CMD ["/app/backup_to_drive.sh"]
+
