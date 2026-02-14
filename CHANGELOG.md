@@ -1,4 +1,32 @@
 
+<a name="v0.0.6"></a>
+## [v0.0.6](https://github.com/lealre/fs-mcp/compare/v0.0.5...v0.0.6) (2026-02-14)
+
+* Add cron routine to use in pi
+* Small improvements in routines scripts
+* Add mongo client sample format for vscode extension
+* Update script to backup
+
+<a name="v0.0.5"></a>
+## [v0.0.5](https://github.com/lealre/fs-mcp/compare/v0.0.4...v0.0.5) (2026-02-08)
+
+* Merge pull request [#7](https://github.com/lealre/fs-mcp/issues/7) from lealre/v0.0.5
+* Use rclone with drive
+* Merge pull request [#6](https://github.com/lealre/fs-mcp/issues/6) from lealre/v0.0.5
+* Add filter option for title type when getting titles from a group
+* test: New top level watchedAt logic for seasons
+* Update top level information when setting a season as watched
+* Command to refresh info about titles from imbd
+* Add method to batch titles from api
+* Add new dev migration
+* Add script to make backup to dropbox
+* Update `CHANGELOG.md`
+
+### Pull Requests
+* Merge pull request [#7](https://github.com/lealre/fs-mcp/issues/7) from lealre/v0.0.5
+* Merge pull request [#6](https://github.com/lealre/fs-mcp/issues/6) from lealre/v0.0.5
+
+
 <a name="v0.0.4"></a>
 ## [v0.0.4](https://github.com/lealre/fs-mcp/compare/v0.0.3...v0.0.4) (2026-02-01)
 
