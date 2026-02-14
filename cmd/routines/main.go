@@ -22,6 +22,11 @@ import (
 func main() {
 	_ = godotenv.Load()
 
+	log.Println("")
+	log.Println("==========================================")
+	log.Println("🎬 Starting titles update...")
+	log.Println("==========================================")
+
 	ctx := context.Background()
 	dbClient, err := mongodb.Connect(ctx)
 	if err != nil {

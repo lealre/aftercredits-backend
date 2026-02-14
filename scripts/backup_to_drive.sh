@@ -87,7 +87,8 @@ fi
 
 # Cleanup
 log "🧹 Cleaning up temporary files..."
-rm -f "${ARCHIVE_PATH}" "${COMPRESSED_PATH}"
+rm -rf "${BACKUP_DIR_PATH}"
+rm -f "${COMPRESSED_PATH}"
 
 log "✅ Backup completed and uploaded to Google Drive:"
 log "   drive-pi:aftercredits_backups/${BACKUP_NAME}.tar.gz"
