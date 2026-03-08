@@ -118,3 +118,27 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Title deleted from database"})
 }
+
+func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
+	searchQuery := r.URL.Query().Get("query")
+	if searchQuery == "" {
+		respondWithError(w, http.StatusBadRequest, "Search query is required")
+		return
+	}
+
+	limit := generics.StringToInt(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 5
+	}
+
+	titles, err := titles.SearchTitles(searchQuery, limit)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to search titles")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, titles)
+}

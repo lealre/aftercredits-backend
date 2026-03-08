@@ -250,3 +250,17 @@ func GetTitleById(db *mongodb.DB, ctx context.Context, titleId string) (Title, e
 
 	return MapDbTitleToApiTitle(titleDb), nil
 }
+
+func SearchTitles(searchQuery string, limit int) ([]Title, error) {
+	body, err := imdb.FetchTitlesBySearch(searchQuery, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	var titlesResp imdb.SearchTitlesResponse
+	if err := json.Unmarshal(body, &titlesResp); err != nil {
+		return nil, err
+	}
+
+	return MapImdbSearchTitlesToTitles(titlesResp.Titles), nil
+}
