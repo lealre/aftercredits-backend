@@ -102,3 +102,18 @@ type Seasons struct {
 type BatchTitlesResponse struct {
 	Titles []Title `json:"titles" bson:"titles"`
 }
+
+type SearchTitleItem struct {
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	PrimaryTitle  string `json:"primaryTitle"`
+	OriginalTitle string `json:"originalTitle"`
+	PrimaryImage  Image  `json:"primaryImage"`
+	StartYear     int    `json:"startYear"`
+	EndYear       *int   `json:"endYear,omitempty"`
+	Rating        Rating `json:"rating"`
+}
+
+type SearchTitlesResponse struct {
+	Titles []SearchTitleItem `json:"titles"`
+}

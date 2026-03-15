@@ -120,6 +120,28 @@ func MapDbSeasonsToImdbSeasons(seasons []mongodb.Seasons) []Seasons {
 	return imdbSeasons
 }
 
+func MapImdbSearchTitlesToTitles(items []imdb.SearchTitleItem) []Title {
+	titles := make([]Title, len(items))
+	for i, item := range items {
+		titles[i] = Title{
+			Id:           item.ID,
+			Type:         item.Type,
+			PrimaryTitle: item.PrimaryTitle,
+			PrimaryImage: Image{
+				URL:    item.PrimaryImage.URL,
+				Width:  item.PrimaryImage.Width,
+				Height: item.PrimaryImage.Height,
+			},
+			StartYear: item.StartYear,
+			Rating: Rating{
+				AggregateRating: item.Rating.AggregateRating,
+				VoteCount:       item.Rating.VoteCount,
+			},
+		}
+	}
+	return titles
+}
+
 func MapDbEpisodesToImdbEpisodes(episodes []mongodb.Episode) []Episode {
 	apiEpisodes := make([]Episode, len(episodes))
 	for i, episode := range episodes {
