@@ -19,6 +19,109 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+func TestGetRatingById(t *testing.T) {
+	resetDB(t)
+
+	// =========================================================
+	// 		TEST SETUP - GETTING RATINGS BY ID
+	// =========================================================
+
+	// Create a new user
+	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add titles to database
+	movieTitles := loadTitlesFixture(t)
+	seedTitles(t, movieTitles)
+	expectedMovieTitle := movieTitles[0]
+
+	// Add title to group
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedMovieTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// Add a rating
+	ratingCreated := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(7), nil, tokenOwnerUser)
+
+	// User not in group
+	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
+		Username: "othertestname",
+		Password: "testpass",
+	})
+
+	// =========================================================
+	// 		TEST GET RATING BY ID
+	// =========================================================
+
+	t.Run("Get rating by id successfully", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/ratings/"+ratingCreated.Id,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenOwnerUser)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var respRating ratings.Rating
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respRating))
+		require.Equal(t, ratingCreated.Id, respRating.Id)
+		require.Equal(t, user.Id, respRating.UserId)
+		require.Equal(t, expectedMovieTitle.ID, respRating.TitleId)
+		require.Equal(t, float32(7), respRating.Note)
+		require.NotEmpty(t, respRating.CreatedAt)
+		require.NotEmpty(t, respRating.UpdatedAt)
+	})
+
+	t.Run("Get rating by id that does not exist should return 404", func(t *testing.T) {
+		nonExistentRatingId := "507f1f77bcf86cd799439011"
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/ratings/"+nonExistentRatingId,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenOwnerUser)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, "Rating not found")
+	})
+
+	t.Run("Get rating by id that belongs to another user should return 404", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/ratings/"+ratingCreated.Id,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenUserNotInGroup)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, "Rating not found")
+	})
+}
+
 func TestAddRating(t *testing.T) {
 	resetDB(t)
 

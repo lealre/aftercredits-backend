@@ -326,6 +326,38 @@ func TestGetUsers(t *testing.T) {
 		require.Equal(t, respUser.UpdatedAt, respUser.CreatedAt, "Expected UpdatedAt and CreatedAt to be equal on new user")
 	})
 
+	t.Run("Get own user by id successfully", func(t *testing.T) {
+		resetDB(t)
+
+		user, token := addUser(t, users.NewUserRequest{
+			Name:     "testname",
+			Email:    "test@email.com",
+			Username: "testuser",
+			Password: "testpass",
+		})
+
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/users/"+user.Id,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var respUser users.UserResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respUser), "Failed to decode response body into UserResponse")
+		require.Equal(t, user.Id, respUser.Id, "Returned id does not match expected value")
+		require.Equal(t, user.Username, respUser.Username, "Returned username does not match expected value")
+		require.Equal(t, "test@email.com", respUser.Email, "Returned email does not match expected value")
+		require.Equal(t, "testname", respUser.Name, "Returned name does not match expected value")
+		require.NotEmpty(t, respUser.CreatedAt, "Expected CreatedAt to be non-empty")
+		require.NotEmpty(t, respUser.UpdatedAt, "Expected UpdatedAt to be non-empty")
+	})
+
 	t.Run("Getting another user's details should return 403 Forbidden", func(t *testing.T) {
 		resetDB(t)
 

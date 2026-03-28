@@ -156,6 +156,145 @@ func TestCreateGroup(t *testing.T) {
 
 }
 
+func TestGetGroupById(t *testing.T) {
+
+	t.Run("Get group by id as owner successfully", func(t *testing.T) {
+		resetDB(t)
+
+		user, token := addUser(t, users.NewUserRequest{
+			Username: "testname",
+			Password: "testpass",
+		})
+
+		group := createGroup(t, groups.CreateGroupRequest{
+			Name: "testgroupname",
+		}, token)
+
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var respGroupBody groups.GroupResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respGroupBody))
+		require.Equal(t, group.Id, respGroupBody.Id)
+		require.Equal(t, group.Name, respGroupBody.Name)
+		require.Equal(t, user.Id, respGroupBody.OwnerId)
+		require.Len(t, respGroupBody.Users, 1)
+		require.Contains(t, respGroupBody.Users, user.Id)
+		require.Empty(t, respGroupBody.Titles)
+		require.NotEmpty(t, respGroupBody.CreatedAt)
+		require.NotEmpty(t, respGroupBody.UpdatedAt)
+	})
+
+	t.Run("Get group by id as participant successfully", func(t *testing.T) {
+		resetDB(t)
+
+		_, tokenOwner := addUser(t, users.NewUserRequest{
+			Username: "testowner",
+			Password: "testpass",
+		})
+
+		participant, tokenParticipant := addUser(t, users.NewUserRequest{
+			Username: "testparticipant",
+			Password: "testpass",
+		})
+
+		group := createGroup(t, groups.CreateGroupRequest{
+			Name: "testgroupname",
+		}, tokenOwner)
+
+		addUserToGroup(t, groups.AddUserToGroupRequest{
+			UserId: participant.Id,
+		}, group.Id, tokenOwner)
+
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenParticipant)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var respGroupBody groups.GroupResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respGroupBody))
+		require.Equal(t, group.Id, respGroupBody.Id)
+		require.Equal(t, group.Name, respGroupBody.Name)
+		require.Len(t, respGroupBody.Users, 2)
+	})
+
+	t.Run("Get group by id not being from group should return 404", func(t *testing.T) {
+		resetDB(t)
+
+		_, tokenOwner := addUser(t, users.NewUserRequest{
+			Username: "testowner",
+			Password: "testpass",
+		})
+
+		_, tokenNotInGroup := addUser(t, users.NewUserRequest{
+			Username: "testnotingroup",
+			Password: "testpass",
+		})
+
+		group := createGroup(t, groups.CreateGroupRequest{
+			Name: "testgroupname",
+		}, tokenOwner)
+
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenNotInGroup)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, "Group not found")
+	})
+
+	t.Run("Get group by id with non-existent group should return 404", func(t *testing.T) {
+		resetDB(t)
+
+		_, token := addUser(t, users.NewUserRequest{
+			Username: "testname",
+			Password: "testpass",
+		})
+
+		nonExistentGroupId := "507f1f77bcf86cd799439011"
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+nonExistentGroupId,
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, "Group not found")
+	})
+}
+
 func TestGroupUsers(t *testing.T) {
 
 	t.Run("Add users to a group and retrieve them successfully", func(t *testing.T) {
