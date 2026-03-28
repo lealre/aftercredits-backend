@@ -54,8 +54,8 @@ func (api *API) GetGroupById(w http.ResponseWriter, r *http.Request) {
 
 	group, err := groups.GetGroupById(api.Db, r.Context(), groupId, currentUser.Id)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)

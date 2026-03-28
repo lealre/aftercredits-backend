@@ -7,7 +7,6 @@ import (
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
@@ -24,8 +23,8 @@ func (api *API) GetRatingById(w http.ResponseWriter, r *http.Request) {
 
 	rating, err := ratings.GetRatingById(api.Db, r.Context(), ratingId, currentuser.Id)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Rating with id %s not found", ratingId))
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
 		logger.Printf("ERROR: %v", err)

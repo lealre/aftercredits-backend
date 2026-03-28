@@ -671,7 +671,7 @@ func TestDeleteRating(t *testing.T) {
 
 		var respBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
-		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", nonExistentRatingId))
+		require.Contains(t, respBody.ErrorMessage, "Rating not found")
 	})
 
 	t.Run("Deleting a rating that belongs to another user should return 404", func(t *testing.T) {
@@ -685,7 +685,7 @@ func TestDeleteRating(t *testing.T) {
 
 		var respBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
-		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", ratingToDelete.Id))
+		require.Contains(t, respBody.ErrorMessage, "Rating not found")
 	})
 
 	// =========================================================
@@ -842,7 +842,7 @@ func TestDeleteRatingSeason(t *testing.T) {
 
 		var respBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
-		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", nonExistentRatingId))
+		require.Contains(t, respBody.ErrorMessage, "Rating not found")
 	})
 
 	t.Run("Deleting a season rating that belongs to another user should return 404", func(t *testing.T) {
@@ -857,6 +857,6 @@ func TestDeleteRatingSeason(t *testing.T) {
 
 		var respBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
-		require.Contains(t, respBody.ErrorMessage, fmt.Sprintf("Rating with id %s not found", ratingToDelete.Id))
+		require.Contains(t, respBody.ErrorMessage, "Rating not found")
 	})
 }
