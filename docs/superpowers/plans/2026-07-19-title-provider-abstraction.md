@@ -27,8 +27,8 @@
 
 **Create:**
 - `internal/titleprovider/provider.go` — `Provider` interface, domain types, `ErrTitleNotFound`.
-- `internal/titleprovider/factory.go` — `NewFromEnv()`.
-- `internal/titleprovider/factory_test.go`
+- `internal/titleprovider/factory/factory.go` — `NewFromEnv()`. **Separate package** (`factory`) to avoid an import cycle: the `tmdb`/`imdbapi` subpackages import `titleprovider` for the domain types, so the factory that imports those subpackages cannot itself live in `titleprovider`.
+- `internal/titleprovider/factory/factory_test.go`
 - `internal/titleprovider/imdbapi/imdbapi.go` — imdbapi.dev provider + wire types + mapping.
 - `internal/titleprovider/imdbapi/imdbapi_test.go`
 - `internal/titleprovider/tmdb/tmdb.go` — TMDB provider + wire types + mapping.
@@ -1345,31 +1345,39 @@ git commit -m "feat(titleprovider): add imdbapi.dev provider behind Provider int
 
 ### Task 4: Provider factory (`NewFromEnv`)
 
+> **Import-cycle note:** the factory lives in its OWN package `factory`
+> (`internal/titleprovider/factory/`), NOT in `titleprovider`. The
+> `tmdb`/`imdbapi` subpackages import `titleprovider` for the domain types;
+> if the factory (which imports those subpackages) also lived in
+> `titleprovider`, Go would reject the build with "import cycle not allowed".
+> Dependency flow is one-way: `factory` → {`tmdb`, `imdbapi`} → `titleprovider`.
+> Call site is therefore `factory.NewFromEnv()`, returning `titleprovider.Provider`.
+
 **Files:**
-- Create: `internal/titleprovider/factory.go`
-- Test: `internal/titleprovider/factory_test.go`
+- Create: `internal/titleprovider/factory/factory.go`
+- Test: `internal/titleprovider/factory/factory_test.go`
 
 **Interfaces:**
-- Consumes: `imdbapi.New()`, `tmdb.New(apiKey)` (Tasks 2–3).
-- Produces: `titleprovider.NewFromEnv() (Provider, error)`.
+- Consumes: `imdbapi.New()`, `tmdb.New(apiKey)` (Tasks 2–3), `titleprovider.Provider` (Task 1).
+- Produces: `factory.NewFromEnv() (titleprovider.Provider, error)`.
 
 - [ ] **Step 1: Write the failing test**
 
 ```go
-// internal/titleprovider/factory_test.go
-package titleprovider_test
+// internal/titleprovider/factory/factory_test.go
+package factory_test
 
 import (
 	"testing"
 
-	"github.com/lealre/movies-backend/internal/titleprovider"
+	"github.com/lealre/movies-backend/internal/titleprovider/factory"
 )
 
 func TestNewFromEnv(t *testing.T) {
 	t.Run("defaults to tmdb", func(t *testing.T) {
 		t.Setenv("TITLE_PROVIDER", "")
 		t.Setenv("TMDB_API_KEY", "k")
-		p, err := titleprovider.NewFromEnv()
+		p, err := factory.NewFromEnv()
 		if err != nil {
 			t.Fatalf("err: %v", err)
 		}
@@ -1381,14 +1389,14 @@ func TestNewFromEnv(t *testing.T) {
 	t.Run("tmdb requires key", func(t *testing.T) {
 		t.Setenv("TITLE_PROVIDER", "tmdb")
 		t.Setenv("TMDB_API_KEY", "")
-		if _, err := titleprovider.NewFromEnv(); err == nil {
+		if _, err := factory.NewFromEnv(); err == nil {
 			t.Fatal("expected error for missing TMDB_API_KEY")
 		}
 	})
 
 	t.Run("imdbapi", func(t *testing.T) {
 		t.Setenv("TITLE_PROVIDER", "imdbapi")
-		p, err := titleprovider.NewFromEnv()
+		p, err := factory.NewFromEnv()
 		if err != nil {
 			t.Fatalf("err: %v", err)
 		}
@@ -1399,7 +1407,7 @@ func TestNewFromEnv(t *testing.T) {
 
 	t.Run("unknown value errors", func(t *testing.T) {
 		t.Setenv("TITLE_PROVIDER", "bogus")
-		if _, err := titleprovider.NewFromEnv(); err == nil {
+		if _, err := factory.NewFromEnv(); err == nil {
 			t.Fatal("expected error for unknown provider")
 		}
 	})
@@ -1408,26 +1416,27 @@ func TestNewFromEnv(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/titleprovider/ -run TestNewFromEnv`
-Expected: FAIL — `NewFromEnv` undefined.
+Run: `go test ./internal/titleprovider/factory/ -run TestNewFromEnv`
+Expected: FAIL — package/`NewFromEnv` undefined.
 
 - [ ] **Step 3: Write the implementation**
 
 ```go
-// internal/titleprovider/factory.go
-package titleprovider
+// internal/titleprovider/factory/factory.go
+package factory
 
 import (
 	"fmt"
 	"os"
 
+	"github.com/lealre/movies-backend/internal/titleprovider"
 	"github.com/lealre/movies-backend/internal/titleprovider/imdbapi"
 	"github.com/lealre/movies-backend/internal/titleprovider/tmdb"
 )
 
 // NewFromEnv builds the provider selected by the TITLE_PROVIDER env var.
 // Allowed values: "tmdb" (default), "imdbapi".
-func NewFromEnv() (Provider, error) {
+func NewFromEnv() (titleprovider.Provider, error) {
 	name := os.Getenv("TITLE_PROVIDER")
 	if name == "" {
 		name = "tmdb"
@@ -1450,14 +1459,14 @@ func NewFromEnv() (Provider, error) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `go test ./internal/titleprovider/ -run TestNewFromEnv -v`
+Run: `go test ./internal/titleprovider/factory/ -run TestNewFromEnv -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/titleprovider/factory.go internal/titleprovider/factory_test.go
-git commit -m "feat(titleprovider): add NewFromEnv factory (TITLE_PROVIDER)"
+git add internal/titleprovider/factory/factory.go internal/titleprovider/factory/factory_test.go
+git commit -m "feat(titleprovider): add NewFromEnv factory package (TITLE_PROVIDER)"
 ```
 
 ---
@@ -1760,7 +1769,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/mongodb"
-	"github.com/lealre/movies-backend/internal/titleprovider"
+	"github.com/lealre/movies-backend/internal/titleprovider/factory"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -1769,7 +1778,7 @@ func NewServer(db *mongo.Client) (http.Handler, error) {
 
 	dbClient := mongodb.NewDB(db)
 
-	provider, err := titleprovider.NewFromEnv()
+	provider, err := factory.NewFromEnv()
 	if err != nil {
 		return nil, err
 	}
@@ -1991,6 +2000,7 @@ import (
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/titleprovider"
+	"github.com/lealre/movies-backend/internal/titleprovider/factory"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -2004,7 +2014,7 @@ func main() {
 	log.Println("🎬 Starting titles update...")
 	log.Println("==========================================")
 
-	provider, err := titleprovider.NewFromEnv()
+	provider, err := factory.NewFromEnv()
 	if err != nil {
 		log.Fatalf("Failed to build title provider: %v", err)
 	}
@@ -2208,7 +2218,7 @@ git commit -m "feat: inject title provider into API and cron routine"
 - Modify: `cmd/test-fixtures/main.go`, `tests/titles_setup_test.go`.
 
 **Interfaces:**
-- Consumes: `titleprovider.NewFromEnv`, `provider.GetTitle` (Tasks 1–4), `titles.MapProviderTitleToDb` (Task 5), `mongodb.TitleDb`.
+- Consumes: `factory.NewFromEnv`, `provider.GetTitle` (Tasks 1–4), `titles.MapProviderTitleToDb` (Task 5), `mongodb.TitleDb`.
 - Produces: fixtures written as `[]mongodb.TitleDb`; `seedTitles(t, []mongodb.TitleDb)`.
 
 > Do NOT run this tool as part of the change — it would overwrite the committed fixtures with TMDB-shaped data and break existing test assertions. The goal here is only that it compiles against the new provider and that `seedTitles` reads the DB shape.
@@ -2228,13 +2238,13 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
-	"github.com/lealre/movies-backend/internal/titleprovider"
+	"github.com/lealre/movies-backend/internal/titleprovider/factory"
 )
 
 func main() {
 	_ = godotenv.Load()
 
-	provider, err := titleprovider.NewFromEnv()
+	provider, err := factory.NewFromEnv()
 	if err != nil {
 		log.Fatalf("Failed to build title provider: %v", err)
 	}
