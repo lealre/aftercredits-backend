@@ -52,6 +52,33 @@ func TestAddTitlesAdmin(t *testing.T) {
 		require.NotNil(t, titleResp.AddedAt, "the addedAt field should not be nil when adding a title")
 	})
 
+	t.Run("Test adding a title with an unresolvable IMDb URL should return 404", func(t *testing.T) {
+		resetDB(t)
+
+		_, token := addUserAdminInDb(t, users.NewUserRequest{
+			Username: "usertest",
+			Password: "#Usertest1234",
+		})
+
+		reqBody := titles.AddTitleRequest{
+			URL: "https://www.imdb.com/title/tt9999999/",
+		}
+		jsonData, err := json.Marshal(reqBody)
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodPost,
+			testServer.URL+"/titles",
+			bytes.NewBuffer(jsonData),
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
 	t.Run("Test adding a title as regular user should return 403", func(t *testing.T) {
 		resetDB(t)
 

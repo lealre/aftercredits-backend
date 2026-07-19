@@ -167,3 +167,37 @@ func TestSearchTitles_ResolvesImdbID(t *testing.T) {
 		t.Fatalf("item1 %+v", items[1])
 	}
 }
+
+func TestSearchTitles_SkipsResultWhenExternalIDsCallFails(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/search/multi", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[
+			{"id":238,"media_type":"movie","title":"The Godfather","release_date":"1972-03-14",
+			 "poster_path":"/p.jpg","vote_average":8.7,"vote_count":100},
+			{"id":1396,"media_type":"tv","name":"Breaking Bad","first_air_date":"2008-01-20",
+			 "poster_path":"/bb.jpg","vote_average":8.9,"vote_count":200}]}`))
+	})
+	// The movie's external_ids lookup fails; the tv one succeeds.
+	mux.HandleFunc("/movie/238/external_ids", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	mux.HandleFunc("/tv/1396/external_ids", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"imdb_id":"tt0903747"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := newWithBaseURL(srv.URL, "key")
+	items, err := p.SearchTitles(context.Background(), "godfather", 5)
+	if err != nil {
+		t.Fatalf("Search should not error when one external_ids call fails: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item (the failing one skipped), got %d: %+v", len(items), items)
+	}
+	if items[0].ID != "tt0903747" || items[0].Type != "tvSeries" {
+		t.Fatalf("item0 %+v", items[0])
+	}
+}

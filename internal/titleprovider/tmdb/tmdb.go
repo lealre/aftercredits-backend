@@ -183,7 +183,7 @@ func (p *Provider) SearchTitles(ctx context.Context, query string, limit int) ([
 			path = fmt.Sprintf("/tv/%d/external_ids", r.ID)
 		}
 		if err := p.getJSON(ctx, path, nil, &ext); err != nil {
-			return nil, err
+			continue // skip this result if external_ids lookup fails, don't abort the whole search
 		}
 		if ext.IMDbID == "" { // drop titles with no linked IMDb ID
 			continue
@@ -351,18 +351,18 @@ type findResult struct {
 }
 
 type movieDetails struct {
-	ID                  int           `json:"id"`
-	Title               string        `json:"title"`
-	Overview            string        `json:"overview"`
-	ReleaseDate         string        `json:"release_date"`
-	Runtime             int           `json:"runtime"`
-	PosterPath          string        `json:"poster_path"`
-	VoteAverage         float64       `json:"vote_average"`
-	VoteCount           int           `json:"vote_count"`
-	Genres              []tmdbGenre   `json:"genres"`
-	SpokenLanguages     []tmdbLang    `json:"spoken_languages"`
-	ProductionCountries []tmdbCountry `json:"production_countries"`
-	Credits             tmdbCredits   `json:"credits"`
+	ID                  int             `json:"id"`
+	Title               string          `json:"title"`
+	Overview            string          `json:"overview"`
+	ReleaseDate         string          `json:"release_date"`
+	Runtime             int             `json:"runtime"`
+	PosterPath          string          `json:"poster_path"`
+	VoteAverage         float64         `json:"vote_average"`
+	VoteCount           int             `json:"vote_count"`
+	Genres              []tmdbGenre     `json:"genres"`
+	SpokenLanguages     []tmdbLang      `json:"spoken_languages"`
+	ProductionCountries []tmdbCountry   `json:"production_countries"`
+	Credits             tmdbCredits     `json:"credits"`
 	ExternalIDs         tmdbExternalIDs `json:"external_ids"`
 }
 

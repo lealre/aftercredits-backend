@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
+	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
 func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +79,10 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 
 	title, err := titles.AddNewTitle(api.Db, api.Provider, r.Context(), titleID)
 	if err != nil {
+		if errors.Is(err, titleprovider.ErrTitleNotFound) {
+			respondWithError(w, http.StatusNotFound, "Title not found")
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error adding title")
 		return
