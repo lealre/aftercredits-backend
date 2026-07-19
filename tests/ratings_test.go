@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lealre/movies-backend/internal/api"
-	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/ratings"
@@ -847,7 +846,7 @@ func TestDeleteRatingSeason(t *testing.T) {
 	expectedTVSeriesTitle2 := tvSeriesTitles[1]
 
 	// Add tv series titles to group
-	for _, title := range []imdb.Title{expectedTVSeriesTitle, expectedTVSeriesTitle2} {
+	for _, title := range []mongodb.TitleDb{expectedTVSeriesTitle, expectedTVSeriesTitle2} {
 		addTitleToGroup(t, groups.AddTitleToGroupRequest{
 			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
 			GroupId: group.Id,

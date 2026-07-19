@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
@@ -16,7 +15,7 @@ import (
 const MOVIE_TILES_FIXTURES_PATH = "fixtures/movieTitles.json"
 const TV_SERIES_TILES_FIXTURES_PATH = "fixtures/tvSeriesTitles.json"
 
-func seedTitles(t *testing.T, titles []imdb.Title) {
+func seedTitles(t *testing.T, titles []mongodb.TitleDb) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -33,7 +32,7 @@ func seedTitles(t *testing.T, titles []imdb.Title) {
 	}
 }
 
-func loadTitlesFixture(t *testing.T) []imdb.Title {
+func loadTitlesFixture(t *testing.T) []mongodb.TitleDb {
 	t.Helper()
 
 	absPath, err := filepath.Abs(MOVIE_TILES_FIXTURES_PATH)
@@ -46,7 +45,7 @@ func loadTitlesFixture(t *testing.T) []imdb.Title {
 		t.Fatalf("failed to read fixture file %s: %v", absPath, err)
 	}
 
-	var docs []imdb.Title
+	var docs []mongodb.TitleDb
 	if err := json.Unmarshal(data, &docs); err != nil {
 		t.Fatalf("failed to unmarshal fixture JSON: %v", err)
 	}
@@ -54,7 +53,7 @@ func loadTitlesFixture(t *testing.T) []imdb.Title {
 	return docs
 }
 
-func loadTVSeriesTitlesFixture(t *testing.T) []imdb.Title {
+func loadTVSeriesTitlesFixture(t *testing.T) []mongodb.TitleDb {
 	t.Helper()
 
 	absPath, err := filepath.Abs(TV_SERIES_TILES_FIXTURES_PATH)
@@ -67,7 +66,7 @@ func loadTVSeriesTitlesFixture(t *testing.T) []imdb.Title {
 		t.Fatalf("failed to read fixture file %s: %v", absPath, err)
 	}
 
-	var docs []imdb.Title
+	var docs []mongodb.TitleDb
 	if err := json.Unmarshal(data, &docs); err != nil {
 		t.Fatalf("failed to unmarshal fixture JSON: %v", err)
 	}

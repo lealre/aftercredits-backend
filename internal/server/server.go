@@ -7,21 +7,27 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/titleprovider"
 	"github.com/lealre/movies-backend/internal/titleprovider/factory"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// NewServer builds the production server, selecting the title provider from env.
 func NewServer(db *mongo.Client) (http.Handler, error) {
-	mux := http.NewServeMux()
-
-	dbClient := mongodb.NewDB(db)
-
 	provider, err := factory.NewFromEnv()
 	if err != nil {
 		return nil, err
 	}
 	log.Printf("Using title provider: %s", provider.Name())
+	return NewServerWithProvider(db, provider), nil
+}
 
+// NewServerWithProvider builds the server with an explicit title provider.
+// Tests use this to inject a fixture-backed fake provider (no network).
+func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider) http.Handler {
+	mux := http.NewServeMux()
+
+	dbClient := mongodb.NewDB(db)
 	a := api.NewAPI(dbClient, provider)
 
 	// TODO: Updated this
@@ -69,7 +75,7 @@ func NewServer(db *mongo.Client) (http.Handler, error) {
 	handler := AuthMiddleware(*a.Secret, dbClient)(mux)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
 
-	return handler, nil
+	return handler
 }
 
 func ListenAndServe(db *mongo.Client) error {
