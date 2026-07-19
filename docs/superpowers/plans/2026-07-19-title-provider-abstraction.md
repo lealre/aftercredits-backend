@@ -2212,18 +2212,153 @@ git commit -m "feat: inject title provider into API and cron routine"
 
 ---
 
-### Task 8: Migrate the test-fixtures tool + `seedTitles`
+### Task 8: Hermetic test provider + migrate test-fixtures & `seedTitles`
+
+> **Why this differs from the original spec:** the spec wrongly assumed no
+> integration test calls the provider. In fact `tests/titles_test.go`'s
+> "add title as admin" test does `POST /titles` → `AddNewTitle` →
+> `provider.GetTitle`, and after Task 6 `NewServer` also builds the provider
+> from env (erroring without `TMDB_API_KEY`). Decision (approved): make the
+> integration suite hermetic by injecting a fixture-backed **fake provider**
+> via a new `NewServerWithProvider` seam — no network, no API key in CID.
 
 **Files:**
-- Modify: `cmd/test-fixtures/main.go`, `tests/titles_setup_test.go`.
+- Modify: `internal/server/server.go` (add `NewServerWithProvider` seam), `tests/setup_test.go` (inject fake provider), `tests/titles_setup_test.go` (`seedTitles`/loaders → `mongodb.TitleDb`), `cmd/test-fixtures/main.go`.
+- Create: `tests/fake_provider_test.go` (fixture-backed fake provider).
 
 **Interfaces:**
-- Consumes: `factory.NewFromEnv`, `provider.GetTitle` (Tasks 1–4), `titles.MapProviderTitleToDb` (Task 5), `mongodb.TitleDb`.
-- Produces: fixtures written as `[]mongodb.TitleDb`; `seedTitles(t, []mongodb.TitleDb)`.
+- Consumes: `titleprovider.Provider` (Task 1), `factory.NewFromEnv` (Task 4), `titles.MapProviderTitleToDb` (Task 5), `mongodb.TitleDb`.
+- Produces:
+  - `server.NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider) http.Handler`
+  - `server.NewServer(db *mongo.Client) (http.Handler, error)` now builds the provider via `factory.NewFromEnv()` and delegates to `NewServerWithProvider`.
+  - test helper `newFakeTitleProvider() *fakeTitleProvider` implementing `titleprovider.Provider`.
+  - `seedTitles(t, []mongodb.TitleDb)`, loaders returning `[]mongodb.TitleDb`.
 
-> Do NOT run this tool as part of the change — it would overwrite the committed fixtures with TMDB-shaped data and break existing test assertions. The goal here is only that it compiles against the new provider and that `seedTitles` reads the DB shape.
+> Do NOT run `cmd/test-fixtures` as part of this change — it would overwrite the committed fixtures with TMDB-shaped data and break existing assertions. It only needs to compile.
 
-- [ ] **Step 1: Rewrite `cmd/test-fixtures/main.go`**
+- [ ] **Step 1: Add the `NewServerWithProvider` seam** (`internal/server/server.go`)
+
+Refactor so the route-wiring body lives in `NewServerWithProvider`, and `NewServer` builds the provider then delegates. Replace the current `NewServer` function (the whole `func NewServer(db *mongo.Client) (http.Handler, error) { ... }` from Task 6) with these TWO functions. **Move the existing route-registration body verbatim** (all the `mux.HandleFunc(...)` lines and the middleware wrapping) into `NewServerWithProvider` — do not retype or reorder the routes.
+
+```go
+// NewServer builds the production server, selecting the title provider from env.
+func NewServer(db *mongo.Client) (http.Handler, error) {
+	provider, err := factory.NewFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Using title provider: %s", provider.Name())
+	return NewServerWithProvider(db, provider), nil
+}
+
+// NewServerWithProvider builds the server with an explicit title provider.
+// Tests use this to inject a fixture-backed fake provider (no network).
+func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider) http.Handler {
+	mux := http.NewServeMux()
+
+	dbClient := mongodb.NewDB(db)
+	a := api.NewAPI(dbClient, provider)
+
+	// TODO: Updated this
+	secret := "my-secret"
+	a.Secret = &secret
+
+	// ... MOVE ALL EXISTING mux.HandleFunc(...) ROUTE REGISTRATIONS HERE VERBATIM ...
+
+	handler := AuthMiddleware(*a.Secret, dbClient)(mux)
+	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
+
+	return handler
+}
+```
+
+Imports: `NewServerWithProvider` now references `titleprovider.Provider`, so the import block needs BOTH `"github.com/lealre/movies-backend/internal/titleprovider"` and `"github.com/lealre/movies-backend/internal/titleprovider/factory"`.
+
+- [ ] **Step 2: Create the fake provider** (`tests/fake_provider_test.go`)
+
+```go
+package tests
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+
+	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/titleprovider"
+)
+
+// fakeTitleProvider implements titleprovider.Provider for integration tests,
+// backed by the on-disk fixtures. It performs no network calls, so the suite
+// needs neither TMDB_API_KEY nor connectivity.
+type fakeTitleProvider struct {
+	byID map[string]mongodb.TitleDb
+}
+
+func newFakeTitleProvider() *fakeTitleProvider {
+	f := &fakeTitleProvider{byID: map[string]mongodb.TitleDb{}}
+	for _, path := range []string{MOVIE_TILES_FIXTURES_PATH, TV_SERIES_TILES_FIXTURES_PATH} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue // fixtures optional; GetTitle returns ErrTitleNotFound if absent
+		}
+		var docs []mongodb.TitleDb
+		if err := json.Unmarshal(data, &docs); err != nil {
+			continue
+		}
+		for _, d := range docs {
+			f.byID[d.ID] = d
+		}
+	}
+	return f
+}
+
+func (f *fakeTitleProvider) Name() string { return "fake" }
+
+func (f *fakeTitleProvider) GetTitle(_ context.Context, imdbID string) (*titleprovider.Title, error) {
+	d, ok := f.byID[imdbID]
+	if !ok {
+		return nil, titleprovider.ErrTitleNotFound
+	}
+	t := titleprovider.Title{
+		ID:             d.ID,
+		Type:           d.Type,
+		PrimaryTitle:   d.PrimaryTitle,
+		PrimaryImage:   titleprovider.Image{URL: d.PrimaryImage.URL, Width: d.PrimaryImage.Width, Height: d.PrimaryImage.Height},
+		StartYear:      d.StartYear,
+		RuntimeSeconds: d.RuntimeSeconds,
+		Genres:         d.Genres,
+		Rating:         titleprovider.Rating{AggregateRating: d.Rating.AggregateRating, VoteCount: d.Rating.VoteCount},
+		Plot:           d.Plot,
+	}
+	return &t, nil
+}
+
+func (f *fakeTitleProvider) SearchTitles(_ context.Context, _ string, _ int) ([]titleprovider.SearchItem, error) {
+	return nil, nil
+}
+```
+
+- [ ] **Step 3: Inject the fake in test setup** (`tests/setup_test.go`)
+
+The current line `handler := server.NewServer(testClient)` breaks (Task 6 made `NewServer` return two values). Replace it with the injected fake provider:
+
+```go
+	handler := server.NewServerWithProvider(testClient, newFakeTitleProvider())
+```
+
+(No error to handle — `NewServerWithProvider` returns only `http.Handler`.)
+
+- [ ] **Step 4: Migrate `seedTitles` + loaders** (`tests/titles_setup_test.go`)
+
+Replace the `internal/imdb` import with `internal/mongodb` (already imported — so just drop the `imdb` import) and change every `[]imdb.Title` to `[]mongodb.TitleDb`:
+- `func seedTitles(t *testing.T, titles []mongodb.TitleDb)`
+- `loadTitlesFixture` returns `[]mongodb.TitleDb`; its local `var docs []imdb.Title` → `var docs []mongodb.TitleDb`
+- `loadTVSeriesTitlesFixture` returns `[]mongodb.TitleDb`; same local change
+
+The existing fixture files unmarshal cleanly into `mongodb.TitleDb` (identical json tags). Tests only read `.ID`/`.PrimaryTitle`/`.Type` off the results (verified), so no call-site changes are needed. After editing, run `grep -rn "imdb\." tests/` and fix any stragglers (there should be none).
+
+- [ ] **Step 5: Rewrite `cmd/test-fixtures/main.go`**
 
 ```go
 package main
@@ -2317,20 +2452,22 @@ func seedTitles(t *testing.T, titles []mongodb.TitleDb) {
 
 and update the two fixture loader functions (around lines 40–75) that unmarshal into `[]imdb.Title` to unmarshal into `[]mongodb.TitleDb`. Also update any test call sites that build `[]imdb.Title` literals to `[]mongodb.TitleDb` (search: `grep -rn "imdb\." tests/`).
 
-- [ ] **Step 3: Build tests + fixtures tool**
+- [ ] **Step 6: Build everything + vet**
 
-Run: `go vet ./cmd/test-fixtures/... && go build ./cmd/test-fixtures/...`
-Expected: PASS
+Run: `go build ./... && go vet ./...`
+Expected: PASS (whole module compiles, incl. `tests/` and `cmd/test-fixtures`; `internal/imdb` still exists, removed in Task 9).
 
-Run: `go build ./tests/... 2>&1 | head` then `go test ./tests/ -run xxx_compile_only -count=1` is not applicable; instead compile the test binary:
-Run: `go test ./tests/ -run TestNothing -count=1`
-Expected: builds and runs (0 tests matched is fine — proves the test package compiles).
+- [ ] **Step 7: Run the full integration suite (now hermetic)**
 
-- [ ] **Step 4: Commit**
+Run: `go test ./tests/ -count=1`
+Expected: PASS — the fake provider serves `POST /titles` from fixtures, so no `TMDB_API_KEY` or network is needed. (Requires Docker for the MongoDB testcontainer. If Docker is unavailable in this environment, instead run `go test ./tests/ -run TestNothing -count=1` to prove the package compiles, and report that the full run could not execute for lack of Docker — do NOT report the suite as passing if it did not run.)
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add cmd/test-fixtures/main.go tests/titles_setup_test.go tests/
-git commit -m "refactor: migrate test-fixtures and seedTitles off internal/imdb"
+git add internal/server/server.go tests/fake_provider_test.go tests/setup_test.go \
+  tests/titles_setup_test.go cmd/test-fixtures/main.go
+git commit -m "test: hermetic fake title provider; migrate fixtures off internal/imdb"
 ```
 
 ---
