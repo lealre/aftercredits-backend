@@ -1,7 +1,17 @@
+<a name="v0.0.9"></a>
+## [v0.0.9](https://github.com/lealre/fs-mcp/compare/v0.0.8...v0.0.9) (2026-07-19)
+
+* Add pluggable title metadata provider behind a Provider interface
+* Add TMDB provider and select provider via TITLE_PROVIDER env var
+* Migrate off api.imdbapi.dev (service discontinued) to TMDB
+* Keep imdbapi.dev provider for env-var port-back
 
 <a name="v0.0.6"></a>
 ## [v0.0.6](https://github.com/lealre/fs-mcp/compare/v0.0.5...v0.0.6) (2026-02-14)
 
+* Add routines for pi - V0.0.6 ([#8](https://github.com/lealre/fs-mcp/issues/8))
+* Update CHANGELOG.md
+* Update README.md
 * Add cron routine to use in pi
 * Small improvements in routines scripts
 * Add mongo client sample format for vscode extension
