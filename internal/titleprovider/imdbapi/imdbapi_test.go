@@ -3,9 +3,12 @@ package imdbapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
 func TestGetTitle_MovieMapsFields(t *testing.T) {
@@ -67,6 +70,65 @@ func TestGetTitle_TVFetchesSeasonsAndEpisodes(t *testing.T) {
 	}
 	if len(got.Episodes) != 2 || got.Episodes[0].Title != "Pilot" {
 		t.Fatalf("episodes %+v", got.Episodes)
+	}
+}
+
+func TestGetTitle_NotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/titles/tt0000000", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := newWithBaseURL(srv.URL)
+	_, err := p.GetTitle(context.Background(), "tt0000000")
+	if err == nil {
+		t.Fatalf("GetTitle should return error for 404")
+	}
+	if !errors.Is(err, titleprovider.ErrTitleNotFound) {
+		t.Fatalf("expected ErrTitleNotFound, got %v", err)
+	}
+}
+
+func TestGetTitle_TVWithMultiPageEpisodes(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/titles/tt0903747", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"tt0903747","type":"tvSeries","primaryTitle":"Breaking Bad",
+			"rating":{"aggregateRating":8.9,"voteCount":200}}`))
+	})
+	mux.HandleFunc("/titles/tt0903747/seasons", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"seasons":[{"season":"1","episodeCount":3}]}`))
+	})
+	mux.HandleFunc("/titles/tt0903747/episodes", func(w http.ResponseWriter, r *http.Request) {
+		pageToken := r.URL.Query().Get("pageToken")
+		if pageToken == "" {
+			// First page
+			_, _ = w.Write([]byte(`{"episodes":[
+				{"id":"tt10","title":"Pilot","season":"1","episodeNumber":1},
+				{"id":"tt11","title":"Cat","season":"1","episodeNumber":2}],
+				"nextPageToken":"page2"}`))
+		} else {
+			// Second page
+			_, _ = w.Write([]byte(`{"episodes":[
+				{"id":"tt12","title":"Dog","season":"1","episodeNumber":3}],
+				"nextPageToken":""}`))
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := newWithBaseURL(srv.URL)
+	got, err := p.GetTitle(context.Background(), "tt0903747")
+	if err != nil {
+		t.Fatalf("GetTitle: %v", err)
+	}
+	if len(got.Episodes) != 3 {
+		t.Fatalf("expected 3 episodes from both pages, got %d: %+v", len(got.Episodes), got.Episodes)
+	}
+	if got.Episodes[0].Title != "Pilot" || got.Episodes[1].Title != "Cat" || got.Episodes[2].Title != "Dog" {
+		t.Fatalf("episodes not in correct order: %+v", got.Episodes)
 	}
 }
 

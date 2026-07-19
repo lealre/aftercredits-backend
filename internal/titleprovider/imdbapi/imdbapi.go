@@ -48,6 +48,9 @@ func (p *Provider) getJSON(ctx context.Context, path string, query url.Values, o
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusNotFound {
+			return titleprovider.ErrTitleNotFound
+		}
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("imdbapi: non-2xx status %s for %s - %s", resp.Status, path, string(body))
 	}
