@@ -241,7 +241,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 
 	if !titleExists {
 		logger.Printf("Title %s not found in main titles collection, adding it", titleID)
-		_, err = titles.AddNewTitle(api.Db, r.Context(), titleID)
+		_, err = titles.AddNewTitle(api.Db, api.Provider, r.Context(), titleID)
 		if err != nil {
 			logger.Printf("ERROR: adding new title %s: %v", titleID, err)
 			respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")

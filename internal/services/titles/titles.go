@@ -2,13 +2,12 @@ package titles
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
-	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/titleprovider"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -147,62 +146,18 @@ func GetPageOfTitles(
 	}, nil
 }
 
-func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, error) {
-	// TODO: Handle the case where the titles id is returning nothing from IMDB API
+func AddNewTitle(db *mongodb.DB, provider titleprovider.Provider, ctx context.Context, titleId string) (Title, error) {
 	logger := logx.FromContext(ctx)
 
-	body, err := imdb.FetchTitle(titleId)
+	providerTitle, err := provider.GetTitle(ctx, titleId)
 	if err != nil {
 		return Title{}, err
 	}
-
-	var title mongodb.TitleDb
-	if err := json.Unmarshal(body, &title); err != nil {
-		return Title{}, err
+	if providerTitle.Type == "tvSeries" || providerTitle.Type == "tvMiniSeries" {
+		logger.Printf("Title %s is a TV series with %d seasons", titleId, len(providerTitle.Seasons))
 	}
 
-	// If title is a TV series, fetch seasons/episodes from IMDB (for validation purposes)
-	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Title %s is a TV series, fetching seasons/episodes from IMDB", titleId)
-		seasonsBody, err := imdb.FetchSeasons(titleId)
-		if err != nil {
-			return Title{}, err
-		}
-
-		var seasonsResp imdb.SeasonsResponse
-		if err := json.Unmarshal(seasonsBody, &seasonsResp); err != nil {
-			return Title{}, err
-		}
-
-		// Fetch all episodes with pagination
-		allEpisodes := []imdb.Episode{}
-		pageSize := 50
-		pageToken := ""
-
-		for {
-			episodesBody, err := imdb.FetchEpisodes(titleId, pageSize, pageToken)
-			if err != nil {
-				return Title{}, err
-			}
-
-			var episodesResp imdb.EpisodesResponse
-			if err := json.Unmarshal(episodesBody, &episodesResp); err != nil {
-				return Title{}, err
-			}
-
-			allEpisodes = append(allEpisodes, episodesResp.Episodes...)
-
-			// If there's no next page token, we're done
-			if episodesResp.NextPageToken == "" {
-				break
-			}
-
-			pageToken = episodesResp.NextPageToken
-		}
-
-		title.Seasons = MapImdbSeasonsToDbSeasons(seasonsResp.Seasons)
-		title.Episodes = MapImdbEpisodesToDbEpisodes(allEpisodes)
-	}
+	title := MapProviderTitleToDb(*providerTitle)
 
 	// Set missing fields
 	now := time.Now()
@@ -223,10 +178,9 @@ func AddNewTitle(db *mongodb.DB, ctx context.Context, titleId string) (Title, er
 		if !mongo.IsDuplicateKeyError(err) {
 			return Title{}, err
 		}
-		// If duplicate, try to read back the stored document
-		if stored, gerr := db.TitleExists(ctx, titleId); gerr == nil && stored {
-			raw, _ := json.Marshal(stored)
-			_ = json.Unmarshal(raw, &title)
+		// If duplicate, read back the stored document
+		if stored, gerr := db.GetTitleById(ctx, titleId); gerr == nil {
+			title = stored
 		}
 	}
 
@@ -251,16 +205,10 @@ func GetTitleById(db *mongodb.DB, ctx context.Context, titleId string) (Title, e
 	return MapDbTitleToApiTitle(titleDb), nil
 }
 
-func SearchTitles(searchQuery string, limit int) ([]Title, error) {
-	body, err := imdb.FetchTitlesBySearch(searchQuery, limit)
+func SearchTitles(provider titleprovider.Provider, ctx context.Context, searchQuery string, limit int) ([]Title, error) {
+	items, err := provider.SearchTitles(ctx, searchQuery, limit)
 	if err != nil {
 		return nil, err
 	}
-
-	var titlesResp imdb.SearchTitlesResponse
-	if err := json.Unmarshal(body, &titlesResp); err != nil {
-		return nil, err
-	}
-
-	return MapImdbSearchTitlesToTitles(titlesResp.Titles), nil
+	return MapProviderSearchItemsToTitles(items), nil
 }

@@ -7,14 +7,22 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/titleprovider/factory"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func NewServer(db *mongo.Client) http.Handler {
+func NewServer(db *mongo.Client) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	dbClient := mongodb.NewDB(db)
-	a := api.NewAPI(dbClient)
+
+	provider, err := factory.NewFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Using title provider: %s", provider.Name())
+
+	a := api.NewAPI(dbClient, provider)
 
 	// TODO: Updated this
 	secret := "my-secret"
@@ -61,17 +69,20 @@ func NewServer(db *mongo.Client) http.Handler {
 	handler := AuthMiddleware(*a.Secret, dbClient)(mux)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
 
-	return handler
+	return handler, nil
 }
 
 func ListenAndServe(db *mongo.Client) error {
+	handler, err := NewServer(db)
+	if err != nil {
+		return fmt.Errorf("failed to build server: %w", err)
+	}
 	server := &http.Server{
 		Addr:    ":8080",
-		Handler: NewServer(db),
+		Handler: handler,
 	}
 	log.Println("Server running on :8080")
-	err := server.ListenAndServe()
-	if err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		return fmt.Errorf("error while starting server: %v", err)
 	}
 	log.Println("Server started listening on port 8080")

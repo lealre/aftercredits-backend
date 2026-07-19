@@ -75,7 +75,7 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	title, err := titles.AddNewTitle(api.Db, r.Context(), titleID)
+	title, err := titles.AddNewTitle(api.Db, api.Provider, r.Context(), titleID)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error adding title")
@@ -133,7 +133,7 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 		limit = 5
 	}
 
-	titles, err := titles.SearchTitles(searchQuery, limit)
+	titles, err := titles.SearchTitles(api.Provider, r.Context(), searchQuery, limit)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to search titles")

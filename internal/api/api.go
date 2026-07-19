@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
 type ErrorResponse struct {
@@ -14,12 +15,13 @@ type DefaultResponse struct {
 }
 
 type API struct {
-	Db     *mongodb.DB
-	Secret *string
+	Db       *mongodb.DB
+	Secret   *string
+	Provider titleprovider.Provider
 }
 
-func NewAPI(db *mongodb.DB) *API {
-	return &API{Db: db}
+func NewAPI(db *mongodb.DB, provider titleprovider.Provider) *API {
+	return &API{Db: db, Provider: provider}
 }
 
 var PublicPaths = map[string]bool{
