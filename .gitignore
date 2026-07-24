@@ -34,3 +34,6 @@ go.work.sum
 backups/
 
 *.log
+# Superpowers planning artifacts (local only)
+docs/superpowers/
+.superpowers/
