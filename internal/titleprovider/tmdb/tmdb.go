@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
@@ -16,6 +18,14 @@ import (
 const (
 	defaultBaseURL = "https://api.themoviedb.org/3"
 	imageBaseURL   = "https://image.tmdb.org/t/p/original"
+
+	// maxRequestsPerSecond paces outbound calls below TMDB's ~50 req/s soft
+	// cap so bulk jobs (the cron refresh) don't trip HTTP 429.
+	maxRequestsPerSecond = 40
+	// defaultMaxRetries bounds how many times a 429 is retried before failing.
+	defaultMaxRetries = 4
+	// maxBackoff caps the exponential backoff used when a 429 has no Retry-After.
+	maxBackoff = 10 * time.Second
 )
 
 // Provider implements titleprovider.Provider against The Movie Database (TMDB) v3.
@@ -23,21 +33,97 @@ type Provider struct {
 	baseURL string
 	apiKey  string
 	client  *http.Client
+
+	// maxRetries is how many additional attempts a 429 gets.
+	maxRetries int
+	// sleep is the backoff sleep; overridable in tests.
+	sleep func(time.Duration)
+
+	// Throttle: enforce a minimum spacing between requests (shared across
+	// goroutines) so concurrent callers stay under the TMDB rate cap.
+	mu          sync.Mutex
+	minInterval time.Duration
+	nextAllowed time.Time
 }
 
-// New returns a TMDB provider using the public v3 base URL.
+// New returns a TMDB provider using the public v3 base URL, throttled to stay
+// under TMDB's rate cap and retrying transient 429 responses.
 func New(apiKey string) *Provider {
-	return &Provider{baseURL: defaultBaseURL, apiKey: apiKey, client: http.DefaultClient}
+	return &Provider{
+		baseURL:     defaultBaseURL,
+		apiKey:      apiKey,
+		client:      http.DefaultClient,
+		maxRetries:  defaultMaxRetries,
+		sleep:       time.Sleep,
+		minInterval: time.Second / maxRequestsPerSecond,
+	}
 }
 
-// newWithBaseURL is the test seam; it points the provider at a local server.
+// newWithBaseURL is the test seam; it points the provider at a local server and
+// disables throttling (minInterval 0) so tests run without artificial delay.
 func newWithBaseURL(baseURL, apiKey string) *Provider {
-	return &Provider{baseURL: baseURL, apiKey: apiKey, client: http.DefaultClient}
+	return &Provider{
+		baseURL:    baseURL,
+		apiKey:     apiKey,
+		client:     http.DefaultClient,
+		maxRetries: defaultMaxRetries,
+		sleep:      time.Sleep,
+	}
 }
 
 func (p *Provider) Name() string { return "tmdb" }
 
-// getJSON performs a GET with the api_key query param and decodes JSON into out.
+// throttle blocks until the next request slot is available, enforcing
+// minInterval spacing between calls. A zero minInterval disables throttling.
+func (p *Provider) throttle(ctx context.Context) error {
+	if p.minInterval <= 0 {
+		return nil
+	}
+	p.mu.Lock()
+	now := time.Now()
+	if p.nextAllowed.Before(now) {
+		p.nextAllowed = now
+	}
+	wait := p.nextAllowed.Sub(now)
+	p.nextAllowed = p.nextAllowed.Add(p.minInterval)
+	p.mu.Unlock()
+
+	if wait <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// retryAfterDelay derives how long to wait before retrying a 429. It honors a
+// Retry-After header (delay-seconds or HTTP-date); otherwise it falls back to
+// capped exponential backoff keyed on the attempt number.
+func retryAfterDelay(header string, attempt int) time.Duration {
+	if header = strings.TrimSpace(header); header != "" {
+		if secs, err := strconv.Atoi(header); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
+		}
+		if t, err := http.ParseTime(header); err == nil {
+			if d := time.Until(t); d > 0 {
+				return d
+			}
+		}
+	}
+	d := (500 * time.Millisecond) << attempt
+	if d > maxBackoff {
+		d = maxBackoff
+	}
+	return d
+}
+
+// getJSON performs a throttled GET with the api_key query param, retrying on
+// HTTP 429, and decodes the JSON response into out.
 func (p *Provider) getJSON(ctx context.Context, path string, query url.Values, out any) error {
 	if query == nil {
 		query = url.Values{}
@@ -45,23 +131,45 @@ func (p *Provider) getJSON(ctx context.Context, path string, query url.Values, o
 	query.Set("api_key", p.apiKey)
 	reqURL := fmt.Sprintf("%s%s?%s", p.baseURL, path, query.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
+	var lastErr error
+	for attempt := 0; attempt <= p.maxRetries; attempt++ {
+		if err := p.throttle(ctx); err != nil {
+			return err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			delay := retryAfterDelay(resp.Header.Get("Retry-After"), attempt)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("tmdb: rate limited (429) on %s", path)
+			if attempt < p.maxRetries {
+				p.sleep(delay)
+				continue
+			}
+			return lastErr
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return fmt.Errorf("tmdb: non-2xx status %s for %s - %s", resp.Status, path, string(body))
+		}
+
+		err = json.NewDecoder(resp.Body).Decode(out)
+		resp.Body.Close()
 		return err
 	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("tmdb: non-2xx status %s for %s - %s", resp.Status, path, string(body))
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return lastErr
 }
 
 func (p *Provider) GetTitle(ctx context.Context, imdbID string) (*titleprovider.Title, error) {
