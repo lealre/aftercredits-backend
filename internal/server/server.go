@@ -7,14 +7,28 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/titleprovider"
+	"github.com/lealre/movies-backend/internal/titleprovider/factory"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func NewServer(db *mongo.Client) http.Handler {
+// NewServer builds the production server, selecting the title provider from env.
+func NewServer(db *mongo.Client) (http.Handler, error) {
+	provider, err := factory.NewFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Using title provider: %s", provider.Name())
+	return NewServerWithProvider(db, provider), nil
+}
+
+// NewServerWithProvider builds the server with an explicit title provider.
+// Tests use this to inject a fixture-backed fake provider (no network).
+func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider) http.Handler {
 	mux := http.NewServeMux()
 
 	dbClient := mongodb.NewDB(db)
-	a := api.NewAPI(dbClient)
+	a := api.NewAPI(dbClient, provider)
 
 	// TODO: Updated this
 	secret := "my-secret"
@@ -65,13 +79,16 @@ func NewServer(db *mongo.Client) http.Handler {
 }
 
 func ListenAndServe(db *mongo.Client) error {
+	handler, err := NewServer(db)
+	if err != nil {
+		return fmt.Errorf("failed to build server: %w", err)
+	}
 	server := &http.Server{
 		Addr:    ":8080",
-		Handler: NewServer(db),
+		Handler: handler,
 	}
 	log.Println("Server running on :8080")
-	err := server.ListenAndServe()
-	if err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		return fmt.Errorf("error while starting server: %v", err)
 	}
 	log.Println("Server started listening on port 8080")

@@ -51,7 +51,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to connect to test mongo: %v", err)
 	}
 
-	handler := server.NewServer(testClient)
+	handler := server.NewServerWithProvider(testClient, newFakeTitleProvider())
 	testServer = httptest.NewServer(handler)
 
 	code := m.Run()

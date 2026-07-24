@@ -1,8 +1,8 @@
 package titles
 
 import (
-	"github.com/lealre/movies-backend/internal/imdb"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
 func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
@@ -54,7 +54,7 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 	}
 }
 
-func MapImdbSeasonsToDbSeasons(seasons []imdb.Seasons) []mongodb.Seasons {
+func MapImdbSeasonsToDbSeasons(seasons []titleprovider.Season) []mongodb.Seasons {
 	dbSeasons := make([]mongodb.Seasons, len(seasons))
 	for i, season := range seasons {
 		dbSeasons[i] = mongodb.Seasons{
@@ -65,7 +65,7 @@ func MapImdbSeasonsToDbSeasons(seasons []imdb.Seasons) []mongodb.Seasons {
 	return dbSeasons
 }
 
-func MapImdbEpisodesToDbEpisodes(episodes []imdb.Episode) []mongodb.Episode {
+func MapImdbEpisodesToDbEpisodes(episodes []titleprovider.Episode) []mongodb.Episode {
 	dbEpisodes := make([]mongodb.Episode, len(episodes))
 	for i, episode := range episodes {
 		dbEpisode := mongodb.Episode{
@@ -118,28 +118,6 @@ func MapDbSeasonsToImdbSeasons(seasons []mongodb.Seasons) []Seasons {
 		}
 	}
 	return imdbSeasons
-}
-
-func MapImdbSearchTitlesToTitles(items []imdb.SearchTitleItem) []Title {
-	titles := make([]Title, len(items))
-	for i, item := range items {
-		titles[i] = Title{
-			Id:           item.ID,
-			Type:         item.Type,
-			PrimaryTitle: item.PrimaryTitle,
-			PrimaryImage: Image{
-				URL:    item.PrimaryImage.URL,
-				Width:  item.PrimaryImage.Width,
-				Height: item.PrimaryImage.Height,
-			},
-			StartYear: item.StartYear,
-			Rating: Rating{
-				AggregateRating: item.Rating.AggregateRating,
-				VoteCount:       item.Rating.VoteCount,
-			},
-		}
-	}
-	return titles
 }
 
 func MapDbEpisodesToImdbEpisodes(episodes []mongodb.Episode) []Episode {
