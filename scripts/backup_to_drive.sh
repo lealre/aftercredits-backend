@@ -25,7 +25,6 @@ export $(grep -v '^#' "${ENV_FILE}" | xargs)
 # Set defaults if not provided
 MONGO_HOST=${MONGO_HOST:-localhost}
 MONGO_PORT=${MONGO_PORT:-27017}
-MONGODB_DB=${MONGODB_DB:-brunan}
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_NAME="mongo_dump_${TIMESTAMP}"

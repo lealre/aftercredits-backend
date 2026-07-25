@@ -14,7 +14,6 @@ log "=========================================="
 # Set defaults if not provided (environment variables should be passed from .env)
 MONGO_HOST=${MONGO_HOST:-localhost}
 MONGO_PORT=${MONGO_PORT:-27017}
-MONGODB_DB=${MONGODB_DB:-brunan}
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_NAME="mongo_dump_${TIMESTAMP}"

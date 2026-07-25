@@ -2,17 +2,16 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 
 	"github.com/lealre/movies-backend/internal/auth"
+	"github.com/lealre/movies-backend/internal/config"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
-	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
 func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
@@ -63,13 +62,13 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	re := regexp.MustCompile(`^https?://(?:www\.)?imdb\.com/title/(tt[0-9]+)/?`)
 	m := re.FindStringSubmatch(req.URL)
 	if len(m) != 2 {
-		respondWithError(w, http.StatusBadRequest, "Invalid IMDb title URL")
+		respondWithError(w, titles.ErrorMap[titles.ErrInvalidIMDbURL], titles.ErrInvalidIMDbURL.Error())
 		return
 	}
 	titleID := m[1]
 
 	if titleExists, err := api.Db.TitleExists(r.Context(), titleID); titleExists {
-		respondWithError(w, http.StatusBadRequest, "Title already added")
+		respondWithError(w, titles.ErrorMap[titles.ErrTitleAlreadyExists], titles.ErrTitleAlreadyExists.Error())
 		return
 	} else if err != nil && err != mongodb.ErrRecordNotFound {
 		logger.Printf("ERROR: %v", err)
@@ -79,8 +78,8 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 
 	title, err := titles.AddNewTitle(api.Db, api.Provider, r.Context(), titleID)
 	if err != nil {
-		if errors.Is(err, titleprovider.ErrTitleNotFound) {
-			respondWithError(w, http.StatusNotFound, "Title not found")
+		if code, ok := titles.ErrorMap[err]; ok {
+			respondWithError(w, code, err.Error())
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -136,7 +135,7 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 
 	limit := generics.StringToInt(r.URL.Query().Get("limit"))
 	if limit <= 0 {
-		limit = 5
+		limit = config.DefaultSearchLimit()
 	}
 
 	titles, err := titles.SearchTitles(api.Provider, r.Context(), searchQuery, limit)

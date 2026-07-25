@@ -2,8 +2,10 @@ package titles
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/config"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -36,10 +38,10 @@ func GetPageOfTitles(
 ) (generics.Page[Title], error) {
 
 	if size <= 0 {
-		size = 20
+		size = config.DefaultPageSize()
 	}
-	if size > 100 {
-		size = 100
+	if maxSize := config.MaxPageSize(); size > maxSize {
+		size = maxSize
 	}
 	if page <= 0 {
 		page = 1
@@ -151,6 +153,11 @@ func AddNewTitle(db *mongodb.DB, provider titleprovider.Provider, ctx context.Co
 
 	providerTitle, err := provider.GetTitle(ctx, titleId)
 	if err != nil {
+		// Translate the provider's not-found into the titles service vocabulary
+		// so handlers map it via titles.ErrorMap (not the provider's error).
+		if errors.Is(err, titleprovider.ErrTitleNotFound) {
+			return Title{}, ErrTitleNotFound
+		}
 		return Title{}, err
 	}
 	if providerTitle.Type == "tvSeries" || providerTitle.Type == "tvMiniSeries" {

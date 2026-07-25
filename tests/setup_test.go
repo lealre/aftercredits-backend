@@ -26,7 +26,7 @@ const TEST_DB_NAME = "testDb"
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	os.Setenv("MONGODB_DB", TEST_DB_NAME)
+	os.Setenv("MONGO_DB", TEST_DB_NAME)
 	req := testcontainers.ContainerRequest{
 		Image:        "mongo:7.0",
 		ExposedPorts: []string{"27017/tcp"},
@@ -51,7 +51,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to connect to test mongo: %v", err)
 	}
 
-	handler := server.NewServerWithProvider(testClient, newFakeTitleProvider())
+	handler := server.NewServerWithProvider(testClient, newFakeTitleProvider(), "test-secret")
 	testServer = httptest.NewServer(handler)
 
 	code := m.Run()

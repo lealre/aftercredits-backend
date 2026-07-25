@@ -966,3 +966,99 @@ func TestDeleteCommentSeason(t *testing.T) {
 		require.Contains(t, respDeletedBody.ErrorMessage, comments.ErrCommentNotFound.Error()[1:])
 	})
 }
+
+func TestGetCommentsForTVSeries(t *testing.T) {
+	resetDB(t)
+
+	// ======================================================================
+	// 		TEST SETUP
+	// ======================================================================
+
+	// Create a new user
+	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testname",
+		Password: "testpass",
+	})
+
+	// Create a group for user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Add a TV series title to the database and to the group
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	seedTitles(t, tvSeriesTitles)
+	expectedTVSeriesTitle := tvSeriesTitles[0]
+
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTVSeriesTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// Add per-season comments for the TV series
+	commentTests := []struct {
+		season  int
+		comment string
+	}{
+		{season: 1, comment: "Season 1 comment"},
+		{season: 2, comment: "Season 2 comment"},
+	}
+
+	for _, tt := range commentTests {
+		season := tt.season
+		respComment := addComment(t, comments.NewComment{
+			GroupId: group.Id,
+			TitleId: expectedTVSeriesTitle.ID,
+			Comment: tt.comment,
+			Season:  &season,
+		}, tokenOwnerUser)
+		defer respComment.Body.Close()
+		require.Equal(t, http.StatusCreated, respComment.StatusCode)
+	}
+
+	// ======================================================================
+	// 		TEST GETTING COMMENTS FOR A TV SERIES
+	// ======================================================================
+
+	t.Run("Get comments for a TV series", func(t *testing.T) {
+		respComments := getCommentsFromApi(t, group.Id, expectedTVSeriesTitle.ID, tokenOwnerUser)
+		defer respComments.Body.Close()
+		require.Equal(t, http.StatusOK, respComments.StatusCode)
+
+		var respGetCommentsBody comments.AllCommentsFromTitle
+		require.NoError(t, json.NewDecoder(respComments.Body).Decode(&respGetCommentsBody))
+		require.Equal(t, 1, len(respGetCommentsBody.Comments), "Expected a single comment document for the TV series (one per user, holding all seasons)")
+
+		commentResp := respGetCommentsBody.Comments[0]
+		require.Equal(t, user.Id, commentResp.UserId)
+		require.Equal(t, expectedTVSeriesTitle.ID, commentResp.TitleId)
+		require.Nil(t, commentResp.Comment, "Expected top-level Comment to be nil for a TV series comment")
+		require.NotNil(t, commentResp.SeasonsComments)
+		require.Equal(t, len(commentTests), len(*commentResp.SeasonsComments))
+
+		for _, tt := range commentTests {
+			seasonComment, exists := (*commentResp.SeasonsComments)[strconv.Itoa(tt.season)]
+			require.True(t, exists, "Expected season %d comment to exist in response", tt.season)
+			require.Equal(t, tt.comment, seasonComment.Comment)
+			require.NotEmpty(t, seasonComment.AddedAt)
+			require.NotEmpty(t, seasonComment.UpdatedAt)
+		}
+
+		// Database assertion
+		commentDb := getCommentsFromDB(t, expectedTVSeriesTitle.ID)
+		require.Equal(t, 1, len(commentDb))
+		require.Equal(t, user.Id, commentDb[0].UserId)
+		require.Equal(t, expectedTVSeriesTitle.ID, commentDb[0].TitleId)
+		require.Nil(t, commentDb[0].Comment)
+		require.NotNil(t, commentDb[0].SeasonsComments)
+		require.Equal(t, len(commentTests), len(*commentDb[0].SeasonsComments))
+
+		for _, tt := range commentTests {
+			seasonCommentDb, exists := (*commentDb[0].SeasonsComments)[strconv.Itoa(tt.season)]
+			require.True(t, exists, "Expected season %d comment to exist in database", tt.season)
+			require.Equal(t, tt.comment, seasonCommentDb.Comment)
+			require.NotEmpty(t, seasonCommentDb.AddedAt)
+			require.NotEmpty(t, seasonCommentDb.UpdatedAt)
+		}
+	})
+}

@@ -1,5 +1,17 @@
+<a name="v0.0.11"></a>
+## [v0.0.11](https://github.com/lealre/aftercredits-backend/compare/v0.0.10...v0.0.11) (2026-07-25)
+
+* Require JWT_SECRET from env; remove the hardcoded signing secret
+* Standardize the DB env var to MONGO_DB with a generic default; align env.example
+* Make pagination configurable (DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, DEFAULT_SEARCH_LIMIT)
+* Add an ErrorMap to the titles service for consistent handler error mapping
+* Add CONVENTIONS.md (handlers vs services, error mapping, comment invariants)
+* Add season/series tests: add TV series to group, get comments for a TV series, group-series aggregation
+* Fix CHANGELOG repo URLs (fs-mcp -> aftercredits-backend) via .chglog config
+* Guard partial/zero episode release dates in the imdbapi provider
+
 <a name="v0.0.10"></a>
-## [v0.0.10](https://github.com/lealre/fs-mcp/compare/v0.0.9...v0.0.10) (2026-07-25)
+## [v0.0.10](https://github.com/lealre/aftercredits-backend/compare/v0.0.9...v0.0.10) (2026-07-25)
 
 * Add OMDb provider (real IMDb rating + votes, Metacritic) as a full provider
 * Add hybrid provider: TMDB metadata + OMDb IMDb ratings (new default deployment)
@@ -8,7 +20,7 @@
 * Add OMDB_API_KEY config; TITLE_PROVIDER now accepts hybrid | tmdb | omdb | imdbapi
 
 <a name="v0.0.9"></a>
-## [v0.0.9](https://github.com/lealre/fs-mcp/compare/v0.0.8...v0.0.9) (2026-07-19)
+## [v0.0.9](https://github.com/lealre/aftercredits-backend/compare/v0.0.8...v0.0.9) (2026-07-19)
 
 * Add pluggable title metadata provider behind a Provider interface
 * Add TMDB provider and select provider via TITLE_PROVIDER env var
@@ -16,9 +28,9 @@
 * Keep imdbapi.dev provider for env-var port-back
 
 <a name="v0.0.6"></a>
-## [v0.0.6](https://github.com/lealre/fs-mcp/compare/v0.0.5...v0.0.6) (2026-02-14)
+## [v0.0.6](https://github.com/lealre/aftercredits-backend/compare/v0.0.5...v0.0.6) (2026-02-14)
 
-* Add routines for pi - V0.0.6 ([#8](https://github.com/lealre/fs-mcp/issues/8))
+* Add routines for pi - V0.0.6 ([#8](https://github.com/lealre/aftercredits-backend/issues/8))
 * Update CHANGELOG.md
 * Update README.md
 * Add cron routine to use in pi
@@ -27,11 +39,11 @@
 * Update script to backup
 
 <a name="v0.0.5"></a>
-## [v0.0.5](https://github.com/lealre/fs-mcp/compare/v0.0.4...v0.0.5) (2026-02-08)
+## [v0.0.5](https://github.com/lealre/aftercredits-backend/compare/v0.0.4...v0.0.5) (2026-02-08)
 
-* Merge pull request [#7](https://github.com/lealre/fs-mcp/issues/7) from lealre/v0.0.5
+* Merge pull request [#7](https://github.com/lealre/aftercredits-backend/issues/7) from lealre/v0.0.5
 * Use rclone with drive
-* Merge pull request [#6](https://github.com/lealre/fs-mcp/issues/6) from lealre/v0.0.5
+* Merge pull request [#6](https://github.com/lealre/aftercredits-backend/issues/6) from lealre/v0.0.5
 * Add filter option for title type when getting titles from a group
 * test: New top level watchedAt logic for seasons
 * Update top level information when setting a season as watched
@@ -42,17 +54,17 @@
 * Update `CHANGELOG.md`
 
 ### Pull Requests
-* Merge pull request [#7](https://github.com/lealre/fs-mcp/issues/7) from lealre/v0.0.5
-* Merge pull request [#6](https://github.com/lealre/fs-mcp/issues/6) from lealre/v0.0.5
+* Merge pull request [#7](https://github.com/lealre/aftercredits-backend/issues/7) from lealre/v0.0.5
+* Merge pull request [#6](https://github.com/lealre/aftercredits-backend/issues/6) from lealre/v0.0.5
 
 
 <a name="v0.0.4"></a>
-## [v0.0.4](https://github.com/lealre/fs-mcp/compare/v0.0.3...v0.0.4) (2026-02-01)
+## [v0.0.4](https://github.com/lealre/aftercredits-backend/compare/v0.0.3...v0.0.4) (2026-02-01)
 
 * test: Deletion of ratings for series and movies
 * Add deletion of ratings for movie and series
-* Merge pull request [#5](https://github.com/lealre/fs-mcp/issues/5) from lealre/v0.0.4
-* Merge pull request [#4](https://github.com/lealre/fs-mcp/issues/4) from lealre/seasons
+* Merge pull request [#5](https://github.com/lealre/aftercredits-backend/issues/5) from lealre/v0.0.4
+* Merge pull request [#4](https://github.com/lealre/aftercredits-backend/issues/4) from lealre/seasons
 * test[seasons]: Add tests to the new comments sctruct
 * feat[seasons]: Update season struct for comments
 * test[seasons]: Add tests to the new ratings sctruct
@@ -125,14 +137,14 @@
 * Update changelog for version 0.0.3
 
 ### Pull Requests
-* Merge pull request [#5](https://github.com/lealre/fs-mcp/issues/5) from lealre/v0.0.4
-* Merge pull request [#4](https://github.com/lealre/fs-mcp/issues/4) from lealre/seasons
+* Merge pull request [#5](https://github.com/lealre/aftercredits-backend/issues/5) from lealre/v0.0.4
+* Merge pull request [#4](https://github.com/lealre/aftercredits-backend/issues/4) from lealre/seasons
 
 
 <a name="v0.0.3"></a>
-## [v0.0.3](https://github.com/lealre/fs-mcp/compare/v0.0.2...v0.0.3) (2025-12-13)
+## [v0.0.3](https://github.com/lealre/aftercredits-backend/compare/v0.0.2...v0.0.3) (2025-12-13)
 
-* Add basic authentication and authorization ([#3](https://github.com/lealre/fs-mcp/issues/3))
+* Add basic authentication and authorization ([#3](https://github.com/lealre/aftercredits-backend/issues/3))
 * Add missing return statment
 * Remove cmd folder from git track
 * Add endpoint to get a group
@@ -194,10 +206,10 @@
 * Add endpoint to add a user to a group
 
 <a name="v0.0.2"></a>
-## [v0.0.2](https://github.com/lealre/fs-mcp/compare/v0.0.1...v0.0.2) (2025-11-19)
+## [v0.0.2](https://github.com/lealre/aftercredits-backend/compare/v0.0.1...v0.0.2) (2025-11-19)
 
 * Update changelog for version `0.0.2`
-* Add groups management for users/titles ([#2](https://github.com/lealre/fs-mcp/issues/2))
+* Add groups management for users/titles ([#2](https://github.com/lealre/aftercredits-backend/issues/2))
 * test: update titles test
 * refactor: add default response in api for messages
 * refactor: separate mappers inside services
@@ -227,7 +239,7 @@
 * Add base sctruct for testing using testcontainers
 * Remove related comments when title is deleted
 * Remove hash check in `scripts/backup-volume.sh`
-* Refactor how handlers uses the database instance ([#1](https://github.com/lealre/fs-mcp/issues/1))
+* Refactor how handlers uses the database instance ([#1](https://github.com/lealre/aftercredits-backend/issues/1))
 * Complete refactor to users and comments
 * Complete refactor to titles and ratings
 * New base struct used to inject DB on apis

@@ -10,9 +10,13 @@ provider selected by the `TITLE_PROVIDER` env var. The default deployment uses t
 See **[Title metadata providers](internal/titleprovider/README.md)** for a
 comparison of each provider's strengths and weaknesses and the required API keys.
 
+Backend code conventions (handlers vs. services, error mapping, comment
+invariants) are documented in **[CONVENTIONS.md](CONVENTIONS.md)**.
+
 ## Table of Contents
 
 - [Title metadata providers](internal/titleprovider/README.md)
+- [Code conventions](CONVENTIONS.md)
 - [How to Run](#how-to-run)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
