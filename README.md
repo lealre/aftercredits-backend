@@ -4,8 +4,15 @@ This is the backend part of [this project](https://github.com/lealre/aftercredit
 
 It's written in Go, and the docker-compose file includes the respective MongoDB database image.
 
+Title metadata (ratings, seasons/episodes, posters, cast) comes from a pluggable
+provider selected by the `TITLE_PROVIDER` env var. The default deployment uses the
+**hybrid** provider — TMDB for rich metadata plus OMDb for the real IMDb rating.
+See **[Title metadata providers](internal/titleprovider/README.md)** for a
+comparison of each provider's strengths and weaknesses and the required API keys.
+
 ## Table of Contents
 
+- [Title metadata providers](internal/titleprovider/README.md)
 - [How to Run](#how-to-run)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)

@@ -1,3 +1,12 @@
+<a name="v0.0.10"></a>
+## [v0.0.10](https://github.com/lealre/fs-mcp/compare/v0.0.9...v0.0.10) (2026-07-25)
+
+* Add OMDb provider (real IMDb rating + votes, Metacritic) as a full provider
+* Add hybrid provider: TMDB metadata + OMDb IMDb ratings (new default deployment)
+* Fix ratings showing TMDB's community score instead of the IMDb rating
+* Document each provider's strengths/weaknesses (internal/titleprovider/README.md), linked from README
+* Add OMDB_API_KEY config; TITLE_PROVIDER now accepts hybrid | tmdb | omdb | imdbapi
+
 <a name="v0.0.9"></a>
 ## [v0.0.9](https://github.com/lealre/fs-mcp/compare/v0.0.8...v0.0.9) (2026-07-19)
 
