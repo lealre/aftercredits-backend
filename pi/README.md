@@ -28,7 +28,7 @@ Two scheduled tasks are configured:
    The `.env` file should contain:
    - **Cron schedules**: `BACKUP_SCHEDULE` and `MOVIES_UPDATE_SCHEDULE`
    - **Docker network**: `DOCKER_NETWORK` (default: `aftercredits_default`)
-   - **MongoDB settings**: `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_HOST`, `MONGO_PORT`, `MONGODB_DB`
+   - **MongoDB settings**: `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_HOST`, `MONGO_PORT`, `MONGO_DB`
    
    See `.env.example` for a complete example with comments.
 
