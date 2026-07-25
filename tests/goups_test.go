@@ -1697,3 +1697,210 @@ func TestGroupTitlesDelete(t *testing.T) {
 		require.Equal(t, 0, len(grouDb.Titles), "Expected group should have 0 title(s), got %d", len(grouDb.Titles))
 	})
 }
+
+func TestAddTVSeriesToGroupAsOwner(t *testing.T) {
+	resetDB(t)
+
+	// =========================================================
+	// 		TEST SETUP - ADDING A TV SERIES TO A GROUP
+	// =========================================================
+
+	// Create Owner User
+	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testNameOne",
+		Password: "testPass",
+	})
+
+	// Create a group for owner user
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Load a TV series title in database
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	seedTitles(t, tvSeriesTitles)
+	expectedTVSeriesTitle := tvSeriesTitles[0]
+
+	// =========================================================
+	// 		TEST ADDING A TV SERIES TO A GROUP
+	// =========================================================
+
+	t.Run("Add a TV series to a group as group owner successfully", func(t *testing.T) {
+		newTitle := groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTVSeriesTitle.ID),
+			GroupId: group.Id,
+		}
+
+		respGroupTitlesBody := addTitleToGroup(t, newTitle, tokenOwnerUser)
+		require.Contains(
+			t,
+			respGroupTitlesBody.Message,
+			fmt.Sprintf("Title %s added to group %s", expectedTVSeriesTitle.ID, group.Id),
+			"title id and/or group id not in message response after adding a title to a group",
+		)
+
+		// Database assertion to check if the TV series is persisted into the group
+		groupDb := getGroup(t, group.Id)
+		require.NotEmpty(t, groupDb)
+		require.NotEmpty(t, groupDb.Titles)
+		require.Equal(t, 1, len(groupDb.Titles))
+
+		groupTitleDb, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists, "Expected TV series title to exist in group titles map")
+		require.Equal(t, expectedTVSeriesTitle.ID, groupTitleDb.TitleId, "group title ID should match expected TV series ID when adding a title to a group")
+		require.NotEmpty(t, groupTitleDb.AddedAt, "AddedAt should not be empty when adding a title to a group")
+		require.NotEmpty(t, groupTitleDb.UpdatedAt, "UpdatedAt should not be empty when adding a title to a group")
+		require.False(t, groupTitleDb.Watched, "Watched should be false by default when adding a title to a group")
+		require.Empty(t, groupTitleDb.WatchedAt, "WatchedAt should be empty by default when adding a title to a group")
+		require.Nil(t, groupTitleDb.SeasonsWatched, "SeasonsWatched should be nil right after adding, before any season is marked watched")
+
+		// Fetch the group's titles from the API and assert the series' seasons/episodes are present
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenOwnerUser)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupTitles, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupTitles.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupTitles.StatusCode)
+
+		var respGroupTitlesPage generics.Page[groups.GroupTitleDetail]
+		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesPage))
+		require.Equal(t, 1, respGroupTitlesPage.TotalResults, "Expected TotalResults to be 1, got %d", respGroupTitlesPage.TotalResults)
+		require.Equal(t, 1, len(respGroupTitlesPage.Content), "Expected length of Content to be 1, got %d", len(respGroupTitlesPage.Content))
+
+		tvSeriesDetail := respGroupTitlesPage.Content[0]
+		require.Equal(t, expectedTVSeriesTitle.ID, tvSeriesDetail.Id)
+		require.Equal(t, expectedTVSeriesTitle.Type, tvSeriesDetail.Type)
+		require.NotEmpty(t, tvSeriesDetail.Seasons, "Expected the TV series to have seasons")
+		require.Equal(t, len(expectedTVSeriesTitle.Seasons), len(tvSeriesDetail.Seasons), "Expected the number of seasons in the response to match the fixture")
+		require.NotEmpty(t, tvSeriesDetail.Episodes, "Expected the TV series to have episodes")
+		require.Equal(t, len(expectedTVSeriesTitle.Episodes), len(tvSeriesDetail.Episodes), "Expected the number of episodes in the response to match the fixture")
+		require.False(t, tvSeriesDetail.Watched)
+		require.Nil(t, tvSeriesDetail.SeasonsWatched)
+	})
+}
+
+func TestGroupTitlesSeriesRatingAndWatchedAggregation(t *testing.T) {
+	resetDB(t)
+
+	// =========================================================
+	// 		TEST SETUP
+	// =========================================================
+
+	// Create a user and a group they own
+	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
+		Username: "testNameOne",
+		Password: "testPass",
+	})
+
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "testgroupname",
+	}, tokenOwnerUser)
+
+	// Load a TV series title and add it to the group
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	seedTitles(t, tvSeriesTitles)
+	expectedTVSeriesTitle := tvSeriesTitles[0]
+
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTVSeriesTitle.ID),
+		GroupId: group.Id,
+	}, tokenOwnerUser)
+
+	// Add ratings for seasons 1, 2 and 3
+	season1, season2, season3 := 1, 2, 3
+	noteSeason1 := float32(4)
+	noteSeason2 := float32(8)
+	noteSeason3 := float32(10)
+	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason1, &season1, tokenOwnerUser)
+	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason2, &season2, tokenOwnerUser)
+	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason3, &season3, tokenOwnerUser)
+
+	expectedAverageRating := (noteSeason1 + noteSeason2 + noteSeason3) / 3
+
+	// Mark all three seasons as watched, with season 2's watchedAt being the most recent
+	watched := true
+	testDate1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	testDate2 := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC) // most recent
+	testDate3 := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+
+	seasonWatchedTests := []struct {
+		season int
+		date   time.Time
+	}{
+		{season: season1, date: testDate1},
+		{season: season2, date: testDate2},
+		{season: season3, date: testDate3},
+	}
+
+	for _, tt := range seasonWatchedTests {
+		season := tt.season
+		date := tt.date
+		pathBody, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+			TitleId: expectedTVSeriesTitle.ID,
+			Season:  &season,
+			Watched: &watched,
+			WatchedAt: &generics.FlexibleDate{
+				Time: &date,
+			},
+		})
+		require.NoError(t, err)
+		patchGroupTitleWatched(t, group.Id, pathBody, tokenOwnerUser)
+	}
+
+	// =========================================================
+	// 		TEST GROUP TITLES AGGREGATION FOR A SERIES
+	// =========================================================
+
+	t.Run("Group titles for a series: rating is the season average and watched is the latest season", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet,
+			testServer.URL+"/groups/"+group.Id+"/titles",
+			nil,
+		)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tokenOwnerUser)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		respGroupTitles, err := client.Do(req)
+		require.NoError(t, err)
+		defer respGroupTitles.Body.Close()
+		require.Equal(t, http.StatusOK, respGroupTitles.StatusCode)
+
+		var respGroupTitlesBody generics.Page[groups.GroupTitleDetail]
+		require.NoError(t, json.NewDecoder(respGroupTitles.Body).Decode(&respGroupTitlesBody))
+		require.Equal(t, 1, len(respGroupTitlesBody.Content))
+
+		seriesDetail := respGroupTitlesBody.Content[0]
+		require.Equal(t, expectedTVSeriesTitle.ID, seriesDetail.Id)
+
+		// NOTE: seriesDetail.Rating.AggregateRating is the title's IMDb-sourced rating (fixture
+		// data) and is never recalculated from group ratings. The group's own rating for the
+		// series (the mean of all rated seasons, as verified in TestAddRating) is surfaced
+		// instead via GroupRatings, one entry per user who rated the title.
+		require.Len(t, seriesDetail.GroupRatings, 1, "Expected a single group rating entry for the single user who rated the series")
+		userRating := seriesDetail.GroupRatings[0]
+		require.Equal(t, user.Id, userRating.UserId)
+		require.Equal(t, expectedTVSeriesTitle.ID, userRating.TitleId)
+		require.Equal(t, expectedAverageRating, userRating.Note, "Expected the TV series' overall rating to be the mean of all rated seasons")
+		require.NotNil(t, userRating.SeasonsRatings)
+		require.Equal(t, 3, len(*userRating.SeasonsRatings))
+
+		// Top-level watched/watchedAt should reflect the most-recently watched season
+		require.True(t, seriesDetail.Watched, "Expected top-level Watched to be true when seasons are watched")
+		require.NotNil(t, seriesDetail.WatchedAt, "Expected top-level WatchedAt to not be nil")
+		require.Equal(t, testDate2, *seriesDetail.WatchedAt, "Expected top-level WatchedAt to be the latest watched season's date")
+
+		// Database assertion for the watched/watchedAt aggregation
+		groupDb := getGroup(t, group.Id)
+		titleDb, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		require.True(t, exists)
+		require.True(t, titleDb.Watched)
+		require.NotNil(t, titleDb.WatchedAt)
+		require.Equal(t, testDate2, *titleDb.WatchedAt)
+	})
+}

@@ -188,8 +188,11 @@ func mapEpisode(e wireEpisode) titleprovider.Episode {
 	if e.Rating != nil {
 		ep.Rating = &titleprovider.Rating{AggregateRating: e.Rating.AggregateRating, VoteCount: e.Rating.VoteCount}
 	}
-	if e.ReleaseDate != nil {
-		ep.ReleaseDate = &titleprovider.ReleaseDate{Year: e.ReleaseDate.Year, Month: e.ReleaseDate.Month, Day: e.ReleaseDate.Day}
+	// Only keep a release date when it is complete. imdbapi.dev sometimes
+	// returns partial dates with month/day (or year) as 0; drop those rather
+	// than storing a bogus 0000-00-00-style date (matches tmdb/omdb behavior).
+	if rd := e.ReleaseDate; rd != nil && rd.Year > 0 && rd.Month > 0 && rd.Day > 0 {
+		ep.ReleaseDate = &titleprovider.ReleaseDate{Year: rd.Year, Month: rd.Month, Day: rd.Day}
 	}
 	return ep
 }

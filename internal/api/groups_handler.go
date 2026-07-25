@@ -15,7 +15,6 @@ import (
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
-	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
 func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -244,8 +243,8 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		logger.Printf("Title %s not found in main titles collection, adding it", titleID)
 		_, err = titles.AddNewTitle(api.Db, api.Provider, r.Context(), titleID)
 		if err != nil {
-			if errors.Is(err, titleprovider.ErrTitleNotFound) {
-				respondWithError(w, http.StatusNotFound, "Title not found")
+			if code, ok := titles.ErrorMap[err]; ok {
+				respondWithError(w, code, err.Error())
 				return
 			}
 			logger.Printf("ERROR: adding new title %s: %v", titleID, err)

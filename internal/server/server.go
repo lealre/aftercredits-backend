@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/mongodb"
@@ -12,26 +13,30 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-// NewServer builds the production server, selecting the title provider from env.
+// NewServer builds the production server, selecting the title provider from env
+// and requiring the JWT signing secret (JWT_SECRET) to be set.
 func NewServer(db *mongo.Client) (http.Handler, error) {
 	provider, err := factory.NewFromEnv()
 	if err != nil {
 		return nil, err
 	}
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return nil, fmt.Errorf("JWT_SECRET must be set")
+	}
 	log.Printf("Using title provider: %s", provider.Name())
-	return NewServerWithProvider(db, provider), nil
+	return NewServerWithProvider(db, provider, secret), nil
 }
 
-// NewServerWithProvider builds the server with an explicit title provider.
-// Tests use this to inject a fixture-backed fake provider (no network).
-func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider) http.Handler {
+// NewServerWithProvider builds the server with an explicit title provider and
+// JWT secret. Tests use this to inject a fixture-backed fake provider (no
+// network) and a test secret.
+func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider, secret string) http.Handler {
 	mux := http.NewServeMux()
 
 	dbClient := mongodb.NewDB(db)
 	a := api.NewAPI(dbClient, provider)
 
-	// TODO: Updated this
-	secret := "my-secret"
 	a.Secret = &secret
 
 	mux.HandleFunc("POST /login", a.LoginHandler)

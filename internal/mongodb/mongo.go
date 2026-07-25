@@ -81,9 +81,9 @@ func getMongoURI() string {
 }
 
 func getDatabaseName() string {
-	name := os.Getenv("MONGODB_DB")
+	name := os.Getenv("MONGO_DB")
 	if name == "" {
-		name = "brunan"
+		name = "aftercreditsdb"
 	}
 	return name
 }
