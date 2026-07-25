@@ -1,3 +1,10 @@
+<a name="v0.0.12"></a>
+## [v0.0.12](https://github.com/lealre/aftercredits-backend/compare/v0.0.11...v0.0.12) (2026-07-25)
+
+* Route all handler DB access through the service layer (no direct api.Db calls)
+* Add thin service passthroughs: titles.TitleExists, groups.GroupExists/GroupContainsTitle/EnsureGroupExists, users.UserExists
+* Enforce the handlers-don't-touch-the-DB convention in CONVENTIONS.md (behavior-preserving refactor)
+
 <a name="v0.0.11"></a>
 ## [v0.0.11](https://github.com/lealre/aftercredits-backend/compare/v0.0.10...v0.0.11) (2026-07-25)
 

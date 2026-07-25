@@ -88,8 +88,8 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1 - Get group (TODO: Call the service to do this instead of the db directly)
-	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
+	// 1 - Check the group exists for this user
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	} else if err != nil {
@@ -99,7 +99,7 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2 - Check if user to be added to group exists
-	if ok, err := api.Db.UserExists(r.Context(), req.UserId); !ok {
+	if ok, err := users.UserExists(api.Db, r.Context(), req.UserId); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.UserId))
 		return
 	} else if err != nil {
@@ -144,7 +144,7 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 		titleTypePtr = &titleType
 	}
 
-	_, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
+	err := groups.EnsureGroupExists(api.Db, r.Context(), groupId, currentUser.Id)
 	if err != nil {
 		if errors.Is(err, mongodb.ErrRecordNotFound) {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
@@ -175,7 +175,7 @@ func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := api.Db.GetGroupById(r.Context(), groupId, currentUser.Id)
+	err := groups.EnsureGroupExists(api.Db, r.Context(), groupId, currentUser.Id)
 	if err != nil {
 		if errors.Is(err, mongodb.ErrRecordNotFound) {
 			logger.Printf("Group with id %s not found", groupId)
@@ -213,7 +213,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupId := req.GroupId
-	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	} else if err != nil {
@@ -232,7 +232,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	titleID := m[1]
 
 	// If titles id is not in the main titles collection, add it
-	titleExists, err := api.Db.TitleExists(r.Context(), titleID)
+	titleExists, err := titles.TitleExists(api.Db, r.Context(), titleID)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
@@ -296,7 +296,7 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, req.TitleId, currentUser.Id); !ok {
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, req.TitleId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, req.TitleId))
 		return
 	} else if err != nil {
@@ -342,7 +342,7 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.GroupExists(r.Context(), groupId, currentUser.Id); !ok {
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	} else if err != nil {
@@ -351,7 +351,7 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.TitleExists(r.Context(), titleId); !ok {
+	if ok, err := titles.TitleExists(api.Db, r.Context(), titleId); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
 		return
 	} else if err != nil {

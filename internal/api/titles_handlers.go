@@ -67,7 +67,7 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	}
 	titleID := m[1]
 
-	if titleExists, err := api.Db.TitleExists(r.Context(), titleID); titleExists {
+	if titleExists, err := titles.TitleExists(api.Db, r.Context(), titleID); titleExists {
 		respondWithError(w, titles.ErrorMap[titles.ErrTitleAlreadyExists], titles.ErrTitleAlreadyExists.Error())
 		return
 	} else if err != nil && err != mongodb.ErrRecordNotFound {
@@ -105,7 +105,7 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.TitleExists(r.Context(), titleId); err != nil {
+	if ok, err := titles.TitleExists(api.Db, r.Context(), titleId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Database error while checking title")
 		return

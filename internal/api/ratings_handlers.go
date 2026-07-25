@@ -7,6 +7,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
@@ -46,7 +47,7 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := api.Db.GroupContainsTitle(r.Context(), req.GroupId, req.TitleId, currentuser.Id); !ok {
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), req.GroupId, req.TitleId, currentuser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", req.GroupId, req.TitleId))
 		return
 	} else if err != nil {

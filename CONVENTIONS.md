@@ -13,9 +13,10 @@ DB calls. A handler should call `service.DoThing(db, ...)`, never
 Why: keeps business logic and persistence testable and reusable, and keeps
 handlers thin.
 
-> Status: this is the target. Some existing handlers still call the DB directly
-> for existence/membership checks; routing those through services is tracked as a
-> dedicated follow-up refactor.
+This is enforced: no handler in `internal/api` calls `api.Db.*` directly.
+Existence/membership checks go through thin service passthroughs (e.g.
+`titles.TitleExists`, `groups.GroupExists`, `groups.GroupContainsTitle`,
+`groups.EnsureGroupExists`, `users.UserExists`).
 
 ## 2. Errors are defined in the service, mapped to HTTP in the handler
 

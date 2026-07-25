@@ -171,3 +171,9 @@ func UpdateUserGroup(db *mongodb.DB, ctx context.Context, userId string, groupId
 
 	return MapDbUserToApiUserResponse(userDb), nil
 }
+
+// UserExists reports whether a user with the given id exists. Thin service
+// passthrough so handlers reach the DB only through the service layer.
+func UserExists(db *mongodb.DB, ctx context.Context, id string) (bool, error) {
+	return db.UserExists(ctx, id)
+}

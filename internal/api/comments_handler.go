@@ -9,6 +9,7 @@ import (
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/comments"
+	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
 
@@ -29,7 +30,7 @@ func (api *API) GetCommentsByTitleIDFromGroup(w http.ResponseWriter, r *http.Req
 	}
 
 	// This checks if the group exists, if the title is in the group and if the user is in the group
-	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if !ok && err == nil {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
 		return
@@ -61,7 +62,7 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the title here to be used to know if its a tv or movie
-	if ok, err := api.Db.GroupContainsTitle(r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); !ok {
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); !ok {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId))
 		return
 	} else if err != nil {
@@ -120,7 +121,7 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if !ok && err == nil {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
 		return
@@ -175,7 +176,7 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// This checks if the group exists, if the title is in the group and if the user is in the group
-	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if !ok && err == nil {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
 		return
@@ -231,7 +232,7 @@ func (api *API) DeleteCommentSeason(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// This checks if the group exists, if the title is in the group and if the user is in the group
-	ok, err := api.Db.GroupContainsTitle(r.Context(), groupId, titleId, currentUser.Id)
+	ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, currentUser.Id)
 	if !ok && err == nil {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
 		return

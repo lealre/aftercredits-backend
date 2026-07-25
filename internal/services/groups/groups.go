@@ -491,3 +491,23 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 	}
 	return nil
 }
+
+// GroupExists reports whether the group exists for the given user. Thin service
+// passthrough so handlers reach the DB only through the service layer.
+func GroupExists(db *mongodb.DB, ctx context.Context, groupId, userId string) (bool, error) {
+	return db.GroupExists(ctx, groupId, userId)
+}
+
+// GroupContainsTitle reports whether the group (owned/shared with the user)
+// contains the given title. Thin service passthrough.
+func GroupContainsTitle(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) (bool, error) {
+	return db.GroupContainsTitle(ctx, groupId, titleId, userId)
+}
+
+// EnsureGroupExists returns nil if the group exists for the user, or the
+// underlying error (mongodb.ErrRecordNotFound when absent). Thin service
+// passthrough for handlers that only need the existence/ownership guard.
+func EnsureGroupExists(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
+	_, err := db.GetGroupById(ctx, groupId, userId)
+	return err
+}
