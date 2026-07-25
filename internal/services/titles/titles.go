@@ -219,3 +219,9 @@ func SearchTitles(provider titleprovider.Provider, ctx context.Context, searchQu
 	}
 	return MapProviderSearchItemsToTitles(items), nil
 }
+
+// TitleExists reports whether a title with the given id exists. It is a thin
+// service passthrough so handlers reach the DB only through the service layer.
+func TitleExists(db *mongodb.DB, ctx context.Context, titleId string) (bool, error) {
+	return db.TitleExists(ctx, titleId)
+}
