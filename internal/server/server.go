@@ -66,6 +66,7 @@ func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider, se
 
 	mux.HandleFunc("GET /titles", a.GetTitles)
 	mux.HandleFunc("GET /titles/search", a.SearchTitles)
+	mux.HandleFunc("GET /titles/{id}/episodes", a.GetTitleEpisodes)
 	mux.HandleFunc("POST /titles", a.AddTitle)
 	mux.HandleFunc("DELETE /titles/{id}", a.DeleteTitle)
 

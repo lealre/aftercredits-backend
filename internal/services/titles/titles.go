@@ -212,6 +212,16 @@ func GetTitleById(db *mongodb.DB, ctx context.Context, titleId string) (Title, e
 	return MapDbTitleToApiTitle(titleDb), nil
 }
 
+// GetEpisodes returns the episodes stored on a title. Fetched separately from
+// the main title/list payload so large episode arrays are loaded on demand.
+func GetEpisodes(db *mongodb.DB, ctx context.Context, titleId string) ([]Episode, error) {
+	titleDb, err := db.GetTitleById(ctx, titleId)
+	if err != nil {
+		return nil, err
+	}
+	return MapDbEpisodesToImdbEpisodes(titleDb.Episodes), nil
+}
+
 func SearchTitles(provider titleprovider.Provider, ctx context.Context, searchQuery string, limit int) ([]Title, error) {
 	items, err := provider.SearchTitles(ctx, searchQuery, limit)
 	if err != nil {

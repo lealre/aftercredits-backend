@@ -147,3 +147,28 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, titles)
 }
+
+// GetTitleEpisodes returns a title's episodes on demand (lazy-loaded by the UI
+// when a movie modal opens). Any authenticated user may call it.
+func (api *API) GetTitleEpisodes(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+
+	titleId := r.PathValue("id")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	episodes, err := titles.GetEpisodes(api.Db, r.Context(), titleId)
+	if err != nil {
+		if err == mongodb.ErrRecordNotFound {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch episodes")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]any{"episodes": episodes})
+}

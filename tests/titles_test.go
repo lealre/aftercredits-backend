@@ -9,6 +9,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/generics"
+	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
@@ -252,4 +253,47 @@ func TestDeleteTitlesAdmin(t *testing.T) {
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&titleResp))
 		require.Contains(t, titleResp.ErrorMessage, api.ErrForbidden.Error()[1:])
 	})
+}
+
+func TestGetTitleEpisodes(t *testing.T) {
+	resetDB(t)
+
+	// any authenticated (non-admin) user may read episodes
+	_, token := addUser(t, users.NewUserRequest{
+		Username: "epuser", Email: "epuser@local.dev", Password: "Pass#12345",
+	})
+
+	rt := 1200
+	seedTitles(t, []mongodb.TitleDb{{
+		ID:           "tt3000001",
+		PrimaryTitle: "Test Series",
+		Type:         "tvSeries",
+		Seasons:      []mongodb.Seasons{{Season: "1", EpisodeCount: 2}},
+		Episodes: []mongodb.Episode{
+			{ID: "ep1", Title: "Pilot", Season: "1", EpisodeNumber: 1, RuntimeSeconds: &rt},
+			{ID: "ep2", Title: "Second", Season: "1", EpisodeNumber: 2},
+		},
+	}})
+
+	req, _ := http.NewRequest(http.MethodGet, testServer.URL+"/titles/tt3000001/episodes", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body struct {
+		Episodes []titles.Episode `json:"episodes"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body.Episodes, 2)
+	require.Equal(t, 1, body.Episodes[0].EpisodeNumber)
+
+	// unknown title -> 404
+	req2, _ := http.NewRequest(http.MethodGet, testServer.URL+"/titles/tt9999999/episodes", nil)
+	req2.Header.Set("Authorization", "Bearer "+token)
+	resp2, err := http.DefaultClient.Do(req2)
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
 }
