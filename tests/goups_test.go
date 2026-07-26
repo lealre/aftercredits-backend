@@ -1778,8 +1778,7 @@ func TestAddTVSeriesToGroupAsOwner(t *testing.T) {
 		require.Equal(t, expectedTVSeriesTitle.Type, tvSeriesDetail.Type)
 		require.NotEmpty(t, tvSeriesDetail.Seasons, "Expected the TV series to have seasons")
 		require.Equal(t, len(expectedTVSeriesTitle.Seasons), len(tvSeriesDetail.Seasons), "Expected the number of seasons in the response to match the fixture")
-		require.NotEmpty(t, tvSeriesDetail.Episodes, "Expected the TV series to have episodes")
-		require.Equal(t, len(expectedTVSeriesTitle.Episodes), len(tvSeriesDetail.Episodes), "Expected the number of episodes in the response to match the fixture")
+		require.Empty(t, tvSeriesDetail.Episodes, "Expected the group-titles list payload to omit episodes (lazy-loaded via GET /titles/{id}/episodes)")
 		require.False(t, tvSeriesDetail.Watched)
 		require.Nil(t, tvSeriesDetail.SeasonsWatched)
 	})
@@ -1903,4 +1902,52 @@ func TestGroupTitlesSeriesRatingAndWatchedAggregation(t *testing.T) {
 		require.NotNil(t, titleDb.WatchedAt)
 		require.Equal(t, testDate2, *titleDb.WatchedAt)
 	})
+}
+
+// TestGroupTitlesListOmitsEpisodes asserts that the group-titles list response
+// (GET /groups/{id}/titles) trims the heavy `episodes` array from each title
+// while still keeping the lightweight `seasons` summary. Episodes are
+// lazy-loaded separately via GET /titles/{id}/episodes.
+func TestGroupTitlesListOmitsEpisodes(t *testing.T) {
+	resetDB(t)
+
+	_, token := addUser(t, users.NewUserRequest{
+		Username: "grpep",
+		Email:    "grpep@local.dev",
+		Password: "Pass#12345",
+	})
+
+	rt := 1000
+	seedTitles(t, []mongodb.TitleDb{{
+		ID:           "tt3000010",
+		PrimaryTitle: "Grp Series",
+		Type:         "tvSeries",
+		Seasons:      []mongodb.Seasons{{Season: "1", EpisodeCount: 1}},
+		Episodes:     []mongodb.Episode{{ID: "e1", Title: "P", Season: "1", EpisodeNumber: 1, RuntimeSeconds: &rt}},
+	}})
+
+	group := createGroup(t, groups.CreateGroupRequest{Name: "G"}, token)
+
+	// Title was already seeded above, so this resolves via TitleExists and
+	// links it to the group without calling the external provider.
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     "https://www.imdb.com/title/tt3000010/",
+		GroupId: group.Id,
+	}, token)
+
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+group.Id+"/titles", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var page generics.Page[groups.GroupTitleDetail]
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&page))
+	require.NotEmpty(t, page.Content)
+	for _, d := range page.Content {
+		require.NotEmpty(t, d.Seasons, "seasons summary must be kept")
+		require.Empty(t, d.Episodes, "episodes must be trimmed from the list payload")
+	}
 }

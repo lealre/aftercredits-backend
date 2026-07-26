@@ -243,6 +243,9 @@ func GetTitlesFromGroup(
 		}
 
 		detail.Title = title
+		// Episodes are loaded on demand via GET /titles/{id}/episodes;
+		// keep the list payload light. Seasons summary is retained.
+		detail.Title.Episodes = nil
 		allTitlesDetails = append(allTitlesDetails, detail)
 	}
 
