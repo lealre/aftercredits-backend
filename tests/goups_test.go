@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestCreateGroup(t *testing.T) {
@@ -1950,4 +1952,24 @@ func TestGroupTitlesListOmitsEpisodes(t *testing.T) {
 		require.NotEmpty(t, d.Seasons, "seasons summary must be kept")
 		require.Empty(t, d.Episodes, "episodes must be trimmed from the list payload")
 	}
+}
+
+func TestSoftDeletedGroupExcludedFromReads(t *testing.T) {
+	resetDB(t)
+	_, token := addUser(t, users.NewUserRequest{Username: "sdowner", Email: "sdowner@local.dev", Password: "Pass#12345"})
+	group := createGroup(t, groups.CreateGroupRequest{Name: "SD Group"}, token)
+
+	// Directly mark the group deleted in the DB (endpoint comes in a later task).
+	ctx := context.Background()
+	coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
+	_, err := coll.UpdateOne(ctx, bson.M{"_id": group.Id}, bson.M{"$set": bson.M{"deleted": true}})
+	require.NoError(t, err)
+
+	// GET /groups/{id} must now 404
+	req, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+group.Id, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }

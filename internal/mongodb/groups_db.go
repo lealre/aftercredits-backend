@@ -23,6 +23,8 @@ type GroupDb struct {
 	Titles    GroupTitleDb `json:"titles" bson:"titles"`
 	CreatedAt time.Time    `json:"createdAt" bson:"createdAt"`
 	UpdatedAt time.Time    `json:"updatedAt" bson:"updatedAt"`
+	Deleted   bool         `json:"deleted" bson:"deleted"`
+	DeletedAt *time.Time   `json:"deletedAt,omitempty" bson:"deletedAt,omitempty"`
 }
 
 type UsersIds []string
@@ -59,6 +61,7 @@ func (db *DB) CreateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
 	now := time.Now()
 	group.CreatedAt = now
 	group.UpdatedAt = now
+	group.Deleted = false
 
 	_, err := coll.InsertOne(ctx, group)
 	if err != nil {
@@ -80,8 +83,9 @@ func (db *DB) GroupExists(ctx context.Context, groupId, userId string) (bool, er
 	err := coll.FindOne(
 		ctx,
 		bson.M{
-			"_id":   groupId,
-			"users": bson.M{"$in": []string{userId}}},
+			"_id":     groupId,
+			"users":   bson.M{"$in": []string{userId}},
+			"deleted": bson.M{"$ne": true}},
 		opts).Err()
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -103,6 +107,7 @@ func (db *DB) GroupContainsTitle(ctx context.Context, groupId, titleId, userId s
 		bson.M{
 			"_id":                             groupId,
 			"users":                           bson.M{"$in": []string{userId}},
+			"deleted":                         bson.M{"$ne": true},
 			fmt.Sprintf("titles.%s", titleId): bson.M{"$exists": true},
 		},
 		opts).Err()
@@ -120,8 +125,9 @@ func (db *DB) GetGroupById(ctx context.Context, groupId, userId string) (GroupDb
 
 	var group GroupDb
 	err := coll.FindOne(ctx, bson.M{
-		"_id":   groupId,
-		"users": bson.M{"$in": []string{userId}},
+		"_id":     groupId,
+		"users":   bson.M{"$in": []string{userId}},
+		"deleted": bson.M{"$ne": true},
 	}).Decode(&group)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
