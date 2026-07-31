@@ -2084,3 +2084,20 @@ func TestLeaveGroup(t *testing.T) {
 	resp4.Body.Close()
 	require.Equal(t, http.StatusForbidden, resp4.StatusCode)
 }
+
+func TestGroupNameReusableAfterSoftDelete(t *testing.T) {
+	resetDB(t)
+	_, tok := addUser(t, users.NewUserRequest{Username: "reuse", Email: "reuse@local.dev", Password: "Pass#12345"})
+	g := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
+
+	// delete it
+	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id, nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// create a new group with the SAME name -> must succeed (not 400 duplicate)
+	g2 := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
+	require.NotEqual(t, g.Id, g2.Id)
+}

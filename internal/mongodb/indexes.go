@@ -179,6 +179,7 @@ func CreateGroupIndexes(ctx context.Context, db *mongo.Database, reset bool) err
 					{"ownerId": bson.M{"$gt": ""}},
 					{"name": bson.M{"$type": "string"}},
 					{"name": bson.M{"$gt": ""}},
+					{"deleted": bson.M{"$eq": false}},
 				},
 			}),
 	}
