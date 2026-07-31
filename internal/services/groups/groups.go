@@ -552,6 +552,25 @@ func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId strin
 	return nil
 }
 
+// LeaveGroup removes a non-owner member from a group (and the group from their
+// group list). The owner cannot leave (must delete instead).
+func LeaveGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, userId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+	if group.OwnerId == userId {
+		return ErrOwnerCannotLeaveGroup
+	}
+	if err := db.RemoveUserFromGroup(ctx, groupId, userId); err != nil {
+		return err
+	}
+	return db.RemoveGroupFromUser(ctx, userId, groupId)
+}
+
 // GroupExists reports whether the group exists for the given user. Thin service
 // passthrough so handlers reach the DB only through the service layer.
 func GroupExists(db *mongodb.DB, ctx context.Context, groupId, userId string) (bool, error) {

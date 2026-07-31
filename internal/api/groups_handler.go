@@ -117,6 +117,35 @@ func (api *API) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Group deleted"})
 }
 
+func (api *API) RemoveUserFromGroup(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("id")
+	userId := r.PathValue("userId")
+	if groupId == "" || userId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id and user id are required")
+		return
+	}
+
+	// This version supports self-removal (leave) only; removing other members is deferred.
+	if userId != currentUser.Id {
+		respondWithForbidden(w)
+		return
+	}
+
+	if err := groups.LeaveGroup(api.Db, r.Context(), groupId, userId); err != nil {
+		if code, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, code, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Left group"})
+}
+
 func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())

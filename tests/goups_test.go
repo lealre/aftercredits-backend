@@ -2047,3 +2047,40 @@ func TestSoftDeleteGroupByOwner(t *testing.T) {
 	resp3.Body.Close()
 	require.Equal(t, http.StatusNotFound, resp3.StatusCode)
 }
+
+func TestLeaveGroup(t *testing.T) {
+	resetDB(t)
+	owner, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Email: "lgowner@local.dev", Password: "Pass#12345"})
+	member, memberTok := addUser(t, users.NewUserRequest{Username: "lgmember", Email: "lgmember@local.dev", Password: "Pass#12345"})
+	g := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
+	addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, g.Id, ownerTok)
+
+	// member leaves self -> 200
+	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id+"/users/"+member.Id, nil)
+	req.Header.Set("Authorization", "Bearer "+memberTok)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// member no longer sees the group -> 404
+	req2, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+g.Id, nil)
+	req2.Header.Set("Authorization", "Bearer "+memberTok)
+	resp2, _ := http.DefaultClient.Do(req2)
+	resp2.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
+
+	// owner cannot leave -> 403
+	req3, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id+"/users/"+owner.Id, nil)
+	req3.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp3, _ := http.DefaultClient.Do(req3)
+	resp3.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp3.StatusCode)
+
+	// cannot remove another user (member-mgmt deferred): owner removing member -> 403
+	req4, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id+"/users/"+member.Id, nil)
+	req4.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp4, _ := http.DefaultClient.Do(req4)
+	resp4.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp4.StatusCode)
+}
