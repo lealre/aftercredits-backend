@@ -2101,3 +2101,56 @@ func TestGroupNameReusableAfterSoftDelete(t *testing.T) {
 	g2 := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
 	require.NotEqual(t, g.Id, g2.Id)
 }
+
+func TestRenameToExistingName(t *testing.T) {
+	resetDB(t)
+	_, ownerTok := addUser(t, users.NewUserRequest{Username: "rtnowner", Email: "rtnowner@local.dev", Password: "Pass#12345"})
+
+	createGroup(t, groups.CreateGroupRequest{Name: "Alpha"}, ownerTok)
+	beta := createGroup(t, groups.CreateGroupRequest{Name: "Beta"}, ownerTok)
+
+	body, _ := json.Marshal(groups.UpdateGroupRequest{Name: "Alpha"})
+	req, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+beta.Id, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	var respBody api.ErrorResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+	require.Contains(t, respBody.ErrorMessage, groups.ErrGroupDuplicatedName.Error()[1:])
+}
+
+func TestSoftDeleteCleansMemberGroups(t *testing.T) {
+	resetDB(t)
+	_, ownerTok := addUser(t, users.NewUserRequest{Username: "sdcowner", Email: "sdcowner@local.dev", Password: "Pass#12345"})
+	member, _ := addUser(t, users.NewUserRequest{Username: "sdcmember", Email: "sdcmember@local.dev", Password: "Pass#12345"})
+
+	group := createGroup(t, groups.CreateGroupRequest{Name: "Multi Member"}, ownerTok)
+	addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
+
+	ctx := context.Background()
+
+	// Confirm the member's user.groups contains the group id before deletion.
+	var memberDocBefore mongodb.UserDb
+	err := testClient.Database(TEST_DB_NAME).Collection(mongodb.UsersCollection).
+		FindOne(ctx, bson.M{"_id": member.Id}).Decode(&memberDocBefore)
+	require.NoError(t, err)
+	require.Contains(t, memberDocBefore.Groups, group.Id)
+
+	// owner deletes the group -> 200
+	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+group.Id, nil)
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// the SECOND member's user.groups must no longer contain the group id
+	var memberDoc mongodb.UserDb
+	err = testClient.Database(TEST_DB_NAME).Collection(mongodb.UsersCollection).
+		FindOne(ctx, bson.M{"_id": member.Id}).Decode(&memberDoc)
+	require.NoError(t, err)
+	require.NotContains(t, memberDoc.Groups, group.Id)
+}
