@@ -1,3 +1,9 @@
+<a name="v0.0.13"></a>
+## [v0.0.13](https://github.com/lealre/aftercredits-backend/compare/v0.0.12...v0.0.13) (2026-07-25)
+
+* Add GET /titles/{id}/episodes to load episodes on demand
+* Omit the embedded episodes array from the group-titles list response (lighter payloads; seasons summary retained)
+
 <a name="v0.0.12"></a>
 ## [v0.0.12](https://github.com/lealre/aftercredits-backend/compare/v0.0.11...v0.0.12) (2026-07-25)
 
