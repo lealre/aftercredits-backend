@@ -525,6 +525,33 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 	return nil
 }
 
+// SoftDeleteGroup marks a group deleted (owner only) and removes it from every
+// member's group list. No cascade to titles/ratings/comments.
+func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId string) error {
+	group, err := db.GetGroupById(ctx, groupId, ownerId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+	if group.OwnerId != ownerId {
+		return ErrGroupNotOwnedByUser
+	}
+	if err := db.SoftDeleteGroup(ctx, groupId); err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+	for _, memberId := range group.Users {
+		if err := db.RemoveGroupFromUser(ctx, memberId, groupId); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GroupExists reports whether the group exists for the given user. Thin service
 // passthrough so handlers reach the DB only through the service layer.
 func GroupExists(db *mongodb.DB, ctx context.Context, groupId, userId string) (bool, error) {

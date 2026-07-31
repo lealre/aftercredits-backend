@@ -488,6 +488,24 @@ func (db *DB) RenameGroup(ctx context.Context, groupId, name string) error {
 	return nil
 }
 
+// SoftDeleteGroup marks a non-deleted group as deleted. ErrRecordNotFound if it
+// was already deleted or does not exist.
+func (db *DB) SoftDeleteGroup(ctx context.Context, groupId string) error {
+	coll := db.Collection(GroupsCollection)
+	now := time.Now()
+	res, err := coll.UpdateOne(ctx,
+		bson.M{"_id": groupId, "deleted": bson.M{"$ne": true}},
+		bson.M{"$set": bson.M{"deleted": true, "deletedAt": now, "updatedAt": now}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
+}
+
 func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
 	coll := db.Collection(GroupsCollection)
 

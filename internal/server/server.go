@@ -51,6 +51,7 @@ func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider, se
 	mux.HandleFunc("POST /groups", a.CreateGroup)
 	mux.HandleFunc("GET /groups/{id}", a.GetGroupById)
 	mux.HandleFunc("PATCH /groups/{id}", a.UpdateGroup)
+	mux.HandleFunc("DELETE /groups/{id}", a.DeleteGroup)
 	// Group - Users
 	mux.HandleFunc("GET /groups/{id}/users", a.GetUsersFromGroup)
 	mux.HandleFunc("POST /groups/{id}/users", a.AddUserToGroup)

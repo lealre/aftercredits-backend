@@ -2011,3 +2011,39 @@ func TestSoftDeletedGroupExcludedFromReads(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
+
+func TestSoftDeleteGroupByOwner(t *testing.T) {
+	resetDB(t)
+	owner, ownerTok := addUser(t, users.NewUserRequest{Username: "delowner", Email: "delowner@local.dev", Password: "Pass#12345"})
+	g := createGroup(t, groups.CreateGroupRequest{Name: "To Delete"}, ownerTok)
+
+	// owner deletes -> 200
+	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id, nil)
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// group no longer readable -> 404
+	req2, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+g.Id, nil)
+	req2.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp2, _ := http.DefaultClient.Do(req2)
+	resp2.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
+
+	// owner's user.groups no longer contains the id
+	ctx := context.Background()
+	var u mongodb.UserDb
+	err = testClient.Database(TEST_DB_NAME).Collection(mongodb.UsersCollection).
+		FindOne(ctx, bson.M{"_id": owner.Id}).Decode(&u)
+	require.NoError(t, err)
+	require.NotContains(t, u.Groups, g.Id)
+
+	// second delete -> 404
+	req3, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id, nil)
+	req3.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp3, _ := http.DefaultClient.Do(req3)
+	resp3.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp3.StatusCode)
+}

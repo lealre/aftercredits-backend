@@ -95,6 +95,28 @@ func (api *API) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, group)
 }
 
+func (api *API) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("id")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	if err := groups.SoftDeleteGroup(api.Db, r.Context(), groupId, currentUser.Id); err != nil {
+		if code, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, code, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Group deleted"})
+}
+
 func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
