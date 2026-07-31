@@ -56,6 +56,36 @@ func GetGroupById(db *mongodb.DB, ctx context.Context, groupId, userId string) (
 	return MapDbGroupToApiGroupResponse(groupDb), nil
 }
 
+// RenameGroup renames a group the caller owns. Owner-only; validates a non-empty
+// name and maps a duplicate name to ErrGroupDuplicatedName.
+func RenameGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, name string) (GroupResponse, error) {
+	if strings.TrimSpace(name) == "" {
+		return GroupResponse{}, ErrGroupNameInvalid
+	}
+
+	group, err := db.GetGroupById(ctx, groupId, ownerId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return GroupResponse{}, ErrGroupNotFound
+		}
+		return GroupResponse{}, err
+	}
+
+	if group.OwnerId != ownerId {
+		return GroupResponse{}, ErrGroupNotOwnedByUser
+	}
+
+	if err := db.RenameGroup(ctx, groupId, name); err != nil {
+		if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+			return GroupResponse{}, ErrGroupDuplicatedName
+		}
+		return GroupResponse{}, err
+	}
+
+	group.Name = name
+	return MapDbGroupToApiGroupResponse(group), nil
+}
+
 func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {

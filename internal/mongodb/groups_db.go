@@ -468,6 +468,26 @@ func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId st
 	return nil, ErrRecordNotFound
 }
 
+// RenameGroup sets a new name on a non-deleted group. Returns ErrDuplicatedRecord
+// if the (ownerId, name) uniqueness is violated, ErrRecordNotFound if absent.
+func (db *DB) RenameGroup(ctx context.Context, groupId, name string) error {
+	coll := db.Collection(GroupsCollection)
+	res, err := coll.UpdateOne(ctx,
+		bson.M{"_id": groupId, "deleted": bson.M{"$ne": true}},
+		bson.M{"$set": bson.M{"name": name, "updatedAt": time.Now()}},
+	)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicatedRecord
+		}
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
+}
+
 func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
 	coll := db.Collection(GroupsCollection)
 

@@ -33,6 +33,10 @@ type CreateGroupRequest struct {
 	Name string `json:"name"`
 }
 
+type UpdateGroupRequest struct {
+	Name string `json:"name"`
+}
+
 type AddUserToGroupRequest struct {
 	UserId string `json:"userId"`
 }

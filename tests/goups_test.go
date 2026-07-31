@@ -1954,6 +1954,44 @@ func TestGroupTitlesListOmitsEpisodes(t *testing.T) {
 	}
 }
 
+func TestRenameGroup(t *testing.T) {
+	resetDB(t)
+	_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Email: "rnowner@local.dev", Password: "Pass#12345"})
+	_, otherTok := addUser(t, users.NewUserRequest{Username: "rnother", Email: "rnother@local.dev", Password: "Pass#12345"})
+
+	g := createGroup(t, groups.CreateGroupRequest{Name: "Old Name"}, ownerTok)
+
+	// owner renames -> 200
+	body, _ := json.Marshal(groups.UpdateGroupRequest{Name: "New Name"})
+	req, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var got groups.GroupResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	resp.Body.Close()
+	require.Equal(t, "New Name", got.Name)
+
+	// non-owner (not a member) -> 404 (GetGroupById filters by membership) — acceptable; assert not 200
+	body2, _ := json.Marshal(groups.UpdateGroupRequest{Name: "Hacked"})
+	req2, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body2))
+	req2.Header.Set("Authorization", "Bearer "+otherTok)
+	resp2, err := http.DefaultClient.Do(req2)
+	require.NoError(t, err)
+	resp2.Body.Close()
+	require.NotEqual(t, http.StatusOK, resp2.StatusCode)
+
+	// empty name -> 400
+	body3, _ := json.Marshal(groups.UpdateGroupRequest{Name: "   "})
+	req3, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body3))
+	req3.Header.Set("Authorization", "Bearer "+ownerTok)
+	resp3, err := http.DefaultClient.Do(req3)
+	require.NoError(t, err)
+	resp3.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp3.StatusCode)
+}
+
 func TestSoftDeletedGroupExcludedFromReads(t *testing.T) {
 	resetDB(t)
 	_, token := addUser(t, users.NewUserRequest{Username: "sdowner", Email: "sdowner@local.dev", Password: "Pass#12345"})
