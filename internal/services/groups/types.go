@@ -9,13 +9,14 @@ import (
 )
 
 type Group struct {
-	Id        string       `json:"id"`
-	Name      string       `json:"name"`
-	OwnerId   string       `json:"ownerId"`
-	Users     UsersIds     `json:"users"`
-	Titles    []GroupTitle `json:"titles"`
-	CreatedAt time.Time    `json:"createdAt"`
-	UpdatedAt time.Time    `json:"updatedAt"`
+	Id          string       `json:"id"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	OwnerId     string       `json:"ownerId"`
+	Users       UsersIds     `json:"users"`
+	Titles      []GroupTitle `json:"titles"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	UpdatedAt   time.Time    `json:"updatedAt"`
 }
 
 type UsersIds []string
@@ -30,11 +31,13 @@ type GroupTitle struct {
 }
 
 type CreateGroupRequest struct {
-	Name string `json:"name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type UpdateGroupRequest struct {
-	Name string `json:"name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type AddUserToGroupRequest struct {
@@ -42,13 +45,14 @@ type AddUserToGroupRequest struct {
 }
 
 type GroupResponse struct {
-	Id        string       `json:"id"`
-	Name      string       `json:"name"`
-	OwnerId   string       `json:"ownerId"`
-	Users     UsersIds     `json:"users"`
-	Titles    []GroupTitle `json:"titles"`
-	CreatedAt time.Time    `json:"createdAt"`
-	UpdatedAt time.Time    `json:"updatedAt"`
+	Id          string       `json:"id"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	OwnerId     string       `json:"ownerId"`
+	Users       UsersIds     `json:"users"`
+	Titles      []GroupTitle `json:"titles"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	UpdatedAt   time.Time    `json:"updatedAt"`
 }
 
 type SeasonWatched struct {

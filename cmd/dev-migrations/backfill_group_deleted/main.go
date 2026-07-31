@@ -24,11 +24,11 @@ func main() {
 
 	db := mongodb.NewDB(dbClient)
 
-	fmt.Println("🔄 Backfilling deleted=false on groups missing the field...")
-	n, err := db.BackfillGroupsDeleted(ctx)
+	fmt.Println("🔄 Backfilling legacy group fields (deleted, description)...")
+	deletedN, descN, err := db.BackfillGroupFields(ctx)
 	if err != nil {
 		log.Fatalf("Failed to backfill: %v", err)
 	}
-	fmt.Printf("✅ Backfilled %d groups\n", n)
+	fmt.Printf("✅ Backfilled deleted=false on %d group(s), description=\"\" on %d group(s)\n", deletedN, descN)
 	fmt.Println("⚠️  Now rebuild the group unique index (reset) so the new partial filter applies.")
 }

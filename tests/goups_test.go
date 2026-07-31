@@ -2166,16 +2166,51 @@ func TestBackfillGroupsDeleted(t *testing.T) {
 
 	db := mongodb.NewDB(testClient)
 
-	n, err := db.BackfillGroupsDeleted(ctx)
+	deletedN, descN, err := db.BackfillGroupFields(ctx)
 	require.NoError(t, err)
-	require.EqualValues(t, 1, n)
+	require.EqualValues(t, 1, deletedN)
+	require.EqualValues(t, 1, descN)
 
 	var got bson.M
 	require.NoError(t, coll.FindOne(ctx, bson.M{"_id": "legacy-grp"}).Decode(&got))
 	require.Equal(t, false, got["deleted"])
+	require.Equal(t, "", got["description"])
 
 	// Idempotent: a second run touches nothing.
-	n2, err := db.BackfillGroupsDeleted(ctx)
+	deletedN2, descN2, err := db.BackfillGroupFields(ctx)
 	require.NoError(t, err)
-	require.EqualValues(t, 0, n2)
+	require.EqualValues(t, 0, deletedN2)
+	require.EqualValues(t, 0, descN2)
+}
+
+func TestGroupDescription(t *testing.T) {
+	resetDB(t)
+	_, tok := addUser(t, users.NewUserRequest{Username: "descuser", Email: "descuser@local.dev", Password: "Pass#12345"})
+
+	// create with a description
+	g := createGroup(t, groups.CreateGroupRequest{Name: "Desc Group", Description: "movies to watch on fridays"}, tok)
+	require.Equal(t, "movies to watch on fridays", g.Description)
+
+	// update name + description via PATCH
+	body, _ := json.Marshal(groups.UpdateGroupRequest{Name: "Desc Group", Description: "updated blurb"})
+	req, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var updated groups.GroupResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
+	require.Equal(t, "updated blurb", updated.Description)
+
+	// GET reflects the persisted description
+	getReq, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+g.Id, nil)
+	getReq.Header.Set("Authorization", "Bearer "+tok)
+	getResp, err := http.DefaultClient.Do(getReq)
+	require.NoError(t, err)
+	defer getResp.Body.Close()
+	var fetched groups.GroupResponse
+	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&fetched))
+	require.Equal(t, "updated blurb", fetched.Description)
 }

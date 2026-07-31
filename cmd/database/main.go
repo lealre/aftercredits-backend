@@ -39,11 +39,11 @@ func main() {
 
 	switch {
 	case *backfillGroups:
-		n, err := db.BackfillGroupsDeleted(ctx)
+		deletedN, descN, err := db.BackfillGroupFields(ctx)
 		if err != nil {
 			log.Fatalf("Failed to backfill groups: %v", err)
 		}
-		fmt.Printf("✅ Backfilled deleted=false on %d group(s)\n", n)
+		fmt.Printf("✅ Backfilled deleted=false on %d group(s), description=\"\" on %d group(s)\n", deletedN, descN)
 
 	case *indexes:
 		if *deleteIndexes {

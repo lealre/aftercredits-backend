@@ -82,7 +82,7 @@ func (api *API) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := groups.RenameGroup(api.Db, r.Context(), groupId, currentUser.Id, req.Name)
+	group, err := groups.UpdateGroupInfo(api.Db, r.Context(), groupId, currentUser.Id, req.Name, req.Description)
 	if err != nil {
 		if code, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, code, formatErrorMessage(err))

@@ -5,7 +5,8 @@
 * Add DELETE /groups/{id} soft-delete (owner only); excluded from all reads, member group lists cleaned up
 * Add DELETE /groups/{id}/users/{userId} to leave a group (non-owner, self)
 * Exclude soft-deleted groups from the unique (ownerId, name) index so names can be reused
-* Backfill deleted=false on existing groups automatically via db-setup (`database -backfill-groups`), before the index reset
+* Add an optional group description (set on create, editable via PATCH /groups/{id})
+* Backfill deleted=false + description="" on existing groups automatically via db-setup (`database -backfill-groups`), before the index reset
 
 <a name="v0.0.13"></a>
 ## [v0.0.13](https://github.com/lealre/aftercredits-backend/compare/v0.0.12...v0.0.13) (2026-07-25)
