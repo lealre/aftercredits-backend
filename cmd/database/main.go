@@ -33,10 +33,18 @@ func main() {
 	resetIndexes := flag.Bool("reset", false, "Delete the indexes and recreate it")
 	deleteIndexes := flag.Bool("delete", false, "Delete the indexes")
 	superuser := flag.Bool("superuser", false, "create a superuser if it does not exist")
+	backfillGroups := flag.Bool("backfill-groups", false, "set deleted=false on groups missing the field (run before -indexes -reset)")
 
 	flag.Parse()
 
 	switch {
+	case *backfillGroups:
+		n, err := db.BackfillGroupsDeleted(ctx)
+		if err != nil {
+			log.Fatalf("Failed to backfill groups: %v", err)
+		}
+		fmt.Printf("✅ Backfilled deleted=false on %d group(s)\n", n)
+
 	case *indexes:
 		if *deleteIndexes {
 			if err := mongodb.DeleteAllIndexes(ctx, database); err != nil {

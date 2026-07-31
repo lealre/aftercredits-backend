@@ -548,3 +548,21 @@ func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId
 
 	return nil
 }
+
+// BackfillGroupsDeleted sets deleted=false on any group document that predates
+// the soft-delete field. It is idempotent (only touches docs missing the field)
+// and must run BEFORE the group unique index is (re)built, so pre-existing
+// groups are covered by the index's `deleted:false` partial filter. Returns the
+// number of groups updated.
+func (db *DB) BackfillGroupsDeleted(ctx context.Context) (int64, error) {
+	coll := db.Collection(GroupsCollection)
+	res, err := coll.UpdateMany(
+		ctx,
+		bson.M{"deleted": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"deleted": false}},
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}

@@ -7,9 +7,11 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/lealre/movies-backend/internal/mongodb"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
+// Standalone entrypoint for the same backfill the `database -backfill-groups`
+// command runs (and that db-setup runs automatically on deploy). Kept for
+// running the backfill by hand against an arbitrary environment.
 func main() {
 	_ = godotenv.Load()
 
@@ -21,18 +23,12 @@ func main() {
 	defer dbClient.Disconnect(ctx)
 
 	db := mongodb.NewDB(dbClient)
-	database := dbClient.Database(db.GetDatabaseName())
 
 	fmt.Println("🔄 Backfilling deleted=false on groups missing the field...")
-	coll := database.Collection(mongodb.GroupsCollection)
-	res, err := coll.UpdateMany(
-		ctx,
-		bson.M{"deleted": bson.M{"$exists": false}},
-		bson.M{"$set": bson.M{"deleted": false}},
-	)
+	n, err := db.BackfillGroupsDeleted(ctx)
 	if err != nil {
 		log.Fatalf("Failed to backfill: %v", err)
 	}
-	fmt.Printf("✅ Backfilled %d groups\n", res.ModifiedCount)
+	fmt.Printf("✅ Backfilled %d groups\n", n)
 	fmt.Println("⚠️  Now rebuild the group unique index (reset) so the new partial filter applies.")
 }

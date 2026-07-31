@@ -2154,3 +2154,28 @@ func TestSoftDeleteCleansMemberGroups(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, memberDoc.Groups, group.Id)
 }
+
+func TestBackfillGroupsDeleted(t *testing.T) {
+	resetDB(t)
+	ctx := context.Background()
+	coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
+
+	// Simulate a legacy group document created before the soft-delete field.
+	_, err := coll.InsertOne(ctx, bson.M{"_id": "legacy-grp", "name": "Legacy", "ownerId": "u1", "users": []string{"u1"}})
+	require.NoError(t, err)
+
+	db := mongodb.NewDB(testClient)
+
+	n, err := db.BackfillGroupsDeleted(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+
+	var got bson.M
+	require.NoError(t, coll.FindOne(ctx, bson.M{"_id": "legacy-grp"}).Decode(&got))
+	require.Equal(t, false, got["deleted"])
+
+	// Idempotent: a second run touches nothing.
+	n2, err := db.BackfillGroupsDeleted(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, n2)
+}
