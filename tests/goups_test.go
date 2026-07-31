@@ -1954,213 +1954,207 @@ func TestGroupTitlesListOmitsEpisodes(t *testing.T) {
 	}
 }
 
-func TestRenameGroup(t *testing.T) {
-	resetDB(t)
-	_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Email: "rnowner@local.dev", Password: "Pass#12345"})
-	_, otherTok := addUser(t, users.NewUserRequest{Username: "rnother", Email: "rnother@local.dev", Password: "Pass#12345"})
+func TestUpdateGroup(t *testing.T) {
+	t.Run("Owner renames a group successfully", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Old Name"}, ownerTok)
 
-	g := createGroup(t, groups.CreateGroupRequest{Name: "Old Name"}, ownerTok)
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "New Name"}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// owner renames -> 200
-	body, _ := json.Marshal(groups.UpdateGroupRequest{Name: "New Name"})
-	req, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var got groups.GroupResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
-	resp.Body.Close()
-	require.Equal(t, "New Name", got.Name)
+		var updated groups.GroupResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
+		require.Equal(t, "New Name", updated.Name)
 
-	// non-owner (not a member) -> 404 (GetGroupById filters by membership) — acceptable; assert not 200
-	body2, _ := json.Marshal(groups.UpdateGroupRequest{Name: "Hacked"})
-	req2, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body2))
-	req2.Header.Set("Authorization", "Bearer "+otherTok)
-	resp2, err := http.DefaultClient.Do(req2)
-	require.NoError(t, err)
-	resp2.Body.Close()
-	require.NotEqual(t, http.StatusOK, resp2.StatusCode)
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		require.Equal(t, "New Name", groupDb.Name)
+		require.NotEmpty(t, groupDb.CreatedAt, "createdAt should not be empty")
+		require.NotEmpty(t, groupDb.UpdatedAt, "updatedAt should not be empty")
+	})
 
-	// empty name -> 400
-	body3, _ := json.Marshal(groups.UpdateGroupRequest{Name: "   "})
-	req3, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body3))
-	req3.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp3, err := http.DefaultClient.Do(req3)
-	require.NoError(t, err)
-	resp3.Body.Close()
-	require.Equal(t, http.StatusBadRequest, resp3.StatusCode)
+	t.Run("Owner sets and updates the description", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "descuser", Password: "testpass"})
+
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Desc Group", Description: "movies to watch on fridays"}, ownerTok)
+		require.Equal(t, "movies to watch on fridays", group.Description)
+
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "Desc Group", Description: "updated blurb"}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var updated groups.GroupResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
+		require.Equal(t, "updated blurb", updated.Description)
+
+		// Database assertion to check the description persisted
+		require.Equal(t, "updated blurb", getGroup(t, group.Id).Description)
+	})
+
+	t.Run("Non-member cannot rename the group and gets 404", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Password: "testpass"})
+		_, otherTok := addUser(t, users.NewUserRequest{Username: "rnother", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Protected"}, ownerTok)
+
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "Hacked"}, otherTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		require.Equal(t, "Protected", getGroup(t, group.Id).Name, "group name must be unchanged")
+	})
+
+	t.Run("Empty name returns 400", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Keep Name"}, ownerTok)
+
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "   "}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+
+	t.Run("Renaming to an existing owner name returns 400", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rtnowner", Password: "testpass"})
+		createGroup(t, groups.CreateGroupRequest{Name: "Alpha"}, ownerTok)
+		beta := createGroup(t, groups.CreateGroupRequest{Name: "Beta"}, ownerTok)
+
+		resp := updateGroupFromApi(t, beta.Id, groups.UpdateGroupRequest{Name: "Alpha"}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, groups.ErrGroupDuplicatedName.Error()[1:])
+	})
 }
 
-func TestSoftDeletedGroupExcludedFromReads(t *testing.T) {
-	resetDB(t)
-	_, token := addUser(t, users.NewUserRequest{Username: "sdowner", Email: "sdowner@local.dev", Password: "Pass#12345"})
-	group := createGroup(t, groups.CreateGroupRequest{Name: "SD Group"}, token)
+func TestSoftDeleteGroup(t *testing.T) {
+	t.Run("Owner soft-deletes the group", func(t *testing.T) {
+		resetDB(t)
+		owner, ownerTok := addUser(t, users.NewUserRequest{Username: "delowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "To Delete"}, ownerTok)
 
-	// Directly mark the group deleted in the DB (endpoint comes in a later task).
-	ctx := context.Background()
-	coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
-	_, err := coll.UpdateOne(ctx, bson.M{"_id": group.Id}, bson.M{"$set": bson.M{"deleted": true}})
-	require.NoError(t, err)
+		resp := deleteGroupFromApi(t, group.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// GET /groups/{id} must now 404
-	req, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+group.Id, nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp.StatusCode)
-}
+		// group no longer readable -> 404
+		getResp := getGroupFromApi(t, group.Id, ownerTok)
+		defer getResp.Body.Close()
+		require.Equal(t, http.StatusNotFound, getResp.StatusCode)
 
-func TestSoftDeleteGroupByOwner(t *testing.T) {
-	resetDB(t)
-	owner, ownerTok := addUser(t, users.NewUserRequest{Username: "delowner", Email: "delowner@local.dev", Password: "Pass#12345"})
-	g := createGroup(t, groups.CreateGroupRequest{Name: "To Delete"}, ownerTok)
+		// owner's user.groups no longer contains the id
+		require.NotContains(t, getUserFromDb(t, owner.Id).Groups, group.Id)
 
-	// owner deletes -> 200
-	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id, nil)
-	req.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+		// second delete -> 404
+		secondResp := deleteGroupFromApi(t, group.Id, ownerTok)
+		defer secondResp.Body.Close()
+		require.Equal(t, http.StatusNotFound, secondResp.StatusCode)
+	})
 
-	// group no longer readable -> 404
-	req2, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+g.Id, nil)
-	req2.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp2, _ := http.DefaultClient.Do(req2)
-	resp2.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
+	t.Run("Deleting removes the group from every member's group list", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "sdcowner", Password: "testpass"})
+		member, _ := addUser(t, users.NewUserRequest{Username: "sdcmember", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Multi Member"}, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
 
-	// owner's user.groups no longer contains the id
-	ctx := context.Background()
-	var u mongodb.UserDb
-	err = testClient.Database(TEST_DB_NAME).Collection(mongodb.UsersCollection).
-		FindOne(ctx, bson.M{"_id": owner.Id}).Decode(&u)
-	require.NoError(t, err)
-	require.NotContains(t, u.Groups, g.Id)
+		require.Contains(t, getUserFromDb(t, member.Id).Groups, group.Id, "member should be in the group before deletion")
 
-	// second delete -> 404
-	req3, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id, nil)
-	req3.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp3, _ := http.DefaultClient.Do(req3)
-	resp3.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp3.StatusCode)
+		resp := deleteGroupFromApi(t, group.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		require.NotContains(t, getUserFromDb(t, member.Id).Groups, group.Id, "member's group list should be cleaned")
+	})
+
+	t.Run("Soft-deleted group is excluded from reads", func(t *testing.T) {
+		resetDB(t)
+		_, token := addUser(t, users.NewUserRequest{Username: "sdowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "SD Group"}, token)
+
+		// Mark the group deleted directly in the DB.
+		ctx := context.Background()
+		coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
+		_, err := coll.UpdateOne(ctx, bson.M{"_id": group.Id}, bson.M{"$set": bson.M{"deleted": true}})
+		require.NoError(t, err)
+
+		resp := getGroupFromApi(t, group.Id, token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("Group name is reusable after soft delete", func(t *testing.T) {
+		resetDB(t)
+		_, tok := addUser(t, users.NewUserRequest{Username: "reuse", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
+
+		resp := deleteGroupFromApi(t, group.Id, tok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// creating a new group with the SAME name must succeed
+		newGroup := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
+		require.NotEqual(t, group.Id, newGroup.Id)
+	})
 }
 
 func TestLeaveGroup(t *testing.T) {
-	resetDB(t)
-	owner, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Email: "lgowner@local.dev", Password: "Pass#12345"})
-	member, memberTok := addUser(t, users.NewUserRequest{Username: "lgmember", Email: "lgmember@local.dev", Password: "Pass#12345"})
-	g := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
-	addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, g.Id, ownerTok)
+	t.Run("Non-owner member leaves the group", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
+		member, memberTok := addUser(t, users.NewUserRequest{Username: "lgmember", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
 
-	// member leaves self -> 200
-	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id+"/users/"+member.Id, nil)
-	req.Header.Set("Authorization", "Bearer "+memberTok)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp := removeUserFromGroupApi(t, group.Id, member.Id, memberTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// member no longer sees the group -> 404
-	req2, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+g.Id, nil)
-	req2.Header.Set("Authorization", "Bearer "+memberTok)
-	resp2, _ := http.DefaultClient.Do(req2)
-	resp2.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
+		// member no longer sees the group -> 404
+		getResp := getGroupFromApi(t, group.Id, memberTok)
+		defer getResp.Body.Close()
+		require.Equal(t, http.StatusNotFound, getResp.StatusCode)
 
-	// owner cannot leave -> 403
-	req3, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id+"/users/"+owner.Id, nil)
-	req3.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp3, _ := http.DefaultClient.Do(req3)
-	resp3.Body.Close()
-	require.Equal(t, http.StatusForbidden, resp3.StatusCode)
+		// group no longer lists the member, and the member's group list is cleaned
+		require.NotContains(t, getGroup(t, group.Id).Users, member.Id)
+		require.NotContains(t, getUserFromDb(t, member.Id).Groups, group.Id)
+	})
 
-	// cannot remove another user (member-mgmt deferred): owner removing member -> 403
-	req4, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id+"/users/"+member.Id, nil)
-	req4.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp4, _ := http.DefaultClient.Do(req4)
-	resp4.Body.Close()
-	require.Equal(t, http.StatusForbidden, resp4.StatusCode)
+	t.Run("Owner cannot leave and gets 403", func(t *testing.T) {
+		resetDB(t)
+		owner, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Owner Grp"}, ownerTok)
+
+		resp := removeUserFromGroupApi(t, group.Id, owner.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+
+	t.Run("Cannot remove another user (member management deferred) and gets 403", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
+		member, _ := addUser(t, users.NewUserRequest{Username: "lgmember", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
+
+		resp := removeUserFromGroupApi(t, group.Id, member.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
 }
 
-func TestGroupNameReusableAfterSoftDelete(t *testing.T) {
-	resetDB(t)
-	_, tok := addUser(t, users.NewUserRequest{Username: "reuse", Email: "reuse@local.dev", Password: "Pass#12345"})
-	g := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
-
-	// delete it
-	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+g.Id, nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
-	resp, _ := http.DefaultClient.Do(req)
-	resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// create a new group with the SAME name -> must succeed (not 400 duplicate)
-	g2 := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
-	require.NotEqual(t, g.Id, g2.Id)
-}
-
-func TestRenameToExistingName(t *testing.T) {
-	resetDB(t)
-	_, ownerTok := addUser(t, users.NewUserRequest{Username: "rtnowner", Email: "rtnowner@local.dev", Password: "Pass#12345"})
-
-	createGroup(t, groups.CreateGroupRequest{Name: "Alpha"}, ownerTok)
-	beta := createGroup(t, groups.CreateGroupRequest{Name: "Beta"}, ownerTok)
-
-	body, _ := json.Marshal(groups.UpdateGroupRequest{Name: "Alpha"})
-	req, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+beta.Id, bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-
-	var respBody api.ErrorResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
-	require.Contains(t, respBody.ErrorMessage, groups.ErrGroupDuplicatedName.Error()[1:])
-}
-
-func TestSoftDeleteCleansMemberGroups(t *testing.T) {
-	resetDB(t)
-	_, ownerTok := addUser(t, users.NewUserRequest{Username: "sdcowner", Email: "sdcowner@local.dev", Password: "Pass#12345"})
-	member, _ := addUser(t, users.NewUserRequest{Username: "sdcmember", Email: "sdcmember@local.dev", Password: "Pass#12345"})
-
-	group := createGroup(t, groups.CreateGroupRequest{Name: "Multi Member"}, ownerTok)
-	addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
-
-	ctx := context.Background()
-
-	// Confirm the member's user.groups contains the group id before deletion.
-	var memberDocBefore mongodb.UserDb
-	err := testClient.Database(TEST_DB_NAME).Collection(mongodb.UsersCollection).
-		FindOne(ctx, bson.M{"_id": member.Id}).Decode(&memberDocBefore)
-	require.NoError(t, err)
-	require.Contains(t, memberDocBefore.Groups, group.Id)
-
-	// owner deletes the group -> 200
-	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+group.Id, nil)
-	req.Header.Set("Authorization", "Bearer "+ownerTok)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// the SECOND member's user.groups must no longer contain the group id
-	var memberDoc mongodb.UserDb
-	err = testClient.Database(TEST_DB_NAME).Collection(mongodb.UsersCollection).
-		FindOne(ctx, bson.M{"_id": member.Id}).Decode(&memberDoc)
-	require.NoError(t, err)
-	require.NotContains(t, memberDoc.Groups, group.Id)
-}
-
-func TestBackfillGroupsDeleted(t *testing.T) {
+func TestBackfillGroupFields(t *testing.T) {
 	resetDB(t)
 	ctx := context.Background()
 	coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
 
-	// Simulate a legacy group document created before the soft-delete field.
+	// Simulate a legacy group document created before the deleted/description fields.
 	_, err := coll.InsertOne(ctx, bson.M{"_id": "legacy-grp", "name": "Legacy", "ownerId": "u1", "users": []string{"u1"}})
 	require.NoError(t, err)
 
@@ -2181,36 +2175,4 @@ func TestBackfillGroupsDeleted(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 0, deletedN2)
 	require.EqualValues(t, 0, descN2)
-}
-
-func TestGroupDescription(t *testing.T) {
-	resetDB(t)
-	_, tok := addUser(t, users.NewUserRequest{Username: "descuser", Email: "descuser@local.dev", Password: "Pass#12345"})
-
-	// create with a description
-	g := createGroup(t, groups.CreateGroupRequest{Name: "Desc Group", Description: "movies to watch on fridays"}, tok)
-	require.Equal(t, "movies to watch on fridays", g.Description)
-
-	// update name + description via PATCH
-	body, _ := json.Marshal(groups.UpdateGroupRequest{Name: "Desc Group", Description: "updated blurb"})
-	req, _ := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+g.Id, bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+tok)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var updated groups.GroupResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
-	require.Equal(t, "updated blurb", updated.Description)
-
-	// GET reflects the persisted description
-	getReq, _ := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+g.Id, nil)
-	getReq.Header.Set("Authorization", "Bearer "+tok)
-	getResp, err := http.DefaultClient.Do(getReq)
-	require.NoError(t, err)
-	defer getResp.Body.Close()
-	var fetched groups.GroupResponse
-	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&fetched))
-	require.Equal(t, "updated blurb", fetched.Description)
 }
