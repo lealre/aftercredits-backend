@@ -22,10 +22,11 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 	}
 
 	group := mongodb.GroupDb{
-		Name:    req.Name,
-		OwnerId: userId,
-		Users:   []string{userId},
-		Titles:  mongodb.GroupTitleDb{},
+		Name:        req.Name,
+		Description: strings.TrimSpace(req.Description),
+		OwnerId:     userId,
+		Users:       []string{userId},
+		Titles:      mongodb.GroupTitleDb{},
 	}
 
 	newGroup, err := db.CreateGroup(ctx, group)
@@ -54,6 +55,39 @@ func GetGroupById(db *mongodb.DB, ctx context.Context, groupId, userId string) (
 	}
 
 	return MapDbGroupToApiGroupResponse(groupDb), nil
+}
+
+// RenameGroup renames a group the caller owns. Owner-only; validates a non-empty
+// name and maps a duplicate name to ErrGroupDuplicatedName.
+func UpdateGroupInfo(db *mongodb.DB, ctx context.Context, groupId, ownerId, name, description string) (GroupResponse, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return GroupResponse{}, ErrGroupNameInvalid
+	}
+	description = strings.TrimSpace(description)
+
+	group, err := db.GetGroupById(ctx, groupId, ownerId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return GroupResponse{}, ErrGroupNotFound
+		}
+		return GroupResponse{}, err
+	}
+
+	if group.OwnerId != ownerId {
+		return GroupResponse{}, ErrGroupNotOwnedByUser
+	}
+
+	if err := db.UpdateGroupInfo(ctx, groupId, name, description); err != nil {
+		if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+			return GroupResponse{}, ErrGroupDuplicatedName
+		}
+		return GroupResponse{}, err
+	}
+
+	group.Name = name
+	group.Description = description
+	return MapDbGroupToApiGroupResponse(group), nil
 }
 
 func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userId string) error {
@@ -493,6 +527,52 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 		return err
 	}
 	return nil
+}
+
+// SoftDeleteGroup marks a group deleted (owner only) and removes it from every
+// member's group list. No cascade to titles/ratings/comments.
+func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId string) error {
+	group, err := db.GetGroupById(ctx, groupId, ownerId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+	if group.OwnerId != ownerId {
+		return ErrGroupNotOwnedByUser
+	}
+	if err := db.SoftDeleteGroup(ctx, groupId); err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+	for _, memberId := range group.Users {
+		if err := db.RemoveGroupFromUser(ctx, memberId, groupId); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// LeaveGroup removes a non-owner member from a group (and the group from their
+// group list). The owner cannot leave (must delete instead).
+func LeaveGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
+	group, err := db.GetGroupById(ctx, groupId, userId)
+	if err != nil {
+		if errors.Is(err, mongodb.ErrRecordNotFound) {
+			return ErrGroupNotFound
+		}
+		return err
+	}
+	if group.OwnerId == userId {
+		return ErrOwnerCannotLeaveGroup
+	}
+	if err := db.RemoveUserFromGroup(ctx, groupId, userId); err != nil {
+		return err
+	}
+	return db.RemoveGroupFromUser(ctx, userId, groupId)
 }
 
 // GroupExists reports whether the group exists for the given user. Thin service

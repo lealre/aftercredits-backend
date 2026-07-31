@@ -16,13 +16,16 @@ import (
 // ----- Types for the database -----
 
 type GroupDb struct {
-	Id        string       `json:"id" bson:"_id"`
-	Name      string       `json:"name" bson:"name"`
-	OwnerId   string       `json:"ownerId" bson:"ownerId"`
-	Users     UsersIds     `json:"users" bson:"users"`
-	Titles    GroupTitleDb `json:"titles" bson:"titles"`
-	CreatedAt time.Time    `json:"createdAt" bson:"createdAt"`
-	UpdatedAt time.Time    `json:"updatedAt" bson:"updatedAt"`
+	Id          string       `json:"id" bson:"_id"`
+	Name        string       `json:"name" bson:"name"`
+	Description string       `json:"description" bson:"description,omitempty"`
+	OwnerId     string       `json:"ownerId" bson:"ownerId"`
+	Users       UsersIds     `json:"users" bson:"users"`
+	Titles      GroupTitleDb `json:"titles" bson:"titles"`
+	CreatedAt   time.Time    `json:"createdAt" bson:"createdAt"`
+	UpdatedAt   time.Time    `json:"updatedAt" bson:"updatedAt"`
+	Deleted     bool         `json:"deleted" bson:"deleted"`
+	DeletedAt   *time.Time   `json:"deletedAt,omitempty" bson:"deletedAt,omitempty"`
 }
 
 type UsersIds []string
@@ -59,6 +62,7 @@ func (db *DB) CreateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
 	now := time.Now()
 	group.CreatedAt = now
 	group.UpdatedAt = now
+	group.Deleted = false
 
 	_, err := coll.InsertOne(ctx, group)
 	if err != nil {
@@ -80,8 +84,9 @@ func (db *DB) GroupExists(ctx context.Context, groupId, userId string) (bool, er
 	err := coll.FindOne(
 		ctx,
 		bson.M{
-			"_id":   groupId,
-			"users": bson.M{"$in": []string{userId}}},
+			"_id":     groupId,
+			"users":   bson.M{"$in": []string{userId}},
+			"deleted": bson.M{"$ne": true}},
 		opts).Err()
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -103,6 +108,7 @@ func (db *DB) GroupContainsTitle(ctx context.Context, groupId, titleId, userId s
 		bson.M{
 			"_id":                             groupId,
 			"users":                           bson.M{"$in": []string{userId}},
+			"deleted":                         bson.M{"$ne": true},
 			fmt.Sprintf("titles.%s", titleId): bson.M{"$exists": true},
 		},
 		opts).Err()
@@ -120,8 +126,9 @@ func (db *DB) GetGroupById(ctx context.Context, groupId, userId string) (GroupDb
 
 	var group GroupDb
 	err := coll.FindOne(ctx, bson.M{
-		"_id":   groupId,
-		"users": bson.M{"$in": []string{userId}},
+		"_id":     groupId,
+		"users":   bson.M{"$in": []string{userId}},
+		"deleted": bson.M{"$ne": true},
 	}).Decode(&group)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -462,6 +469,61 @@ func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId st
 	return nil, ErrRecordNotFound
 }
 
+// UpdateGroupInfo sets the name and description on a non-deleted group. Returns
+// ErrDuplicatedRecord if the (ownerId, name) uniqueness is violated,
+// ErrRecordNotFound if absent.
+func (db *DB) UpdateGroupInfo(ctx context.Context, groupId, name, description string) error {
+	coll := db.Collection(GroupsCollection)
+	res, err := coll.UpdateOne(ctx,
+		bson.M{"_id": groupId, "deleted": bson.M{"$ne": true}},
+		bson.M{"$set": bson.M{"name": name, "description": description, "updatedAt": time.Now()}},
+	)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicatedRecord
+		}
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
+}
+
+// SoftDeleteGroup marks a non-deleted group as deleted. ErrRecordNotFound if it
+// was already deleted or does not exist.
+func (db *DB) SoftDeleteGroup(ctx context.Context, groupId string) error {
+	coll := db.Collection(GroupsCollection)
+	now := time.Now()
+	res, err := coll.UpdateOne(ctx,
+		bson.M{"_id": groupId, "deleted": bson.M{"$ne": true}},
+		bson.M{"$set": bson.M{"deleted": true, "deletedAt": now, "updatedAt": now}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
+}
+
+// RemoveUserFromGroup pulls a user id from a non-deleted group's users array.
+func (db *DB) RemoveUserFromGroup(ctx context.Context, groupId, userId string) error {
+	coll := db.Collection(GroupsCollection)
+	res, err := coll.UpdateOne(ctx,
+		bson.M{"_id": groupId, "deleted": bson.M{"$ne": true}},
+		bson.M{"$pull": bson.M{"users": userId}, "$set": bson.M{"updatedAt": time.Now()}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
+}
+
 func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
 	coll := db.Collection(GroupsCollection)
 
@@ -487,4 +549,33 @@ func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId
 	}
 
 	return nil
+}
+
+// BackfillGroupFields normalizes legacy group documents that predate newer
+// fields: it sets deleted=false where absent (must run BEFORE the group unique
+// index is (re)built, so pre-existing groups are covered by the index's
+// `deleted:false` partial filter) and description="" where absent. Idempotent —
+// only touches docs missing each field. Returns the counts updated per field.
+func (db *DB) BackfillGroupFields(ctx context.Context) (deletedCount, descriptionCount int64, err error) {
+	coll := db.Collection(GroupsCollection)
+
+	delRes, err := coll.UpdateMany(
+		ctx,
+		bson.M{"deleted": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"deleted": false}},
+	)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	descRes, err := coll.UpdateMany(
+		ctx,
+		bson.M{"description": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"description": ""}},
+	)
+	if err != nil {
+		return delRes.ModifiedCount, 0, err
+	}
+
+	return delRes.ModifiedCount, descRes.ModifiedCount, nil
 }

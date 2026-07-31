@@ -194,3 +194,13 @@ func (db *DB) UpdateUserGroup(ctx context.Context, userId string, groupId string
 
 	return updatedUser, nil
 }
+
+// RemoveGroupFromUser pulls a group id from a user's groups array.
+func (db *DB) RemoveGroupFromUser(ctx context.Context, userId, groupId string) error {
+	coll := db.Collection(UsersCollection)
+	_, err := coll.UpdateOne(ctx,
+		bson.M{"_id": userId},
+		bson.M{"$pull": bson.M{"groups": groupId}, "$set": bson.M{"updatedAt": time.Now()}},
+	)
+	return err
+}

@@ -4,12 +4,13 @@ import "github.com/lealre/movies-backend/internal/mongodb"
 
 func MapDbGroupToApiGroupResponse(group mongodb.GroupDb) GroupResponse {
 	groupResponse := GroupResponse{
-		Id:        group.Id,
-		Name:      group.Name,
-		OwnerId:   group.OwnerId,
-		Users:     UsersIds(group.Users),
-		CreatedAt: group.CreatedAt,
-		UpdatedAt: group.UpdatedAt,
+		Id:          group.Id,
+		Name:        group.Name,
+		Description: group.Description,
+		OwnerId:     group.OwnerId,
+		Users:       UsersIds(group.Users),
+		CreatedAt:   group.CreatedAt,
+		UpdatedAt:   group.UpdatedAt,
 	}
 
 	for _, title := range group.Titles {

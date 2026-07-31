@@ -15,6 +15,7 @@ var (
 	ErrUpdatingWatchedAtWhenWatchedIsFalse = errors.New("cannot update watchedAt when watched is set to false")
 	ErrInvalidSeasonValue                  = errors.New("season value is invalid")
 	ErrSeasonDoesNotExist                  = errors.New("season does not exist for this title")
+	ErrOwnerCannotLeaveGroup               = errors.New("the group owner cannot leave; delete the group instead")
 )
 
 var ErrorMap = map[error]int{
@@ -27,4 +28,5 @@ var ErrorMap = map[error]int{
 	ErrUpdatingWatchedAtWhenWatchedIsFalse: http.StatusBadRequest,
 	ErrInvalidSeasonValue:                  http.StatusBadRequest,
 	ErrSeasonDoesNotExist:                  http.StatusBadRequest,
+	ErrOwnerCannotLeaveGroup:               http.StatusForbidden,
 }

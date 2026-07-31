@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestCreateGroup(t *testing.T) {
@@ -1950,4 +1952,227 @@ func TestGroupTitlesListOmitsEpisodes(t *testing.T) {
 		require.NotEmpty(t, d.Seasons, "seasons summary must be kept")
 		require.Empty(t, d.Episodes, "episodes must be trimmed from the list payload")
 	}
+}
+
+func TestUpdateGroup(t *testing.T) {
+	t.Run("Owner renames a group successfully", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Old Name"}, ownerTok)
+
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "New Name"}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var updated groups.GroupResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
+		require.Equal(t, "New Name", updated.Name)
+
+		// Database assertion
+		groupDb := getGroup(t, group.Id)
+		require.Equal(t, "New Name", groupDb.Name)
+		require.NotEmpty(t, groupDb.CreatedAt, "createdAt should not be empty")
+		require.NotEmpty(t, groupDb.UpdatedAt, "updatedAt should not be empty")
+	})
+
+	t.Run("Owner sets and updates the description", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "descuser", Password: "testpass"})
+
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Desc Group", Description: "movies to watch on fridays"}, ownerTok)
+		require.Equal(t, "movies to watch on fridays", group.Description)
+
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "Desc Group", Description: "updated blurb"}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var updated groups.GroupResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
+		require.Equal(t, "updated blurb", updated.Description)
+
+		// Database assertion to check the description persisted
+		require.Equal(t, "updated blurb", getGroup(t, group.Id).Description)
+	})
+
+	t.Run("Non-member cannot rename the group and gets 404", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Password: "testpass"})
+		_, otherTok := addUser(t, users.NewUserRequest{Username: "rnother", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Protected"}, ownerTok)
+
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "Hacked"}, otherTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+		require.Equal(t, "Protected", getGroup(t, group.Id).Name, "group name must be unchanged")
+	})
+
+	t.Run("Empty name returns 400", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rnowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Keep Name"}, ownerTok)
+
+		resp := updateGroupFromApi(t, group.Id, groups.UpdateGroupRequest{Name: "   "}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+
+	t.Run("Renaming to an existing owner name returns 400", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "rtnowner", Password: "testpass"})
+		createGroup(t, groups.CreateGroupRequest{Name: "Alpha"}, ownerTok)
+		beta := createGroup(t, groups.CreateGroupRequest{Name: "Beta"}, ownerTok)
+
+		resp := updateGroupFromApi(t, beta.Id, groups.UpdateGroupRequest{Name: "Alpha"}, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		var respBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+		require.Contains(t, respBody.ErrorMessage, groups.ErrGroupDuplicatedName.Error()[1:])
+	})
+}
+
+func TestSoftDeleteGroup(t *testing.T) {
+	t.Run("Owner soft-deletes the group", func(t *testing.T) {
+		resetDB(t)
+		owner, ownerTok := addUser(t, users.NewUserRequest{Username: "delowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "To Delete"}, ownerTok)
+
+		resp := deleteGroupFromApi(t, group.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// group no longer readable -> 404
+		getResp := getGroupFromApi(t, group.Id, ownerTok)
+		defer getResp.Body.Close()
+		require.Equal(t, http.StatusNotFound, getResp.StatusCode)
+
+		// owner's user.groups no longer contains the id
+		require.NotContains(t, getUserFromDb(t, owner.Id).Groups, group.Id)
+
+		// second delete -> 404
+		secondResp := deleteGroupFromApi(t, group.Id, ownerTok)
+		defer secondResp.Body.Close()
+		require.Equal(t, http.StatusNotFound, secondResp.StatusCode)
+	})
+
+	t.Run("Deleting removes the group from every member's group list", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "sdcowner", Password: "testpass"})
+		member, _ := addUser(t, users.NewUserRequest{Username: "sdcmember", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Multi Member"}, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
+
+		require.Contains(t, getUserFromDb(t, member.Id).Groups, group.Id, "member should be in the group before deletion")
+
+		resp := deleteGroupFromApi(t, group.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		require.NotContains(t, getUserFromDb(t, member.Id).Groups, group.Id, "member's group list should be cleaned")
+	})
+
+	t.Run("Soft-deleted group is excluded from reads", func(t *testing.T) {
+		resetDB(t)
+		_, token := addUser(t, users.NewUserRequest{Username: "sdowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "SD Group"}, token)
+
+		// Mark the group deleted directly in the DB.
+		ctx := context.Background()
+		coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
+		_, err := coll.UpdateOne(ctx, bson.M{"_id": group.Id}, bson.M{"$set": bson.M{"deleted": true}})
+		require.NoError(t, err)
+
+		resp := getGroupFromApi(t, group.Id, token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("Group name is reusable after soft delete", func(t *testing.T) {
+		resetDB(t)
+		_, tok := addUser(t, users.NewUserRequest{Username: "reuse", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
+
+		resp := deleteGroupFromApi(t, group.Id, tok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// creating a new group with the SAME name must succeed
+		newGroup := createGroup(t, groups.CreateGroupRequest{Name: "Reusable"}, tok)
+		require.NotEqual(t, group.Id, newGroup.Id)
+	})
+}
+
+func TestLeaveGroup(t *testing.T) {
+	t.Run("Non-owner member leaves the group", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
+		member, memberTok := addUser(t, users.NewUserRequest{Username: "lgmember", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
+
+		resp := removeUserFromGroupApi(t, group.Id, member.Id, memberTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// member no longer sees the group -> 404
+		getResp := getGroupFromApi(t, group.Id, memberTok)
+		defer getResp.Body.Close()
+		require.Equal(t, http.StatusNotFound, getResp.StatusCode)
+
+		// group no longer lists the member, and the member's group list is cleaned
+		require.NotContains(t, getGroup(t, group.Id).Users, member.Id)
+		require.NotContains(t, getUserFromDb(t, member.Id).Groups, group.Id)
+	})
+
+	t.Run("Owner cannot leave and gets 403", func(t *testing.T) {
+		resetDB(t)
+		owner, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Owner Grp"}, ownerTok)
+
+		resp := removeUserFromGroupApi(t, group.Id, owner.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+
+	t.Run("Cannot remove another user (member management deferred) and gets 403", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
+		member, _ := addUser(t, users.NewUserRequest{Username: "lgmember", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
+
+		resp := removeUserFromGroupApi(t, group.Id, member.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+}
+
+func TestBackfillGroupFields(t *testing.T) {
+	resetDB(t)
+	ctx := context.Background()
+	coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
+
+	// Simulate a legacy group document created before the deleted/description fields.
+	_, err := coll.InsertOne(ctx, bson.M{"_id": "legacy-grp", "name": "Legacy", "ownerId": "u1", "users": []string{"u1"}})
+	require.NoError(t, err)
+
+	db := mongodb.NewDB(testClient)
+
+	deletedN, descN, err := db.BackfillGroupFields(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, deletedN)
+	require.EqualValues(t, 1, descN)
+
+	var got bson.M
+	require.NoError(t, coll.FindOne(ctx, bson.M{"_id": "legacy-grp"}).Decode(&got))
+	require.Equal(t, false, got["deleted"])
+	require.Equal(t, "", got["description"])
+
+	// Idempotent: a second run touches nothing.
+	deletedN2, descN2, err := db.BackfillGroupFields(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, deletedN2)
+	require.EqualValues(t, 0, descN2)
 }

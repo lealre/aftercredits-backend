@@ -109,3 +109,46 @@ func patchGroupTitleWatched(t *testing.T, groupId string, pathBody []byte, token
 	require.NoError(t, json.NewDecoder(respGroupSetWatched.Body).Decode(&resp))
 	return resp
 }
+
+func getGroupFromApi(t *testing.T, groupId, token string) *http.Response {
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/groups/"+groupId, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+func updateGroupFromApi(t *testing.T, groupId string, body groups.UpdateGroupRequest, token string) *http.Response {
+	jsonData, err := json.Marshal(body)
+	require.NoError(t, err)
+	req, err := http.NewRequest(http.MethodPatch, testServer.URL+"/groups/"+groupId, bytes.NewBuffer(jsonData))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+func deleteGroupFromApi(t *testing.T, groupId, token string) *http.Response {
+	req, err := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+groupId, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+func removeUserFromGroupApi(t *testing.T, groupId, userId, token string) *http.Response {
+	req, err := http.NewRequest(http.MethodDelete, testServer.URL+"/groups/"+groupId+"/users/"+userId, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	return resp
+}
