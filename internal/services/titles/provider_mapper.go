@@ -1,14 +1,15 @@
 package titles
 
 import (
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
-// MapProviderTitleToDb converts a provider-neutral Title into the MongoDB
-// document shape. This replaces the previous direct json.Unmarshal into TitleDb.
-func MapProviderTitleToDb(t titleprovider.Title) mongodb.TitleDb {
-	db := mongodb.TitleDb{
+// MapProviderTitleToDb converts a provider-neutral Title into the
+// storage-neutral models.Title shape. This replaces the previous direct
+// json.Unmarshal into TitleDb.
+func MapProviderTitleToDb(t titleprovider.Title) models.Title {
+	db := models.Title{
 		ID:             t.ID,
 		Type:           t.Type,
 		PrimaryTitle:   t.PrimaryTitle,
@@ -16,7 +17,7 @@ func MapProviderTitleToDb(t titleprovider.Title) mongodb.TitleDb {
 		StartYear:      t.StartYear,
 		RuntimeSeconds: t.RuntimeSeconds,
 		Genres:         t.Genres,
-		Rating:         mongodb.Rating{AggregateRating: t.Rating.AggregateRating, VoteCount: t.Rating.VoteCount},
+		Rating:         models.Rating{AggregateRating: t.Rating.AggregateRating, VoteCount: t.Rating.VoteCount},
 		Plot:           t.Plot,
 		Directors:      mapProviderPersons(t.Directors),
 		Writers:        mapProviderPersons(t.Writers),
@@ -25,16 +26,16 @@ func MapProviderTitleToDb(t titleprovider.Title) mongodb.TitleDb {
 		Episodes:       mapProviderEpisodes(t.Episodes),
 	}
 	if t.Metacritic != nil {
-		db.Metacritic = &mongodb.Metacritic{Score: t.Metacritic.Score, ReviewCount: t.Metacritic.ReviewCount}
+		db.Metacritic = &models.Metacritic{Score: t.Metacritic.Score, ReviewCount: t.Metacritic.ReviewCount}
 	}
 	for _, c := range t.OriginCountries {
-		db.OriginCountries = append(db.OriginCountries, mongodb.CodeName{Code: c.Code, Name: c.Name})
+		db.OriginCountries = append(db.OriginCountries, models.CodeName{Code: c.Code, Name: c.Name})
 	}
 	for _, l := range t.SpokenLanguages {
-		db.SpokenLanguages = append(db.SpokenLanguages, mongodb.CodeName{Code: l.Code, Name: l.Name})
+		db.SpokenLanguages = append(db.SpokenLanguages, models.CodeName{Code: l.Code, Name: l.Name})
 	}
 	for _, i := range t.Interests {
-		db.Interests = append(db.Interests, mongodb.Interest{ID: i.ID, Name: i.Name, IsSubgenre: i.IsSubgenre})
+		db.Interests = append(db.Interests, models.Interest{ID: i.ID, Name: i.Name, IsSubgenre: i.IsSubgenre})
 	}
 	return db
 }
@@ -56,14 +57,14 @@ func MapProviderSearchItemsToTitles(items []titleprovider.SearchItem) []Title {
 	return out
 }
 
-func mapProviderImage(i titleprovider.Image) mongodb.Image {
-	return mongodb.Image{URL: i.URL, Width: i.Width, Height: i.Height}
+func mapProviderImage(i titleprovider.Image) models.Image {
+	return models.Image{URL: i.URL, Width: i.Width, Height: i.Height}
 }
 
-func mapProviderPersons(ps []titleprovider.Person) []mongodb.Person {
-	out := make([]mongodb.Person, 0, len(ps))
+func mapProviderPersons(ps []titleprovider.Person) []models.Person {
+	out := make([]models.Person, 0, len(ps))
 	for _, p := range ps {
-		person := mongodb.Person{
+		person := models.Person{
 			ID:                 p.ID,
 			DisplayName:        p.DisplayName,
 			AlternativeNames:   p.AlternativeNames,
@@ -78,18 +79,18 @@ func mapProviderPersons(ps []titleprovider.Person) []mongodb.Person {
 	return out
 }
 
-func mapProviderSeasons(ss []titleprovider.Season) []mongodb.Seasons {
-	out := make([]mongodb.Seasons, len(ss))
+func mapProviderSeasons(ss []titleprovider.Season) []models.Seasons {
+	out := make([]models.Seasons, len(ss))
 	for i, s := range ss {
-		out[i] = mongodb.Seasons{Season: s.Season, EpisodeCount: s.EpisodeCount}
+		out[i] = models.Seasons{Season: s.Season, EpisodeCount: s.EpisodeCount}
 	}
 	return out
 }
 
-func mapProviderEpisodes(es []titleprovider.Episode) []mongodb.Episode {
-	out := make([]mongodb.Episode, len(es))
+func mapProviderEpisodes(es []titleprovider.Episode) []models.Episode {
+	out := make([]models.Episode, len(es))
 	for i, e := range es {
-		ep := mongodb.Episode{
+		ep := models.Episode{
 			ID:             e.ID,
 			Title:          e.Title,
 			PrimaryImage:   mapProviderImage(e.PrimaryImage),
@@ -99,10 +100,10 @@ func mapProviderEpisodes(es []titleprovider.Episode) []mongodb.Episode {
 			Plot:           e.Plot,
 		}
 		if e.Rating != nil {
-			ep.Rating = &mongodb.Rating{AggregateRating: e.Rating.AggregateRating, VoteCount: e.Rating.VoteCount}
+			ep.Rating = &models.Rating{AggregateRating: e.Rating.AggregateRating, VoteCount: e.Rating.VoteCount}
 		}
 		if e.ReleaseDate != nil {
-			ep.ReleaseDate = &mongodb.ReleaseDate{Year: e.ReleaseDate.Year, Month: e.ReleaseDate.Month, Day: e.ReleaseDate.Day}
+			ep.ReleaseDate = &models.ReleaseDate{Year: e.ReleaseDate.Year, Month: e.ReleaseDate.Month, Day: e.ReleaseDate.Day}
 		}
 		out[i] = ep
 	}

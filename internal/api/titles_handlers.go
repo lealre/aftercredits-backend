@@ -11,8 +11,8 @@ import (
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/models"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	if titleExists, err := titles.TitleExists(api.Db, r.Context(), titleID); titleExists {
 		respondWithError(w, titles.ErrorMap[titles.ErrTitleAlreadyExists], titles.ErrTitleAlreadyExists.Error())
 		return
-	} else if err != nil && err != mongodb.ErrRecordNotFound {
+	} else if err != nil && err != store.ErrRecordNotFound {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
 		return
@@ -162,7 +162,7 @@ func (api *API) GetTitleEpisodes(w http.ResponseWriter, r *http.Request) {
 
 	episodes, err := titles.GetEpisodes(api.Db, r.Context(), titleId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
 			return
 		}

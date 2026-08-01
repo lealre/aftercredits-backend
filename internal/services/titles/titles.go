@@ -9,6 +9,7 @@ import (
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -171,18 +172,8 @@ func AddNewTitle(db *mongodb.DB, provider titleprovider.Provider, ctx context.Co
 	title.AddedAt = &now
 	title.UpdatedAt = &now
 
-	doc, err := bson.Marshal(title)
-	if err != nil {
-		return Title{}, err
-	}
-
-	var bsonDoc bson.M
-	if err := bson.Unmarshal(doc, &bsonDoc); err != nil {
-		return Title{}, err
-	}
-
-	if err := db.AddTitle(ctx, bsonDoc); err != nil {
-		if !mongo.IsDuplicateKeyError(err) {
+	if err := db.AddTitle(ctx, title); err != nil {
+		if !errors.Is(err, store.ErrDuplicatedRecord) {
 			return Title{}, err
 		}
 		// If duplicate, read back the stored document

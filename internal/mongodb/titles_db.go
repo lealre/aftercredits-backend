@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -96,28 +98,33 @@ type ReleaseDate struct {
 
 // ----- Methods for the database -----
 
-func (db *DB) GetTitleById(ctx context.Context, id string) (TitleDb, error) {
+func (db *DB) GetTitleById(ctx context.Context, id string) (models.Title, error) {
 	coll := db.Collection(TitlesCollection)
 	var titleDb TitleDb
 	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&titleDb); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return TitleDb{}, ErrRecordNotFound
+			return models.Title{}, store.ErrRecordNotFound
 		}
-		return TitleDb{}, err
+		return models.Title{}, err
 	}
-	return titleDb, nil
+	return titleDbToModel(titleDb), nil
 }
 
-func (db *DB) AddTitle(ctx context.Context, doc map[string]any) error {
-	if doc == nil {
-		return fmt.Errorf("doc is nil")
-	}
-	if _, ok := doc["_id"]; !ok {
-		return fmt.Errorf("doc missing _id")
+// AddTitle inserts a title document. It takes a storage-neutral models.Title
+// and maps it to the mongo-specific TitleDb internally before persisting.
+func (db *DB) AddTitle(ctx context.Context, title models.Title) error {
+	if title.ID == "" {
+		return fmt.Errorf("title missing id")
 	}
 	coll := db.Collection(TitlesCollection)
-	_, err := coll.InsertOne(ctx, doc)
-	return err
+	_, err := coll.InsertOne(ctx, titleModelToDb(title))
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return store.ErrDuplicatedRecord
+		}
+		return err
+	}
+	return nil
 }
 
 func (db *DB) DeleteTitle(ctx context.Context, id string) (bool, error) {
@@ -129,7 +136,7 @@ func (db *DB) DeleteTitle(ctx context.Context, id string) (bool, error) {
 	return res.DeletedCount > 0, nil
 }
 
-func (db *DB) GetTitles(ctx context.Context, args ...any) ([]TitleDb, error) {
+func (db *DB) GetTitles(ctx context.Context, args ...any) ([]models.Title, error) {
 	coll := db.Collection(TitlesCollection)
 
 	filter, opts := ResolveFilterAndOptionsSearch(args...)
@@ -139,9 +146,14 @@ func (db *DB) GetTitles(ctx context.Context, args ...any) ([]TitleDb, error) {
 	}
 	defer cursor.Close(ctx)
 
-	var allTitles []TitleDb
-	if err := cursor.All(ctx, &allTitles); err != nil {
-		return []TitleDb{}, err
+	var allTitlesDb []TitleDb
+	if err := cursor.All(ctx, &allTitlesDb); err != nil {
+		return []models.Title{}, err
+	}
+
+	allTitles := make([]models.Title, len(allTitlesDb))
+	for i, t := range allTitlesDb {
+		allTitles[i] = titleDbToModel(t)
 	}
 
 	return allTitles, nil
@@ -175,21 +187,26 @@ func (db *DB) TitleExists(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-func (db *DB) AggregateTitles(ctx context.Context, pipeline mongo.Pipeline) ([]TitleDb, error) {
+func (db *DB) AggregateTitles(ctx context.Context, pipeline mongo.Pipeline) ([]models.Title, error) {
 	coll := db.Collection(TitlesCollection)
 
 	cursor, err := coll.Aggregate(ctx, pipeline)
 	if err != nil {
-		return []TitleDb{}, err
+		return []models.Title{}, err
 	}
 	defer cursor.Close(ctx)
 
 	var dbTitles []TitleDb
 	if err := cursor.All(ctx, &dbTitles); err != nil {
-		return []TitleDb{}, err
+		return []models.Title{}, err
 	}
 
-	return dbTitles, nil
+	titles := make([]models.Title, len(dbTitles))
+	for i, t := range dbTitles {
+		titles[i] = titleDbToModel(t)
+	}
+
+	return titles, nil
 }
 
 // GetTitleTypes fetches title types from the database for the given title IDs.
