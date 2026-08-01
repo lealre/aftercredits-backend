@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
@@ -303,7 +304,22 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId, userId stri
 
 	var usersResponse []users.UserResponse
 	for _, userDb := range usersDb {
-		usersResponse = append(usersResponse, users.MapDbUserToApiUserResponse(userDb))
+		// TODO(Task 6): GetUsersFromGroup will return []models.User directly
+		// once groups_db.go is converted; drop this inline conversion then.
+		usersResponse = append(usersResponse, users.MapDbUserToApiUserResponse(models.User{
+			Id:           userDb.Id,
+			Name:         userDb.Name,
+			Email:        userDb.Email,
+			Username:     userDb.Username,
+			PasswordHash: userDb.PasswordHash,
+			AvatarURL:    userDb.AvatarURL,
+			Groups:       userDb.Groups,
+			Role:         models.UserRole(userDb.Role),
+			IsActive:     userDb.IsActive,
+			LastLoginAt:  userDb.LastLoginAt,
+			CreatedAt:    userDb.CreatedAt,
+			UpdatedAt:    userDb.UpdatedAt,
+		}))
 	}
 
 	return usersResponse, nil

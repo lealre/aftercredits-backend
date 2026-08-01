@@ -2,21 +2,23 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/users"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	user := auth.GetUserFromContext(r.Context())
 
-	if user.Role != mongodb.RoleAdmin {
+	if user.Role != models.RoleAdmin {
 		respondWithForbidden(w)
 		return
 	}
@@ -157,7 +159,7 @@ func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := users.DeleteUserById(api.Db, r.Context(), userId); err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			logger.Printf("WARNING: Attempted deletion of own user ID failed because user was not found. ERROR: %v", err)
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
 			return

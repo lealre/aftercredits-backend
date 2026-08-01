@@ -3,21 +3,21 @@ package users
 import (
 	"time"
 
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 )
 
 type User struct {
-	Id           string           `json:"id"`
-	Name         string           `json:"name"`
-	Email        string           `json:"email"`
-	PasswordHash string           `json:"passwordHash"`
-	AvatarURL    *string          `json:"avatarUrl,omitempty"`
-	Groups       []string         `json:"groups,omitempty"`
-	Role         mongodb.UserRole `json:"role"`
-	IsActive     bool             `json:"isActive"`
-	LastLoginAt  *time.Time       `json:"lastLoginAt,omitempty"`
-	CreatedAt    time.Time        `json:"createdAt"`
-	UpdatedAt    time.Time        `json:"updatedAt"`
+	Id           string          `json:"id"`
+	Name         string          `json:"name"`
+	Email        string          `json:"email"`
+	PasswordHash string          `json:"passwordHash"`
+	AvatarURL    *string         `json:"avatarUrl,omitempty"`
+	Groups       []string        `json:"groups,omitempty"`
+	Role         models.UserRole `json:"role"`
+	IsActive     bool            `json:"isActive"`
+	LastLoginAt  *time.Time      `json:"lastLoginAt,omitempty"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
 }
 
 type AllUsersResponse struct {

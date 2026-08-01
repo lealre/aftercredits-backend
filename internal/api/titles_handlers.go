@@ -10,6 +10,7 @@ import (
 	"github.com/lealre/movies-backend/internal/config"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
 )
@@ -18,7 +19,7 @@ func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
 
-	if currentUser.Role != mongodb.RoleAdmin {
+	if currentUser.Role != models.RoleAdmin {
 		respondWithForbidden(w)
 		return
 	}
@@ -42,7 +43,7 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
 
-	if currentUser.Role != mongodb.RoleAdmin {
+	if currentUser.Role != models.RoleAdmin {
 		respondWithForbidden(w)
 		return
 	}
@@ -100,7 +101,7 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if currentUser.Role != mongodb.RoleAdmin {
+	if currentUser.Role != models.RoleAdmin {
 		respondWithForbidden(w)
 		return
 	}

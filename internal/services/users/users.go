@@ -2,13 +2,15 @@ package users
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/auth"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
@@ -25,13 +27,13 @@ func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
 	return users, nil
 }
 
-func GetUserDbByUsernameOrEmail(db *mongodb.DB, ctx context.Context, username, email string) (mongodb.UserDb, error) {
+func GetUserDbByUsernameOrEmail(db *mongodb.DB, ctx context.Context, username, email string) (models.User, error) {
 	userDb, err := db.GetUserByUsernameOrEmail(ctx, username, email)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			return mongodb.UserDb{}, ErrUserNotFound
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return models.User{}, ErrUserNotFound
 		}
-		return mongodb.UserDb{}, err
+		return models.User{}, err
 	}
 
 	return userDb, nil
@@ -70,13 +72,13 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 	}
 
 	now := time.Now()
-	userDb := mongodb.UserDb{
+	userDb := models.User{
 		Id:           primitive.NewObjectID().Hex(),
 		Name:         newUser.Name,
 		Username:     newUser.Username,
 		Email:        newUser.Email,
 		PasswordHash: passorHash,
-		Role:         mongodb.RoleUser,
+		Role:         models.RoleUser,
 		IsActive:     true,
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -84,7 +86,7 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 
 	err = db.AddUser(ctx, userDb)
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return UserResponse{}, ErrCredentialsAlreadyExists
 		}
 		return UserResponse{}, err
@@ -126,7 +128,7 @@ func UpdateUserInfo(db *mongodb.DB, ctx context.Context, userId string, userUpda
 
 	userUpdatedDb, err := db.UpdateUserInfo(ctx, userId, userToUpdateDb)
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return UserResponse{}, ErrCredentialsAlreadyExists
 		}
 		return UserResponse{}, err
@@ -142,7 +144,7 @@ func DeleteUserById(db *mongodb.DB, ctx context.Context, id string) error {
 func UpdateUserLastLoginAt(db *mongodb.DB, ctx context.Context, userId string) (UserResponse, error) {
 	userDb, err := db.UpdateUserLastLoginAt(ctx, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return UserResponse{}, ErrUserNotFound
 		}
 		return UserResponse{}, err
@@ -151,7 +153,7 @@ func UpdateUserLastLoginAt(db *mongodb.DB, ctx context.Context, userId string) (
 	return MapDbUserToApiUserResponse(userDb), nil
 }
 
-func BuildLoginResponse(db *mongodb.DB, ctx context.Context, user mongodb.UserDb, token string) (auth.LoginResponse, error) {
+func BuildLoginResponse(db *mongodb.DB, ctx context.Context, user models.User, token string) (auth.LoginResponse, error) {
 	userResponse, err := UpdateUserLastLoginAt(db, ctx, user.Id)
 	if err != nil {
 		return auth.LoginResponse{}, err
@@ -163,7 +165,7 @@ func UpdateUserGroup(db *mongodb.DB, ctx context.Context, userId string, groupId
 	userDb, err := db.UpdateUserGroup(ctx, userId, groupId)
 
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return UserResponse{}, ErrUserNotFound
 		}
 		return UserResponse{}, err

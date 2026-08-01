@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -11,8 +12,10 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/lealre/movies-backend/internal/auth"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/users"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -109,7 +112,7 @@ func createSuperuser(ctx context.Context, db *mongodb.DB) error {
 		fmt.Printf("ℹ️  User with username '%s' or email '%s' already exists, skipping creation\n", username, email)
 		return nil
 	}
-	if err != mongodb.ErrRecordNotFound {
+	if !errors.Is(err, store.ErrRecordNotFound) {
 		return fmt.Errorf("failed to check if user exists: %w", err)
 	}
 
@@ -121,12 +124,12 @@ func createSuperuser(ctx context.Context, db *mongodb.DB) error {
 
 	// Create user with Admin role
 	now := time.Now()
-	userDb := mongodb.UserDb{
+	userDb := models.User{
 		Id:           primitive.NewObjectID().Hex(),
 		Username:     username,
 		Email:        email,
 		PasswordHash: passwordHash,
-		Role:         mongodb.RoleAdmin,
+		Role:         models.RoleAdmin,
 		IsActive:     true,
 		CreatedAt:    now,
 		UpdatedAt:    now,
