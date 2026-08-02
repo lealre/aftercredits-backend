@@ -134,6 +134,48 @@ func assembleSeasonsRatings(rows []database.RatingSeason) *models.SeasonsRatings
 	return &out
 }
 
+// commentRowToModel assembles a database.Comment row plus its (possibly nil)
+// season map into the storage-neutral models.Comment. Comment is nullable at
+// the column level (movies set it, series leave it NULL), mapped via
+// textToPtr; seasons is nil for a movie comment and non-nil (the season map)
+// for a series comment, matching mongodb's convention.
+func commentRowToModel(c database.Comment, seasons *models.SeasonsComments) models.Comment {
+	return models.Comment{
+		Id:              c.ID,
+		TitleId:         c.TitleID,
+		UserId:          c.UserID,
+		Comment:         textToPtr(c.Comment),
+		SeasonsComments: seasons,
+		CreatedAt:       c.CreatedAt.Time,
+		UpdatedAt:       c.UpdatedAt.Time,
+	}
+}
+
+// commentSeasonRowToItem converts a database.CommentSeason row into a
+// models.SeasonCommentItem.
+func commentSeasonRowToItem(s database.CommentSeason) models.SeasonCommentItem {
+	return models.SeasonCommentItem{
+		Comment:   s.Comment,
+		AddedAt:   s.AddedAt.Time,
+		UpdatedAt: s.UpdatedAt.Time,
+	}
+}
+
+// assembleSeasonsComments groups comment_seasons rows for a single comment
+// into a *models.SeasonsComments, matching mongodb's nil/empty convention:
+// nil when there are no season rows (movie comments), a non-nil map
+// otherwise (series comments).
+func assembleSeasonsComments(rows []database.CommentSeason) *models.SeasonsComments {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make(models.SeasonsComments, len(rows))
+	for _, r := range rows {
+		out[r.Season] = commentSeasonRowToItem(r)
+	}
+	return &out
+}
+
 // titleToRow converts a models.Title into the params for InsertTitle. The
 // query columns (primary_title, type, start_year, ...) are denormalized
 // copies used for filtering/sorting/indexing; metadata holds the complete
