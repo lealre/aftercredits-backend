@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
@@ -15,12 +15,12 @@ type DefaultResponse struct {
 }
 
 type API struct {
-	Db       *mongodb.DB
+	Db       store.Store
 	Secret   *string
 	Provider titleprovider.Provider
 }
 
-func NewAPI(db *mongodb.DB, provider titleprovider.Provider) *API {
+func NewAPI(db store.Store, provider titleprovider.Provider) *API {
 	return &API{Db: db, Provider: provider}
 }
 

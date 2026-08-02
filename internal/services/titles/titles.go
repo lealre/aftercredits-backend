@@ -8,7 +8,6 @@ import (
 	"github.com/lealre/movies-backend/internal/config"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
@@ -27,7 +26,7 @@ titles from the titles collection, for use in the admin scenario.
 🟩 CASE 2: Filter by the native titles collection fields
 */
 func GetPageOfTitles(
-	db *mongodb.DB,
+	db store.Store,
 	ctx context.Context,
 	size, page int,
 	orderByField string,
@@ -68,7 +67,7 @@ func GetPageOfTitles(
 	}, nil
 }
 
-func AddNewTitle(db *mongodb.DB, provider titleprovider.Provider, ctx context.Context, titleId string) (Title, error) {
+func AddNewTitle(db store.Store, provider titleprovider.Provider, ctx context.Context, titleId string) (Title, error) {
 	logger := logx.FromContext(ctx)
 
 	providerTitle, err := provider.GetTitle(ctx, titleId)
@@ -104,7 +103,7 @@ func AddNewTitle(db *mongodb.DB, provider titleprovider.Provider, ctx context.Co
 	return MapDbTitleToApiTitle(title), nil
 }
 
-func DeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) error {
+func DeleteTitle(db store.Store, ctx context.Context, titleId string) error {
 	_, err := db.DeleteTitle(ctx, titleId)
 	if err != nil {
 		return err
@@ -113,7 +112,7 @@ func DeleteTitle(db *mongodb.DB, ctx context.Context, titleId string) error {
 	return nil
 }
 
-func GetTitleById(db *mongodb.DB, ctx context.Context, titleId string) (Title, error) {
+func GetTitleById(db store.Store, ctx context.Context, titleId string) (Title, error) {
 	titleDb, err := db.GetTitleById(ctx, titleId)
 	if err != nil {
 		return Title{}, err
@@ -124,7 +123,7 @@ func GetTitleById(db *mongodb.DB, ctx context.Context, titleId string) (Title, e
 
 // GetEpisodes returns the episodes stored on a title. Fetched separately from
 // the main title/list payload so large episode arrays are loaded on demand.
-func GetEpisodes(db *mongodb.DB, ctx context.Context, titleId string) ([]Episode, error) {
+func GetEpisodes(db store.Store, ctx context.Context, titleId string) ([]Episode, error) {
 	titleDb, err := db.GetTitleById(ctx, titleId)
 	if err != nil {
 		return nil, err
@@ -142,6 +141,6 @@ func SearchTitles(provider titleprovider.Provider, ctx context.Context, searchQu
 
 // TitleExists reports whether a title with the given id exists. It is a thin
 // service passthrough so handlers reach the DB only through the service layer.
-func TitleExists(db *mongodb.DB, ctx context.Context, titleId string) (bool, error) {
+func TitleExists(db store.Store, ctx context.Context, titleId string) (bool, error) {
 	return db.TitleExists(ctx, titleId)
 }

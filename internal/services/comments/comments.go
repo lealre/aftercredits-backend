@@ -9,7 +9,6 @@ import (
 
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/models"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/store"
 )
@@ -21,7 +20,7 @@ import (
 * - The title is in the group
 * - The user is in the group
  */
-func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) ([]Comment, error) {
+func GetCommentsByTitleId(db store.Store, ctx context.Context, groupId, titleId, userId string) ([]Comment, error) {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		return []Comment{}, err
@@ -45,7 +44,7 @@ func GetCommentsByTitleId(db *mongodb.DB, ctx context.Context, groupId, titleId,
 // Routes to the appropriate handler based on title type (TV series or movie):
 //   - addCommentForTVSeries: If the title is a TV series (tvSeries or tvMiniSeries)
 //   - addCommentForMovie: If the title is a movie (non-TV series)
-func AddComment(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string, title titles.Title) (Comment, error) {
+func AddComment(db store.Store, ctx context.Context, newComment NewComment, userId string, title titles.Title) (Comment, error) {
 	logger := logx.FromContext(ctx)
 	if strings.TrimSpace(newComment.Comment) == "" {
 		return Comment{}, ErrCommentIsNull
@@ -64,7 +63,7 @@ func AddComment(db *mongodb.DB, ctx context.Context, newComment NewComment, user
 	return addCommentForMovie(db, ctx, newComment, userId)
 }
 
-func addCommentForMovie(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string) (Comment, error) {
+func addCommentForMovie(db store.Store, ctx context.Context, newComment NewComment, userId string) (Comment, error) {
 	newCommentModel := models.Comment{
 		TitleId: newComment.TitleId,
 		UserId:  userId,
@@ -101,7 +100,7 @@ func addCommentForMovie(db *mongodb.DB, ctx context.Context, newComment NewComme
 //   - ErrSeasonRequired: If season is missing
 //   - ErrSeasonDoesNotExist: If the season doesn't exist in the title
 //   - ErrSeasonCommentAlreadyExists: If comment for this season already exists
-func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string, title titles.Title) (Comment, error) {
+func addCommentForTVSeries(db store.Store, ctx context.Context, newComment NewComment, userId string, title titles.Title) (Comment, error) {
 	// 1. Validates that a season number is provided
 	if newComment.Season == nil {
 		return Comment{}, ErrSeasonRequired
@@ -198,7 +197,7 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 //   - ErrInvalidSeasonValue: if a season is provided and is less than or equal to zero
 //   - ErrCommentNotFound: if the underlying specific handler cannot find the target comment
 //   - Any error propagated from the underlying database operations
-func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+func UpdateComment(db store.Store, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
 	logger := logx.FromContext(ctx)
 	if strings.TrimSpace(updateReq.Comment) == "" {
 		return Comment{}, ErrCommentIsNull
@@ -218,7 +217,7 @@ func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string
 
 }
 
-func updateCommentForMovie(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
+func updateCommentForMovie(db store.Store, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
 	comment := models.Comment{
 		Id:      commentId,
 		Comment: &updateReq.Comment,
@@ -248,7 +247,7 @@ func updateCommentForMovie(db *mongodb.DB, ctx context.Context, commentId, userI
 //   - ErrSeasonRequired: if no season is provided in the update request.
 //   - ErrCommentNotFound: if the comment or the specified season comment does not exist.
 //   - Any error returned by db.GetCommentById or db.UpdateComment when fetching or persisting the update.
-func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+func updateCommentForTVSeries(db store.Store, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
 	// 1. Validate that a season number is provided in the update request
 	if updateReq.Season == nil {
 		return Comment{}, ErrSeasonRequired
@@ -324,7 +323,7 @@ func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, us
 	return MapDbCommentToApiComment(updatedComment), nil
 }
 
-func DeleteComment(db *mongodb.DB, ctx context.Context, commentId, userId string) (int64, error) {
+func DeleteComment(db store.Store, ctx context.Context, commentId, userId string) (int64, error) {
 	deletedCount, err := db.DeleteComment(ctx, commentId, userId)
 	if err != nil {
 		return 0, err
@@ -341,7 +340,7 @@ func DeleteComment(db *mongodb.DB, ctx context.Context, commentId, userId string
 //   - the season comment must exist in the stored seasonsComments map
 //
 // If, after deleting the season entry, there are no seasons left, the whole comment document is deleted.
-func DeleteCommentSeason(db *mongodb.DB, ctx context.Context, commentId, userId string, season int, title titles.Title) error {
+func DeleteCommentSeason(db store.Store, ctx context.Context, commentId, userId string, season int, title titles.Title) error {
 	if season <= 0 {
 		return ErrInvalidSeasonValue
 	}

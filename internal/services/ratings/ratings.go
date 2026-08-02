@@ -8,12 +8,11 @@ import (
 
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/models"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/store"
 )
 
-func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([]Rating, error) {
+func GetRatingsByTitleId(db store.Store, ctx context.Context, titleId string) ([]Rating, error) {
 	ratingsDb, err := db.GetRatingsByTitleId(ctx, titleId)
 	if err != nil {
 		return []Rating{}, err
@@ -27,7 +26,7 @@ func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([
 	return ratings, nil
 }
 
-func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string) (Rating, error) {
+func GetRatingById(db store.Store, ctx context.Context, ratingId, userId string) (Rating, error) {
 	ratingDb, err := db.GetRatingById(ctx, ratingId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -39,7 +38,7 @@ func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string)
 	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (TitlesRatings, error) {
+func GetRatingsBatch(db store.Store, ctx context.Context, titleIDs []string) (TitlesRatings, error) {
 	allRatingsDb, err := db.GetRatingsByTitleIds(ctx, titleIDs)
 	if err != nil {
 		return TitlesRatings{}, err
@@ -68,7 +67,7 @@ func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (Ti
 // Returns:
 //   - Rating: The created or updated rating with all fields populated
 //   - error: Returns various errors based on validation failures from routes handlers
-func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+func AddRating(db store.Store, ctx context.Context, rating NewRating, userId string) (Rating, error) {
 	logger := logx.FromContext(ctx)
 
 	if rating.Note < 0 || rating.Note > 10 {
@@ -120,7 +119,7 @@ func AddRating(db *mongodb.DB, ctx context.Context, rating NewRating, userId str
 //   - ErrSeasonRequired: If season is missing
 //   - ErrSeasonDoesNotExist: If the season doesn't exist in the title
 //   - ErrSeasonRatingAlreadyExists: If rating for this season already exists
-func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRating, userId string, title titles.Title) (Rating, error) {
+func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRating, userId string, title titles.Title) (Rating, error) {
 	// 1.1: Validates that a season number is provided
 	if newRating.Season == nil {
 		return Rating{}, ErrSeasonRequired
@@ -238,7 +237,7 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 //   - Rating: The created rating with all fields populated
 //   - error: Returns various errors based on validation failures:
 //   - ErrRatingAlreadyExists: If rating already exists
-func addRatingForMovie(db *mongodb.DB, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+func addRatingForMovie(db store.Store, ctx context.Context, rating NewRating, userId string) (Rating, error) {
 	// 1.1: Checks if a rating already exists for this user/title combination
 	_, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
 	if err == nil {
@@ -266,7 +265,7 @@ func addRatingForMovie(db *mongodb.DB, ctx context.Context, rating NewRating, us
 	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+func UpdateRating(db store.Store, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
 	logger := logx.FromContext(ctx)
 
 	if updateReq.Note < 0 || updateReq.Note > 10 {
@@ -295,7 +294,7 @@ func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, 
 	}
 }
 
-func updateRatingForMovie(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+func updateRatingForMovie(db store.Store, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
 	ratingDb := models.UserRating{
 		Id:   ratingId,
 		Note: updateReq.Note,
@@ -335,7 +334,7 @@ func updateRatingForMovie(db *mongodb.DB, ctx context.Context, ratingId, userId 
 //   - ErrSeasonDoesNotExist: if the specified season is not present in the rating.
 //   - Any error returned by db.GetRatingById or db.UpdateRating when fetching or persisting the update.
 func updateRatingForTVSeries(
-	db *mongodb.DB,
+	db store.Store,
 	ctx context.Context,
 	rating Rating,
 	userId string,
@@ -431,7 +430,7 @@ func updateRatingForTVSeries(
 // Returns:
 //   - int64: The number of deleted documents (should be 1 if successful, 0 if not found)
 //   - error: Returns ErrRatingNotFound if the rating doesn't exist, or any database error
-func DeleteRating(db *mongodb.DB, ctx context.Context, ratingId, userId string) (int64, error) {
+func DeleteRating(db store.Store, ctx context.Context, ratingId, userId string) (int64, error) {
 	deletedCount, err := db.DeleteRating(ctx, ratingId, userId)
 	if err != nil {
 		if err == store.ErrRecordNotFound {
@@ -462,7 +461,7 @@ func DeleteRating(db *mongodb.DB, ctx context.Context, ratingId, userId string) 
 //   - ErrInvalidSeasonValue: if season <= 0
 //   - ErrSeasonDoesNotExist: if the season doesn't exist in the title
 //   - ErrRatingNotFound: if the rating or season rating doesn't exist
-func DeleteRatingSeason(db *mongodb.DB, ctx context.Context, ratingId, userId string, seasonStr string, title titles.Title) error {
+func DeleteRatingSeason(db store.Store, ctx context.Context, ratingId, userId string, seasonStr string, title titles.Title) error {
 	season, err := strconv.Atoi(seasonStr)
 	if err != nil {
 		return ErrInvalidSeasonValue

@@ -10,14 +10,13 @@ import (
 
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/models"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/lealre/movies-backend/internal/store"
 )
 
-func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
+func CreateGroup(db store.Store, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
 
 	if strings.TrimSpace(req.Name) == "" {
 		return GroupResponse{}, ErrGroupNameInvalid
@@ -47,7 +46,7 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 	return MapDbGroupToApiGroupResponse(newGroup), nil
 }
 
-func GetGroupById(db *mongodb.DB, ctx context.Context, groupId, userId string) (GroupResponse, error) {
+func GetGroupById(db store.Store, ctx context.Context, groupId, userId string) (GroupResponse, error) {
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -61,7 +60,7 @@ func GetGroupById(db *mongodb.DB, ctx context.Context, groupId, userId string) (
 
 // RenameGroup renames a group the caller owns. Owner-only; validates a non-empty
 // name and maps a duplicate name to ErrGroupDuplicatedName.
-func UpdateGroupInfo(db *mongodb.DB, ctx context.Context, groupId, ownerId, name, description string) (GroupResponse, error) {
+func UpdateGroupInfo(db store.Store, ctx context.Context, groupId, ownerId, name, description string) (GroupResponse, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return GroupResponse{}, ErrGroupNameInvalid
@@ -92,7 +91,7 @@ func UpdateGroupInfo(db *mongodb.DB, ctx context.Context, groupId, ownerId, name
 	return MapDbGroupToApiGroupResponse(group), nil
 }
 
-func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userId string) error {
+func AddUserToGroup(db store.Store, ctx context.Context, groupId, ownerId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -120,7 +119,7 @@ func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userI
 }
 
 func GetTitlesFromGroup(
-	db *mongodb.DB,
+	db store.Store,
 	ctx context.Context,
 	groupId, userId string,
 	size, page int,
@@ -294,7 +293,7 @@ func GetTitlesFromGroup(
 	}, nil
 }
 
-func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {
+func GetUsersFromGroup(db store.Store, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {
 	usersFromGroup, err := db.GetUsersFromGroup(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -311,7 +310,7 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId, userId stri
 	return usersResponse, nil
 }
 
-func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
+func AddTitleToGroup(db store.Store, ctx context.Context, groupId, titleId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -344,7 +343,7 @@ func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, user
 //   - ErrSeasonDoesNotExist: if season is provided but doesn't exist in the title
 //   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when watched is false
 func UpdateGroupTitleWatched(
-	db *mongodb.DB,
+	db store.Store,
 	ctx context.Context,
 	groupId string,
 	title titles.Title,
@@ -373,7 +372,7 @@ func UpdateGroupTitleWatched(
 //   - ErrTitleNotInGroup: if the title is not found in the group
 //   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when watched is false
 func updateGroupTitleWatchedForMovie(
-	db *mongodb.DB,
+	db store.Store,
 	ctx context.Context,
 	groupId string,
 	title titles.Title,
@@ -434,7 +433,7 @@ func updateGroupTitleWatchedForMovie(
 //   - ErrSeasonDoesNotExist: if the season doesn't exist in the title
 //   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when season is not watched
 func updateGroupTitleWatchedForTVSeries(
-	db *mongodb.DB,
+	db store.Store,
 	ctx context.Context,
 	groupId string,
 	title titles.Title,
@@ -508,7 +507,7 @@ func updateGroupTitleWatchedForTVSeries(
 	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
 }
 
-func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
+func RemoveTitleFromGroup(db store.Store, ctx context.Context, groupId, titleId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -533,7 +532,7 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 
 // SoftDeleteGroup marks a group deleted (owner only) and removes it from every
 // member's group list. No cascade to titles/ratings/comments.
-func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId string) error {
+func SoftDeleteGroup(db store.Store, ctx context.Context, groupId, ownerId string) error {
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -560,7 +559,7 @@ func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId strin
 
 // LeaveGroup removes a non-owner member from a group (and the group from their
 // group list). The owner cannot leave (must delete instead).
-func LeaveGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
+func LeaveGroup(db store.Store, ctx context.Context, groupId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -579,20 +578,20 @@ func LeaveGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) err
 
 // GroupExists reports whether the group exists for the given user. Thin service
 // passthrough so handlers reach the DB only through the service layer.
-func GroupExists(db *mongodb.DB, ctx context.Context, groupId, userId string) (bool, error) {
+func GroupExists(db store.Store, ctx context.Context, groupId, userId string) (bool, error) {
 	return db.GroupExists(ctx, groupId, userId)
 }
 
 // GroupContainsTitle reports whether the group (owned/shared with the user)
 // contains the given title. Thin service passthrough.
-func GroupContainsTitle(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) (bool, error) {
+func GroupContainsTitle(db store.Store, ctx context.Context, groupId, titleId, userId string) (bool, error) {
 	return db.GroupContainsTitle(ctx, groupId, titleId, userId)
 }
 
 // EnsureGroupExists returns nil if the group exists for the user, or the
 // underlying error (store.ErrRecordNotFound when absent). Thin service
 // passthrough for handlers that only need the existence/ownership guard.
-func EnsureGroupExists(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
+func EnsureGroupExists(db store.Store, ctx context.Context, groupId, userId string) error {
 	_, err := db.GetGroupById(ctx, groupId, userId)
 	return err
 }
