@@ -17,7 +17,31 @@ services:
       timeout: 5s
       retries: 5
 
+  # Postgres for the v0.1.0 migration (matches the postgres:16 the tests use).
+  # Apply the goose schema after `docker compose up -d postgres`:
+  #   goose -dir sql/schema postgres \
+  #     "postgres://aftercredits:aftercredits@localhost:5432/aftercredits?sslmode=disable" up
+  postgres:
+    image: postgres:16
+    container_name: aftercredits-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-aftercredits}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-aftercredits}
+      - POSTGRES_DB=${POSTGRES_DB:-aftercredits}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER:-aftercredits}\" -d \"${POSTGRES_DB:-aftercredits}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   mongo_data:
     name: aftercredits-mongo-data
     external: true
+  postgres_data:
+    name: aftercredits-postgres-data
