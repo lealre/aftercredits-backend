@@ -1,0 +1,365 @@
+package postgres
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
+)
+
+// newTestMovieTitle builds a minimal, valid models.Title (movie) for
+// insertion, with the given id/primaryTitle/rating so ordering tests can
+// control primary_title and rating_aggregate independently.
+func newTestMovieTitle(t *testing.T, id, primaryTitle string, rating float64) models.Title {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Second)
+	return models.Title{
+		ID:             id,
+		Type:           "movie",
+		PrimaryTitle:   primaryTitle,
+		PrimaryImage:   models.Image{URL: "https://example.com/" + id + ".jpg", Width: 100, Height: 150},
+		StartYear:      2000,
+		RuntimeSeconds: 7200,
+		Genres:         []string{"Drama"},
+		Rating:         models.Rating{AggregateRating: rating, VoteCount: 1000},
+		Plot:           "plot for " + id,
+		AddedAt:        &now,
+		UpdatedAt:      &now,
+	}
+}
+
+// newTestSeriesTitle builds a fully-populated TV-series models.Title
+// (seasons, episodes with both populated and nil optional fields, cast,
+// metacritic, interests, ...) used to prove the JSONB round trip is
+// byte-identical to the input.
+func newTestSeriesTitle(t *testing.T) models.Title {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Second)
+	runtime := 2400
+	plot := "episode plot"
+
+	return models.Title{
+		ID:             "tt-series-" + uuid.NewString(),
+		Type:           "tvSeries",
+		PrimaryTitle:   "Test Series",
+		PrimaryImage:   models.Image{URL: "https://example.com/series.jpg", Width: 300, Height: 450},
+		StartYear:      2015,
+		RuntimeSeconds: 2700,
+		Genres:         []string{"Drama", "Crime"},
+		Rating:         models.Rating{AggregateRating: 9.1, VoteCount: 54321},
+		Metacritic:     &models.Metacritic{Score: 85, ReviewCount: 40},
+		Plot:           "A gripping series about testing.",
+		Directors: []models.Person{
+			{
+				ID:                 "nm1",
+				DisplayName:        "Director One",
+				AlternativeNames:   []string{"D One"},
+				PrimaryImage:       &models.Image{URL: "https://example.com/d1.jpg", Width: 50, Height: 50},
+				PrimaryProfessions: []string{"director"},
+			},
+		},
+		Writers: []models.Person{
+			{ID: "nm2", DisplayName: "Writer One", PrimaryProfessions: []string{"writer"}},
+		},
+		Stars: []models.Person{
+			{ID: "nm3", DisplayName: "Star One", PrimaryProfessions: []string{"actor"}},
+			{ID: "nm4", DisplayName: "Star Two", PrimaryProfessions: []string{"actress"}},
+		},
+		OriginCountries: []models.CodeName{{Code: "US", Name: "United States"}},
+		SpokenLanguages: []models.CodeName{{Code: "en", Name: "English"}},
+		Interests: []models.Interest{
+			{ID: "int1", Name: "Crime Drama", IsSubgenre: true},
+		},
+		Seasons: []models.Seasons{
+			{Season: "1", EpisodeCount: 10},
+			{Season: "2", EpisodeCount: 8},
+		},
+		Episodes: []models.Episode{
+			{
+				ID:             "ep1",
+				Title:          "Pilot",
+				PrimaryImage:   models.Image{URL: "https://example.com/ep1.jpg", Width: 200, Height: 300},
+				Season:         "1",
+				EpisodeNumber:  1,
+				RuntimeSeconds: &runtime,
+				Plot:           &plot,
+				Rating:         &models.Rating{AggregateRating: 8.5, VoteCount: 900},
+				ReleaseDate:    &models.ReleaseDate{Year: 2015, Month: 3, Day: 1},
+			},
+			{
+				// Deliberately leaves every optional field nil, to prove nil
+				// conventions round-trip too, not just populated ones.
+				ID:            "ep2",
+				Title:         "Second",
+				PrimaryImage:  models.Image{URL: "https://example.com/ep2.jpg", Width: 200, Height: 300},
+				Season:        "1",
+				EpisodeNumber: 2,
+			},
+		},
+		AddedAt:   &now,
+		UpdatedAt: &now,
+	}
+}
+
+func TestStore_AddTitle_GetTitleById_RoundTrip(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	title := newTestSeriesTitle(t)
+	require.NoError(t, s.AddTitle(ctx, title))
+
+	got, err := s.GetTitleById(ctx, title.ID)
+	require.NoError(t, err)
+	require.Equal(t, title, got, "GetTitleById must return the exact models.Title that was added (metadata JSONB round trip)")
+}
+
+// TestStore_GetTitleById_NonNilEmptySlices proves that reading back a title
+// whose optional slice fields were never set (a minimal movie, built via
+// newTestMovieTitle, which leaves Directors/Writers/Stars/OriginCountries/
+// SpokenLanguages/Interests/Seasons/Episodes as their nil zero value) still
+// comes back with those 8 fields as non-nil, empty slices — matching
+// mongodb's titleDbToModel, whose personsDbToModel/codeNamesDbToModel/
+// interestsDbToModel/seasonsDbToModel/episodesDbToModel each make() a slice
+// of len(x), never returning nil. This is a read-shape assertion against the
+// mongodb contract, not a round-trip-with-the-input check (the input here IS
+// nil for these fields; the output must not be).
+func TestStore_GetTitleById_NonNilEmptySlices(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	title := newTestMovieTitle(t, "tt-minimal", "Minimal Movie", 5.0)
+	require.Nil(t, title.Directors, "sanity: fixture leaves Directors nil")
+	require.Nil(t, title.Seasons, "sanity: fixture leaves Seasons nil")
+	require.NoError(t, s.AddTitle(ctx, title))
+
+	got, err := s.GetTitleById(ctx, title.ID)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.Directors)
+	require.Len(t, got.Directors, 0)
+	require.NotNil(t, got.Writers)
+	require.Len(t, got.Writers, 0)
+	require.NotNil(t, got.Stars)
+	require.Len(t, got.Stars, 0)
+	require.NotNil(t, got.OriginCountries)
+	require.Len(t, got.OriginCountries, 0)
+	require.NotNil(t, got.SpokenLanguages)
+	require.Len(t, got.SpokenLanguages, 0)
+	require.NotNil(t, got.Interests)
+	require.Len(t, got.Interests, 0)
+	require.NotNil(t, got.Seasons)
+	require.Len(t, got.Seasons, 0)
+	require.NotNil(t, got.Episodes)
+	require.Len(t, got.Episodes, 0)
+}
+
+func TestStore_AddTitle_Duplicate(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	title := newTestMovieTitle(t, "tt-dup", "Dup Movie", 7.0)
+	require.NoError(t, s.AddTitle(ctx, title))
+
+	err := s.AddTitle(ctx, title)
+	require.ErrorIs(t, err, store.ErrDuplicatedRecord)
+}
+
+func TestStore_GetTitleById_NotFound(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	_, err := s.GetTitleById(ctx, "missing-title")
+	require.ErrorIs(t, err, store.ErrRecordNotFound)
+}
+
+func TestStore_DeleteTitle(t *testing.T) {
+	t.Run("deletes existing title", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		title := newTestMovieTitle(t, "tt-del", "Delete Me", 6.0)
+		require.NoError(t, s.AddTitle(ctx, title))
+
+		deleted, err := s.DeleteTitle(ctx, title.ID)
+		require.NoError(t, err)
+		require.True(t, deleted)
+
+		_, err = s.GetTitleById(ctx, title.ID)
+		require.ErrorIs(t, err, store.ErrRecordNotFound)
+	})
+
+	t.Run("missing title returns false", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		deleted, err := s.DeleteTitle(ctx, "does-not-exist")
+		require.NoError(t, err)
+		require.False(t, deleted)
+	})
+}
+
+func TestStore_TitleExists(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	title := newTestMovieTitle(t, "tt-exists", "Exists", 5.0)
+
+	exists, err := s.TitleExists(ctx, title.ID)
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	require.NoError(t, s.AddTitle(ctx, title))
+
+	exists, err = s.TitleExists(ctx, title.ID)
+	require.NoError(t, err)
+	require.True(t, exists)
+}
+
+func TestStore_GetTitleTypes(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	movie := newTestMovieTitle(t, "tt-movie", "A Movie", 7.5)
+	movie.Type = "movie"
+	series := newTestMovieTitle(t, "tt-series", "A Series", 8.0)
+	series.Type = "tvSeries"
+	require.NoError(t, s.AddTitle(ctx, movie))
+	require.NoError(t, s.AddTitle(ctx, series))
+
+	types, err := s.GetTitleTypes(ctx, []string{movie.ID, series.ID, "missing-id"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		movie.ID:  "movie",
+		series.ID: "tvSeries",
+	}, types)
+
+	empty, err := s.GetTitleTypes(ctx, nil)
+	require.NoError(t, err)
+	require.Empty(t, empty)
+}
+
+func TestStore_GetTitlesPage(t *testing.T) {
+	t.Run("sorted by primary_title ascending with pagination", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		for _, ti := range []models.Title{
+			newTestMovieTitle(t, "tt-a", "Alpha", 5.0),
+			newTestMovieTitle(t, "tt-b", "Bravo", 6.0),
+			newTestMovieTitle(t, "tt-c", "Charlie", 7.0),
+		} {
+			require.NoError(t, s.AddTitle(ctx, ti))
+		}
+
+		page1, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", nil, 2, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 3, total)
+		require.Len(t, page1, 2)
+		require.Equal(t, []string{"Alpha", "Bravo"}, []string{page1[0].PrimaryTitle, page1[1].PrimaryTitle})
+
+		page2, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", nil, 2, 2)
+		require.NoError(t, err)
+		require.EqualValues(t, 3, total)
+		require.Len(t, page2, 1)
+		require.Equal(t, "Charlie", page2[0].PrimaryTitle)
+	})
+
+	t.Run("sorted by primary_title descending", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-a", "Alpha", 5.0)))
+		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-b", "Bravo", 6.0)))
+
+		descending := false
+		got, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", &descending, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, total)
+		require.Equal(t, []string{"Bravo", "Alpha"}, []string{got[0].PrimaryTitle, got[1].PrimaryTitle})
+	})
+
+	t.Run("sorted by imdbRating", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-low", "Low Rated", 3.0)))
+		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-high", "High Rated", 9.0)))
+
+		got, _, err := s.GetTitlesPage(ctx, nil, "imdbRating", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{"tt-low", "tt-high"}, []string{got[0].ID, got[1].ID})
+	})
+
+	t.Run("CASE 1 custom order via addedAt preserves ids order", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		for _, ti := range []models.Title{
+			newTestMovieTitle(t, "tt-a", "Alpha", 5.0),
+			newTestMovieTitle(t, "tt-b", "Bravo", 6.0),
+			newTestMovieTitle(t, "tt-c", "Charlie", 7.0),
+		} {
+			require.NoError(t, s.AddTitle(ctx, ti))
+		}
+
+		customOrder := []string{"tt-c", "tt-a", "tt-b"}
+		got, total, err := s.GetTitlesPage(ctx, customOrder, "addedAt", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 3, total)
+
+		gotIDs := make([]string, len(got))
+		for i, ti := range got {
+			gotIDs[i] = ti.ID
+		}
+		require.Equal(t, customOrder, gotIDs)
+	})
+
+	t.Run("empty ids returns empty page", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-a", "Alpha", 5.0)))
+
+		got, total, err := s.GetTitlesPage(ctx, []string{}, "primaryTitle", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []models.Title{}, got)
+		require.EqualValues(t, 0, total)
+	})
+
+	t.Run("total count reflects ids filter", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		for _, ti := range []models.Title{
+			newTestMovieTitle(t, "tt-a", "Alpha", 5.0),
+			newTestMovieTitle(t, "tt-b", "Bravo", 6.0),
+			newTestMovieTitle(t, "tt-c", "Charlie", 7.0),
+		} {
+			require.NoError(t, s.AddTitle(ctx, ti))
+		}
+
+		got, total, err := s.GetTitlesPage(ctx, []string{"tt-a", "tt-c"}, "primaryTitle", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, total)
+		require.Len(t, got, 2)
+	})
+}
