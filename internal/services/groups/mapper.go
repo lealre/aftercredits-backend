@@ -1,8 +1,8 @@
 package groups
 
-import "github.com/lealre/movies-backend/internal/mongodb"
+import "github.com/lealre/movies-backend/internal/models"
 
-func MapDbGroupToApiGroupResponse(group mongodb.GroupDb) GroupResponse {
+func MapDbGroupToApiGroupResponse(group models.Group) GroupResponse {
 	groupResponse := GroupResponse{
 		Id:          group.Id,
 		Name:        group.Name,
@@ -20,7 +20,7 @@ func MapDbGroupToApiGroupResponse(group mongodb.GroupDb) GroupResponse {
 	return groupResponse
 }
 
-func MapDbGroupTitleToApiGroupTitle(title mongodb.GroupTitleItemDb) GroupTitle {
+func MapDbGroupTitleToApiGroupTitle(title models.GroupTitleItem) GroupTitle {
 	watched := title.Watched
 	if !watched {
 		watched = false

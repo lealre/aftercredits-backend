@@ -1,11 +1,11 @@
 package titles
 
 import (
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
-func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
+func MapDbTitleToApiTitle(title models.Title) Title {
 	directorNames := make([]string, len(title.Directors))
 	for i, director := range title.Directors {
 		directorNames[i] = director.DisplayName
@@ -54,10 +54,10 @@ func MapDbTitleToApiTitle(title mongodb.TitleDb) Title {
 	}
 }
 
-func MapImdbSeasonsToDbSeasons(seasons []titleprovider.Season) []mongodb.Seasons {
-	dbSeasons := make([]mongodb.Seasons, len(seasons))
+func MapImdbSeasonsToDbSeasons(seasons []titleprovider.Season) []models.Seasons {
+	dbSeasons := make([]models.Seasons, len(seasons))
 	for i, season := range seasons {
-		dbSeasons[i] = mongodb.Seasons{
+		dbSeasons[i] = models.Seasons{
 			Season:       season.Season,
 			EpisodeCount: season.EpisodeCount,
 		}
@@ -65,13 +65,13 @@ func MapImdbSeasonsToDbSeasons(seasons []titleprovider.Season) []mongodb.Seasons
 	return dbSeasons
 }
 
-func MapImdbEpisodesToDbEpisodes(episodes []titleprovider.Episode) []mongodb.Episode {
-	dbEpisodes := make([]mongodb.Episode, len(episodes))
+func MapImdbEpisodesToDbEpisodes(episodes []titleprovider.Episode) []models.Episode {
+	dbEpisodes := make([]models.Episode, len(episodes))
 	for i, episode := range episodes {
-		dbEpisode := mongodb.Episode{
+		dbEpisode := models.Episode{
 			ID:    episode.ID,
 			Title: episode.Title,
-			PrimaryImage: mongodb.Image{
+			PrimaryImage: models.Image{
 				URL:    episode.PrimaryImage.URL,
 				Width:  episode.PrimaryImage.Width,
 				Height: episode.PrimaryImage.Height,
@@ -90,14 +90,14 @@ func MapImdbEpisodesToDbEpisodes(episodes []titleprovider.Episode) []mongodb.Epi
 		}
 
 		if episode.Rating != nil {
-			dbEpisode.Rating = &mongodb.Rating{
+			dbEpisode.Rating = &models.Rating{
 				AggregateRating: episode.Rating.AggregateRating,
 				VoteCount:       episode.Rating.VoteCount,
 			}
 		}
 
 		if episode.ReleaseDate != nil {
-			dbEpisode.ReleaseDate = &mongodb.ReleaseDate{
+			dbEpisode.ReleaseDate = &models.ReleaseDate{
 				Year:  episode.ReleaseDate.Year,
 				Month: episode.ReleaseDate.Month,
 				Day:   episode.ReleaseDate.Day,
@@ -109,7 +109,7 @@ func MapImdbEpisodesToDbEpisodes(episodes []titleprovider.Episode) []mongodb.Epi
 	return dbEpisodes
 }
 
-func MapDbSeasonsToImdbSeasons(seasons []mongodb.Seasons) []Seasons {
+func MapDbSeasonsToImdbSeasons(seasons []models.Seasons) []Seasons {
 	imdbSeasons := make([]Seasons, len(seasons))
 	for i, season := range seasons {
 		imdbSeasons[i] = Seasons{
@@ -120,7 +120,7 @@ func MapDbSeasonsToImdbSeasons(seasons []mongodb.Seasons) []Seasons {
 	return imdbSeasons
 }
 
-func MapDbEpisodesToImdbEpisodes(episodes []mongodb.Episode) []Episode {
+func MapDbEpisodesToImdbEpisodes(episodes []models.Episode) []Episode {
 	apiEpisodes := make([]Episode, len(episodes))
 	for i, episode := range episodes {
 		apiEpisode := Episode{

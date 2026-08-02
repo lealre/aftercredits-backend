@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 type contextKey string
@@ -114,7 +116,7 @@ func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.
 			}
 
 			userDb, err := db.GetUserById(r.Context(), userId)
-			if err == mongodb.ErrRecordNotFound || !userDb.IsActive {
+			if errors.Is(err, store.ErrRecordNotFound) || !userDb.IsActive {
 				http.Error(w, "Invalid or inactive user", http.StatusUnauthorized)
 				return
 			}

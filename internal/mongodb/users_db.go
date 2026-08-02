@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -39,20 +41,20 @@ type UserDb struct {
 
 // ----- Methods for the database -----
 
-func (db *DB) GetUserById(ctx context.Context, id string) (UserDb, error) {
+func (db *DB) GetUserById(ctx context.Context, id string) (models.User, error) {
 	coll := db.Collection(UsersCollection)
 	var userDb UserDb
 	if err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&userDb); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return UserDb{}, ErrRecordNotFound
+			return models.User{}, store.ErrRecordNotFound
 		}
-		return UserDb{}, err
+		return models.User{}, err
 	}
 
-	return userDb, nil
+	return userDbToModel(userDb), nil
 }
 
-func (db *DB) GetUserByUsernameOrEmail(ctx context.Context, username, email string) (UserDb, error) {
+func (db *DB) GetUserByUsernameOrEmail(ctx context.Context, username, email string) (models.User, error) {
 	coll := db.Collection(UsersCollection)
 
 	filter := bson.M{}
@@ -67,25 +69,30 @@ func (db *DB) GetUserByUsernameOrEmail(ctx context.Context, username, email stri
 	var userDb UserDb
 	if err := coll.FindOne(ctx, filter).Decode(&userDb); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return UserDb{}, ErrRecordNotFound
+			return models.User{}, store.ErrRecordNotFound
 		}
-		return UserDb{}, err
+		return models.User{}, err
 	}
 
-	return userDb, nil
+	return userDbToModel(userDb), nil
 }
 
-func (db *DB) GetAllUsers(ctx context.Context) ([]UserDb, error) {
+func (db *DB) GetAllUsers(ctx context.Context) ([]models.User, error) {
 	coll := db.Collection(UsersCollection)
 	cursor, err := coll.Find(ctx, bson.M{})
 	if err != nil {
-		return []UserDb{}, err
+		return []models.User{}, err
 	}
 	defer cursor.Close(ctx)
 
-	var allUsers []UserDb
-	if err := cursor.All(ctx, &allUsers); err != nil {
-		return []UserDb{}, err
+	var allUsersDb []UserDb
+	if err := cursor.All(ctx, &allUsersDb); err != nil {
+		return []models.User{}, err
+	}
+
+	allUsers := make([]models.User, 0, len(allUsersDb))
+	for _, userDb := range allUsersDb {
+		allUsers = append(allUsers, userDbToModel(userDb))
 	}
 	return allUsers, nil
 }
@@ -106,10 +113,16 @@ func (db *DB) UserExists(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
 
-func (db *DB) AddUser(ctx context.Context, user UserDb) error {
+func (db *DB) AddUser(ctx context.Context, user models.User) error {
 	coll := db.Collection(UsersCollection)
-	_, err := coll.InsertOne(ctx, user)
-	return err
+	_, err := coll.InsertOne(ctx, userModelToDb(user))
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return store.ErrDuplicatedRecord
+		}
+		return err
+	}
+	return nil
 }
 
 func (db *DB) DeleteUserById(ctx context.Context, id string) error {
@@ -117,14 +130,14 @@ func (db *DB) DeleteUserById(ctx context.Context, id string) error {
 	_, err := coll.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return ErrRecordNotFound
+			return store.ErrRecordNotFound
 		}
 		return err
 	}
 	return err
 }
 
-func (db *DB) UpdateUserInfo(ctx context.Context, id string, user UserDb) (UserDb, error) {
+func (db *DB) UpdateUserInfo(ctx context.Context, id string, user models.User) (models.User, error) {
 	coll := db.Collection(UsersCollection)
 
 	// Use FindOneAndUpdate to get the updated document
@@ -132,23 +145,27 @@ func (db *DB) UpdateUserInfo(ctx context.Context, id string, user UserDb) (UserD
 	opts.SetReturnDocument(options.After) // Return the document after update
 
 	now := time.Now()
-	user.UpdatedAt = now
+	userDb := userModelToDb(user)
+	userDb.UpdatedAt = now
 
 	var updatedUserDb UserDb
 	err := coll.FindOneAndUpdate(
 		ctx,
 		bson.M{"_id": id},
-		bson.M{"$set": user},
+		bson.M{"$set": userDb},
 		opts,
 	).Decode(&updatedUserDb)
 	if err != nil {
-		return UserDb{}, err
+		if mongo.IsDuplicateKeyError(err) {
+			return models.User{}, store.ErrDuplicatedRecord
+		}
+		return models.User{}, err
 	}
 
-	return updatedUserDb, nil
+	return userDbToModel(updatedUserDb), nil
 }
 
-func (db *DB) UpdateUserLastLoginAt(ctx context.Context, userId string) (UserDb, error) {
+func (db *DB) UpdateUserLastLoginAt(ctx context.Context, userId string) (models.User, error) {
 	coll := db.Collection(UsersCollection)
 
 	now := time.Now()
@@ -163,15 +180,15 @@ func (db *DB) UpdateUserLastLoginAt(ctx context.Context, userId string) (UserDb,
 	).Decode(&updatedUser)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return UserDb{}, ErrRecordNotFound
+			return models.User{}, store.ErrRecordNotFound
 		}
-		return UserDb{}, err
+		return models.User{}, err
 	}
 
-	return updatedUser, nil
+	return userDbToModel(updatedUser), nil
 }
 
-func (db *DB) UpdateUserGroup(ctx context.Context, userId string, groupId string) (UserDb, error) {
+func (db *DB) UpdateUserGroup(ctx context.Context, userId string, groupId string) (models.User, error) {
 	coll := db.Collection(UsersCollection)
 
 	now := time.Now()
@@ -187,12 +204,12 @@ func (db *DB) UpdateUserGroup(ctx context.Context, userId string, groupId string
 
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return UserDb{}, ErrRecordNotFound
+			return models.User{}, store.ErrRecordNotFound
 		}
-		return UserDb{}, err
+		return models.User{}, err
 	}
 
-	return updatedUser, nil
+	return userDbToModel(updatedUser), nil
 }
 
 // RemoveGroupFromUser pulls a group id from a user's groups array.

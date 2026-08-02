@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -98,13 +98,13 @@ func GetBearerToken(headers http.Header) (string, error) {
 	return token, nil
 }
 
-func GetUserFromContext(ctx context.Context) *mongodb.UserDb {
-	if user, ok := ctx.Value(UserKey).(mongodb.UserDb); ok {
+func GetUserFromContext(ctx context.Context) *models.User {
+	if user, ok := ctx.Value(UserKey).(models.User); ok {
 		return &user
 	}
 	return nil
 }
 
-func WithUser(ctx context.Context, user mongodb.UserDb) context.Context {
+func WithUser(ctx context.Context, user models.User) context.Context {
 	return context.WithValue(ctx, UserKey, user)
 }

@@ -2,16 +2,17 @@ package users
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/auth"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
+func GetAllUsers(db store.Store, ctx context.Context) ([]UserResponse, error) {
 	usersDb, err := db.GetAllUsers(ctx)
 	if err != nil {
 		return []UserResponse{}, err
@@ -25,19 +26,19 @@ func GetAllUsers(db *mongodb.DB, ctx context.Context) ([]UserResponse, error) {
 	return users, nil
 }
 
-func GetUserDbByUsernameOrEmail(db *mongodb.DB, ctx context.Context, username, email string) (mongodb.UserDb, error) {
+func GetUserDbByUsernameOrEmail(db store.Store, ctx context.Context, username, email string) (models.User, error) {
 	userDb, err := db.GetUserByUsernameOrEmail(ctx, username, email)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
-			return mongodb.UserDb{}, ErrUserNotFound
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return models.User{}, ErrUserNotFound
 		}
-		return mongodb.UserDb{}, err
+		return models.User{}, err
 	}
 
 	return userDb, nil
 }
 
-func GetUserById(db *mongodb.DB, ctx context.Context, id string) (UserResponse, error) {
+func GetUserById(db store.Store, ctx context.Context, id string) (UserResponse, error) {
 	userDb, err := db.GetUserById(ctx, id)
 	if err != nil {
 		return UserResponse{}, err
@@ -46,7 +47,7 @@ func GetUserById(db *mongodb.DB, ctx context.Context, id string) (UserResponse, 
 	return MapDbUserToApiUserResponse(userDb), nil
 }
 
-func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserResponse, error) {
+func AddUser(db store.Store, ctx context.Context, newUser NewUserRequest) (UserResponse, error) {
 	if newUser.Email != "" && !IsValidEmail(newUser.Email) {
 		return UserResponse{}, ErrInvalidEmail
 	}
@@ -70,13 +71,13 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 	}
 
 	now := time.Now()
-	userDb := mongodb.UserDb{
+	userDb := models.User{
 		Id:           primitive.NewObjectID().Hex(),
 		Name:         newUser.Name,
 		Username:     newUser.Username,
 		Email:        newUser.Email,
 		PasswordHash: passorHash,
-		Role:         mongodb.RoleUser,
+		Role:         models.RoleUser,
 		IsActive:     true,
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -84,7 +85,7 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 
 	err = db.AddUser(ctx, userDb)
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return UserResponse{}, ErrCredentialsAlreadyExists
 		}
 		return UserResponse{}, err
@@ -93,7 +94,7 @@ func AddUser(db *mongodb.DB, ctx context.Context, newUser NewUserRequest) (UserR
 	return MapDbUserToApiUserResponse(userDb), nil
 }
 
-func UpdateUserInfo(db *mongodb.DB, ctx context.Context, userId string, userUpdate UpdateUserRequest) (UserResponse, error) {
+func UpdateUserInfo(db store.Store, ctx context.Context, userId string, userUpdate UpdateUserRequest) (UserResponse, error) {
 	newEmail := strings.TrimSpace(userUpdate.Email)
 	newUsername := strings.TrimSpace(userUpdate.Username)
 	newName := strings.TrimSpace(userUpdate.Name)
@@ -126,7 +127,7 @@ func UpdateUserInfo(db *mongodb.DB, ctx context.Context, userId string, userUpda
 
 	userUpdatedDb, err := db.UpdateUserInfo(ctx, userId, userToUpdateDb)
 	if err != nil {
-		if mongo.IsDuplicateKeyError(err) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return UserResponse{}, ErrCredentialsAlreadyExists
 		}
 		return UserResponse{}, err
@@ -135,14 +136,14 @@ func UpdateUserInfo(db *mongodb.DB, ctx context.Context, userId string, userUpda
 	return MapDbUserToApiUserResponse(userUpdatedDb), nil
 }
 
-func DeleteUserById(db *mongodb.DB, ctx context.Context, id string) error {
+func DeleteUserById(db store.Store, ctx context.Context, id string) error {
 	return db.DeleteUserById(ctx, id)
 }
 
-func UpdateUserLastLoginAt(db *mongodb.DB, ctx context.Context, userId string) (UserResponse, error) {
+func UpdateUserLastLoginAt(db store.Store, ctx context.Context, userId string) (UserResponse, error) {
 	userDb, err := db.UpdateUserLastLoginAt(ctx, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return UserResponse{}, ErrUserNotFound
 		}
 		return UserResponse{}, err
@@ -151,7 +152,7 @@ func UpdateUserLastLoginAt(db *mongodb.DB, ctx context.Context, userId string) (
 	return MapDbUserToApiUserResponse(userDb), nil
 }
 
-func BuildLoginResponse(db *mongodb.DB, ctx context.Context, user mongodb.UserDb, token string) (auth.LoginResponse, error) {
+func BuildLoginResponse(db store.Store, ctx context.Context, user models.User, token string) (auth.LoginResponse, error) {
 	userResponse, err := UpdateUserLastLoginAt(db, ctx, user.Id)
 	if err != nil {
 		return auth.LoginResponse{}, err
@@ -159,11 +160,11 @@ func BuildLoginResponse(db *mongodb.DB, ctx context.Context, user mongodb.UserDb
 	return MapDbUserToApiLoginResponse(userResponse, token), nil
 }
 
-func UpdateUserGroup(db *mongodb.DB, ctx context.Context, userId string, groupId string) (UserResponse, error) {
+func UpdateUserGroup(db store.Store, ctx context.Context, userId string, groupId string) (UserResponse, error) {
 	userDb, err := db.UpdateUserGroup(ctx, userId, groupId)
 
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return UserResponse{}, ErrUserNotFound
 		}
 		return UserResponse{}, err
@@ -174,6 +175,6 @@ func UpdateUserGroup(db *mongodb.DB, ctx context.Context, userId string, groupId
 
 // UserExists reports whether a user with the given id exists. Thin service
 // passthrough so handlers reach the DB only through the service layer.
-func UserExists(db *mongodb.DB, ctx context.Context, id string) (bool, error) {
+func UserExists(db store.Store, ctx context.Context, id string) (bool, error) {
 	return db.UserExists(ctx, id)
 }

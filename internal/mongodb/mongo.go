@@ -2,18 +2,14 @@ package mongodb
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
-	"go.mongodb.org/mongo-driver/bson"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
-
-var ErrRecordNotFound = errors.New("record not found in the database")
-var ErrDuplicatedRecord = errors.New("duplicated record not allowed")
 
 const (
 	TitlesCollection   = "titles"
@@ -28,6 +24,10 @@ type DB struct {
 	client *mongo.Client
 	dbName string
 }
+
+// var _ store.Store asserts, at compile time, that *DB implements the
+// storage-neutral store.Store interface consumed by services/api.
+var _ store.Store = (*DB)(nil)
 
 func NewDB(client *mongo.Client) *DB {
 	return &DB{client: client, dbName: getDatabaseName()}
@@ -86,22 +86,4 @@ func getDatabaseName() string {
 		name = "aftercreditsdb"
 	}
 	return name
-}
-
-func ResolveFilterAndOptionsSearch(args ...any) (bson.M, []*options.FindOptions) {
-	filter := bson.M{}
-	var opts []*options.FindOptions
-
-	for _, arg := range args {
-		switch v := arg.(type) {
-		case bson.M:
-			filter = v
-		case *options.FindOptions:
-			opts = append(opts, v)
-		default:
-			// Just ignore if no args match
-		}
-	}
-
-	return filter, opts
 }

@@ -2,10 +2,10 @@ package users
 
 import (
 	"github.com/lealre/movies-backend/internal/auth"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 )
 
-func MapDbUserToApiUserResponse(userDb mongodb.UserDb) UserResponse {
+func MapDbUserToApiUserResponse(userDb models.User) UserResponse {
 	return UserResponse{
 		Id:          userDb.Id,
 		Username:    userDb.Username,

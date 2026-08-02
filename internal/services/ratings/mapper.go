@@ -1,8 +1,8 @@
 package ratings
 
-import "github.com/lealre/movies-backend/internal/mongodb"
+import "github.com/lealre/movies-backend/internal/models"
 
-func MapDbRatingDbToApiRating(dbRating mongodb.RatingDb) Rating {
+func MapDbRatingDbToApiRating(dbRating models.UserRating) Rating {
 	var seasonsRatings *SeasonsRatings
 	if dbRating.SeasonsRatings != nil {
 		converted := make(SeasonsRatings)

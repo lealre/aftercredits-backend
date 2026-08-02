@@ -1,28 +1,28 @@
 package comments
 
-import "github.com/lealre/movies-backend/internal/mongodb"
+import "github.com/lealre/movies-backend/internal/models"
 
-func MapDbCommentToApiComment(commentDb mongodb.CommentDb) Comment {
+func MapDbCommentToApiComment(comment models.Comment) Comment {
 	var seasonsComments *SeasonsComments
-	if commentDb.SeasonsComments != nil {
+	if comment.SeasonsComments != nil {
 		converted := make(SeasonsComments)
-		for season, seasonCommentDb := range *commentDb.SeasonsComments {
+		for season, seasonComment := range *comment.SeasonsComments {
 			converted[season] = SeasonComment{
-				Comment:   seasonCommentDb.Comment,
-				AddedAt:   seasonCommentDb.AddedAt,
-				UpdatedAt: seasonCommentDb.UpdatedAt,
+				Comment:   seasonComment.Comment,
+				AddedAt:   seasonComment.AddedAt,
+				UpdatedAt: seasonComment.UpdatedAt,
 			}
 		}
 		seasonsComments = &converted
 	}
 
 	return Comment{
-		Id:              commentDb.Id,
-		TitleId:         commentDb.TitleId,
-		UserId:          commentDb.UserId,
-		Comment:         commentDb.Comment,
+		Id:              comment.Id,
+		TitleId:         comment.TitleId,
+		UserId:          comment.UserId,
+		Comment:         comment.Comment,
 		SeasonsComments: seasonsComments,
-		CreatedAt:       commentDb.CreatedAt,
-		UpdatedAt:       commentDb.UpdatedAt,
+		CreatedAt:       comment.CreatedAt,
+		UpdatedAt:       comment.UpdatedAt,
 	}
 }
