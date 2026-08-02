@@ -1,7 +1,9 @@
 package postgres
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -92,4 +94,39 @@ func notFound(err error) error {
 		return store.ErrRecordNotFound
 	}
 	return err
+}
+
+// titleToRow converts a models.Title into the params for InsertTitle. The
+// query columns (primary_title, type, start_year, ...) are denormalized
+// copies used for filtering/sorting/indexing; metadata holds the complete
+// serialized title and is the source of truth on read (see rowToTitle).
+func titleToRow(t models.Title) (database.InsertTitleParams, error) {
+	metadata, err := json.Marshal(t)
+	if err != nil {
+		return database.InsertTitleParams{}, fmt.Errorf("marshal title metadata: %w", err)
+	}
+	return database.InsertTitleParams{
+		ID:              t.ID,
+		PrimaryTitle:    t.PrimaryTitle,
+		Type:            t.Type,
+		StartYear:       int32(t.StartYear),
+		RatingAggregate: t.Rating.AggregateRating,
+		VoteCount:       int32(t.Rating.VoteCount),
+		AddedAt:         ptrToTimestamptz(t.AddedAt),
+		UpdatedAt:       ptrToTimestamptz(t.UpdatedAt),
+		Metadata:        metadata,
+	}, nil
+}
+
+// rowToTitle rebuilds a models.Title from a database.Title row. metadata is
+// the source of truth: it holds the complete serialized title, so unmarshaling
+// it reproduces the exact models.Title (including nested seasons/episodes/
+// cast and nil/empty conventions) that was passed to titleToRow. The
+// denormalized query columns on the row are ignored here.
+func rowToTitle(r database.Title) (models.Title, error) {
+	var t models.Title
+	if err := json.Unmarshal(r.Metadata, &t); err != nil {
+		return models.Title{}, fmt.Errorf("unmarshal title metadata: %w", err)
+	}
+	return t, nil
 }
