@@ -58,6 +58,13 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	return testPool
 }
 
+// newTestStore builds a Store on top of the shared test pool, for tests that
+// exercise the postgres.Store methods directly.
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	return New(newTestPool(t))
+}
+
 // resetDB truncates every table so each test starts from a clean slate,
 // mirroring the Mongo test suite's resetDB (tests/setup_test.go).
 func resetDB(t *testing.T) {
