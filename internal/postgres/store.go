@@ -3,6 +3,7 @@ package postgres
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lealre/movies-backend/internal/database"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 // Store implements store.Store against PostgreSQL, wrapping a *pgxpool.Pool
@@ -11,6 +12,8 @@ type Store struct {
 	pool *pgxpool.Pool
 	q    *database.Queries
 }
+
+var _ store.Store = (*Store)(nil)
 
 // New builds a Store from an already-connected pgxpool.Pool.
 func New(pool *pgxpool.Pool) *Store {
