@@ -2,8 +2,11 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -32,80 +35,88 @@ type SeasonsCommentsDb map[string]SeasonCommentItemDb
 
 // ----- Methods for the database -----
 
-func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId string, usersFromGroup []string) ([]CommentDb, error) {
+func (db *DB) GetCommentsByTitleId(ctx context.Context, titleId string, usersFromGroup []string) ([]models.Comment, error) {
 	coll := db.Collection(CommentsCollection)
 
 	filter := bson.M{"titleId": titleId, "userId": bson.M{"$in": usersFromGroup}}
 
 	cursor, err := coll.Find(ctx, filter)
 	if err != nil {
-		return []CommentDb{}, err
+		return []models.Comment{}, err
 	}
 	defer cursor.Close(ctx)
 
-	var comments []CommentDb
-	if err = cursor.All(ctx, &comments); err != nil {
-		return []CommentDb{}, err
+	var commentsDb []CommentDb
+	if err = cursor.All(ctx, &commentsDb); err != nil {
+		return []models.Comment{}, err
+	}
+
+	comments := make([]models.Comment, len(commentsDb))
+	for i, c := range commentsDb {
+		comments[i] = commentDbToModel(c)
 	}
 
 	return comments, nil
 }
 
-func (db *DB) GetUserCommentByTitleId(ctx context.Context, titleId string, userId string) (CommentDb, error) {
+func (db *DB) GetUserCommentByTitleId(ctx context.Context, titleId string, userId string) (models.Comment, error) {
 	coll := db.Collection(CommentsCollection)
 
 	filter := bson.M{"titleId": titleId, "userId": userId}
 
-	var comment CommentDb
-	err := coll.FindOne(ctx, filter).Decode(&comment)
+	var commentDb CommentDb
+	err := coll.FindOne(ctx, filter).Decode(&commentDb)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return CommentDb{}, ErrRecordNotFound
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return models.Comment{}, store.ErrRecordNotFound
 		}
-		return CommentDb{}, err
+		return models.Comment{}, err
 	}
 
-	return comment, nil
+	return commentDbToModel(commentDb), nil
 }
 
-func (db *DB) GetCommentById(ctx context.Context, commentId string, userId string) (CommentDb, error) {
+func (db *DB) GetCommentById(ctx context.Context, commentId string, userId string) (models.Comment, error) {
 	coll := db.Collection(CommentsCollection)
 
 	filter := bson.M{"_id": commentId, "userId": userId}
 
-	var comment CommentDb
-	err := coll.FindOne(ctx, filter).Decode(&comment)
+	var commentDb CommentDb
+	err := coll.FindOne(ctx, filter).Decode(&commentDb)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return CommentDb{}, ErrRecordNotFound
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return models.Comment{}, store.ErrRecordNotFound
 		}
-		return CommentDb{}, err
+		return models.Comment{}, err
 	}
 
-	return comment, nil
+	return commentDbToModel(commentDb), nil
 }
 
-func (db *DB) AddComment(ctx context.Context, comment CommentDb) (CommentDb, error) {
+func (db *DB) AddComment(ctx context.Context, comment models.Comment) (models.Comment, error) {
 	coll := db.Collection(CommentsCollection)
 
-	comment.Id = primitive.NewObjectID().Hex()
+	commentDb := commentModelToDb(comment)
+	commentDb.Id = primitive.NewObjectID().Hex()
 	now := time.Now()
-	comment.CreatedAt = now
-	comment.UpdatedAt = now
+	commentDb.CreatedAt = now
+	commentDb.UpdatedAt = now
 
-	_, err := coll.InsertOne(ctx, comment)
+	_, err := coll.InsertOne(ctx, commentDb)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return CommentDb{}, ErrDuplicatedRecord
+			return models.Comment{}, store.ErrDuplicatedRecord
 		}
-		return CommentDb{}, err
+		return models.Comment{}, err
 	}
 
-	return comment, nil
+	return commentDbToModel(commentDb), nil
 }
 
-func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb, userId string) (CommentDb, error) {
+func (db *DB) UpdateComment(ctx context.Context, comment models.Comment, userId string) (models.Comment, error) {
 	coll := db.Collection(CommentsCollection)
+
+	commentDb := commentModelToDb(comment)
 
 	filter := bson.M{"_id": commentDb.Id, "userId": userId}
 
@@ -122,15 +133,15 @@ func (db *DB) UpdateComment(ctx context.Context, commentDb CommentDb, userId str
 	opts := options.FindOneAndUpdate()
 	opts.SetReturnDocument(options.After) // Return the document after update
 
-	var updatedComment CommentDb
-	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedComment)
+	var updatedCommentDb CommentDb
+	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedCommentDb)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return CommentDb{}, ErrRecordNotFound
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return models.Comment{}, store.ErrRecordNotFound
 		}
-		return CommentDb{}, err
+		return models.Comment{}, err
 	}
-	return updatedComment, nil
+	return commentDbToModel(updatedCommentDb), nil
 }
 
 func (db *DB) DeleteComment(ctx context.Context, commentId, userId string) (int64, error) {

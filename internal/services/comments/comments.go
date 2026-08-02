@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 /*
@@ -63,21 +65,21 @@ func AddComment(db *mongodb.DB, ctx context.Context, newComment NewComment, user
 }
 
 func addCommentForMovie(db *mongodb.DB, ctx context.Context, newComment NewComment, userId string) (Comment, error) {
-	newCommentDb := mongodb.CommentDb{
+	newCommentModel := models.Comment{
 		TitleId: newComment.TitleId,
 		UserId:  userId,
 		Comment: &newComment.Comment,
 	}
 
-	commentDb, err := db.AddComment(ctx, newCommentDb)
+	comment, err := db.AddComment(ctx, newCommentModel)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return Comment{}, ErrCommentAlreadyExists
 		}
 		return Comment{}, err
 	}
 
-	return MapDbCommentToApiComment(commentDb), nil
+	return MapDbCommentToApiComment(comment), nil
 }
 
 // addCommentForTVSeries handles comment creation/update for TV series (tvSeries or tvMiniSeries).
@@ -108,7 +110,7 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 	// 2. Checks if a comment already exists for this user/title combination
 	existingComment, err := db.GetUserCommentByTitleId(ctx, newComment.TitleId, userId)
 	hasComment := err == nil
-	if err != nil && err != mongodb.ErrRecordNotFound {
+	if err != nil && err != store.ErrRecordNotFound {
 		return Comment{}, err
 	}
 
@@ -126,16 +128,16 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 		return Comment{}, ErrSeasonDoesNotExist
 	}
 
-	var commentDb mongodb.CommentDb
+	var comment models.Comment
 	now := time.Now()
 	if !hasComment {
 		// 4.1. Creates a new comment with the season comment
-		newCommentDb := mongodb.CommentDb{
+		newCommentModel := models.Comment{
 			TitleId: newComment.TitleId,
 			UserId:  userId,
 			Comment: nil,
-			SeasonsComments: &mongodb.SeasonsCommentsDb{
-				seasonAsString: mongodb.SeasonCommentItemDb{
+			SeasonsComments: &models.SeasonsComments{
+				seasonAsString: models.SeasonCommentItem{
 					Comment:   newComment.Comment,
 					AddedAt:   now,
 					UpdatedAt: now,
@@ -143,9 +145,9 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 			},
 		}
 
-		commentDb, err = db.AddComment(ctx, newCommentDb)
+		comment, err = db.AddComment(ctx, newCommentModel)
 		if err != nil {
-			if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+			if errors.Is(err, store.ErrDuplicatedRecord) {
 				return Comment{}, ErrSeasonCommentAlreadyExists
 			}
 			return Comment{}, err
@@ -159,15 +161,15 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 				return Comment{}, ErrSeasonCommentAlreadyExists
 			}
 			// 5.3. Adds the new season comment to the existing comment
-			(*existingComment.SeasonsComments)[seasonAsString] = mongodb.SeasonCommentItemDb{
+			(*existingComment.SeasonsComments)[seasonAsString] = models.SeasonCommentItem{
 				Comment:   newComment.Comment,
 				AddedAt:   now,
 				UpdatedAt: now,
 			}
 		} else {
 			// 5.3. Adds the new season comment to the existing comment
-			existingComment.SeasonsComments = &mongodb.SeasonsCommentsDb{
-				seasonAsString: mongodb.SeasonCommentItemDb{
+			existingComment.SeasonsComments = &models.SeasonsComments{
+				seasonAsString: models.SeasonCommentItem{
 					Comment:   newComment.Comment,
 					AddedAt:   now,
 					UpdatedAt: now,
@@ -175,13 +177,13 @@ func addCommentForTVSeries(db *mongodb.DB, ctx context.Context, newComment NewCo
 			}
 		}
 		// 5.4. Updates the existing comment in the database
-		commentDb, err = db.UpdateComment(ctx, existingComment, userId)
+		comment, err = db.UpdateComment(ctx, existingComment, userId)
 		if err != nil {
 			return Comment{}, err
 		}
 	}
 
-	return MapDbCommentToApiComment(commentDb), nil
+	return MapDbCommentToApiComment(comment), nil
 }
 
 // UpdateComment updates an existing comment for a given title.
@@ -217,18 +219,18 @@ func UpdateComment(db *mongodb.DB, ctx context.Context, commentId, userId string
 }
 
 func updateCommentForMovie(db *mongodb.DB, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
-	commentDb := mongodb.CommentDb{
+	comment := models.Comment{
 		Id:      commentId,
 		Comment: &updateReq.Comment,
 	}
-	updatedCommentDb, err := db.UpdateComment(ctx, commentDb, userId)
+	updatedComment, err := db.UpdateComment(ctx, comment, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return Comment{}, ErrCommentNotFound
 		}
 		return Comment{}, err
 	}
-	return MapDbCommentToApiComment(updatedCommentDb), nil
+	return MapDbCommentToApiComment(updatedComment), nil
 }
 
 // updateCommentForTVSeries updates the comment of a specific season of a TV series.
@@ -255,7 +257,7 @@ func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, us
 	// 2. Fetch the existing comment for this user and title
 	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return Comment{}, ErrCommentNotFound
 		}
 		return Comment{}, err
@@ -276,7 +278,7 @@ func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, us
 	// 5. Fetch the existing comment from DB to preserve timestamps for all seasons
 	existingCommentDb, err := db.GetCommentById(ctx, commentId, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return Comment{}, ErrCommentNotFound
 		}
 		return Comment{}, err
@@ -298,28 +300,28 @@ func updateCommentForTVSeries(db *mongodb.DB, ctx context.Context, commentId, us
 	// Start with existing DB structure to preserve all timestamps
 	seasonsComments := existingCommentDb.SeasonsComments
 	if seasonsComments == nil {
-		seasonsComments = &mongodb.SeasonsCommentsDb{}
+		seasonsComments = &models.SeasonsComments{}
 	}
 
 	// Update only the season being modified
-	(*seasonsComments)[seasonAsString] = mongodb.SeasonCommentItemDb{
+	(*seasonsComments)[seasonAsString] = models.SeasonCommentItem{
 		Comment:   updateReq.Comment,
 		AddedAt:   existingSeasonComment.AddedAt,
 		UpdatedAt: now,
 	}
 
 	// 7. Persist the updated season comments to the database
-	commentDb := mongodb.CommentDb{
+	comment := models.Comment{
 		Id:              commentId,
 		SeasonsComments: seasonsComments,
 	}
 
-	updatedCommentDb, err := db.UpdateComment(ctx, commentDb, userId)
+	updatedComment, err := db.UpdateComment(ctx, comment, userId)
 	if err != nil {
 		return Comment{}, err
 	}
 
-	return MapDbCommentToApiComment(updatedCommentDb), nil
+	return MapDbCommentToApiComment(updatedComment), nil
 }
 
 func DeleteComment(db *mongodb.DB, ctx context.Context, commentId, userId string) (int64, error) {
@@ -366,7 +368,7 @@ func DeleteCommentSeason(db *mongodb.DB, ctx context.Context, commentId, userId 
 	// Fetch the comment by id (and ensure it belongs to the user)
 	existingComment, err := db.GetCommentById(ctx, commentId, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return ErrCommentNotFound
 		}
 		return err
@@ -396,18 +398,18 @@ func DeleteCommentSeason(db *mongodb.DB, ctx context.Context, commentId, userId 
 	}
 
 	// Persist updated seasons map
-	converted := mongodb.SeasonsCommentsDb(*existingComment.SeasonsComments)
+	converted := models.SeasonsComments(*existingComment.SeasonsComments)
 	seasonsComments := &converted
 
-	commentDb := mongodb.CommentDb{
+	comment := models.Comment{
 		Id:              commentId,
 		Comment:         existingComment.Comment,
 		SeasonsComments: seasonsComments,
 	}
 
-	_, err = db.UpdateComment(ctx, commentDb, userId)
+	_, err = db.UpdateComment(ctx, comment, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return ErrCommentNotFound
 		}
 		return err
