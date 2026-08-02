@@ -7,9 +7,10 @@ import (
 	"time"
 
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/titles"
-	"go.mongodb.org/mongo-driver/bson"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([]Rating, error) {
@@ -29,7 +30,7 @@ func GetRatingsByTitleId(db *mongodb.DB, ctx context.Context, titleId string) ([
 func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string) (Rating, error) {
 	ratingDb, err := db.GetRatingById(ctx, ratingId, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return Rating{}, ErrRatingNotFound
 		}
 		return Rating{}, err
@@ -39,13 +40,7 @@ func GetRatingById(db *mongodb.DB, ctx context.Context, ratingId, userId string)
 }
 
 func GetRatingsBatch(db *mongodb.DB, ctx context.Context, titleIDs []string) (TitlesRatings, error) {
-
-	filter := bson.M{}
-	if len(titleIDs) > 0 {
-		filter["titleId"] = bson.M{"$in": titleIDs}
-	}
-
-	allRatingsDb, err := db.GetRatings(ctx, filter)
+	allRatingsDb, err := db.GetRatingsByTitleIds(ctx, titleIDs)
 	if err != nil {
 		return TitlesRatings{}, err
 	}
@@ -148,17 +143,17 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 	// 1.3: Checks if a rating already exists for this user/title combination
 	existingRating, err := db.GetRatingByUserIdAndTitleId(ctx, userId, newRating.TitleId)
 	hasExistingRating := err == nil
-	if err != nil && err != mongodb.ErrRecordNotFound {
+	if err != nil && err != store.ErrRecordNotFound {
 		return Rating{}, err
 	}
 
-	var seasonsRatings *mongodb.SeasonsRatingsDb
+	var seasonsRatings *models.SeasonsRatings
 	now := time.Now()
 
 	if !hasExistingRating {
 		// 1.3.1: Creates a new rating with the season rating
-		seasonsRatings = &mongodb.SeasonsRatingsDb{
-			newSeasonAsString: mongodb.SeasonRatingItemDb{
+		seasonsRatings = &models.SeasonsRatings{
+			newSeasonAsString: models.SeasonRatingItem{
 				Rating:    newRating.Note,
 				AddedAt:   now,
 				UpdatedAt: now,
@@ -174,8 +169,8 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 		}
 		// 1.3.4: Adds the new season rating to the existing rating
 		if existingRating.SeasonsRatings == nil {
-			seasonsRatings = &mongodb.SeasonsRatingsDb{
-				newSeasonAsString: mongodb.SeasonRatingItemDb{
+			seasonsRatings = &models.SeasonsRatings{
+				newSeasonAsString: models.SeasonRatingItem{
 					Rating:    newRating.Note,
 					AddedAt:   now,
 					UpdatedAt: now,
@@ -183,7 +178,7 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 			}
 		} else {
 			seasonsRatings = existingRating.SeasonsRatings
-			(*seasonsRatings)[newSeasonAsString] = mongodb.SeasonRatingItemDb{
+			(*seasonsRatings)[newSeasonAsString] = models.SeasonRatingItem{
 				Rating:    newRating.Note,
 				AddedAt:   now,
 				UpdatedAt: now,
@@ -201,7 +196,7 @@ func addRatingForTVSeries(db *mongodb.DB, ctx context.Context, newRating NewRati
 	newOverallRating := sum / float32(count)
 
 	// 1.5: Creates a new rating OR updates the existing rating in the database
-	ratingDb := mongodb.RatingDb{
+	ratingDb := models.UserRating{
 		TitleId:        newRating.TitleId,
 		UserId:         userId,
 		Note:           newOverallRating,
@@ -249,12 +244,12 @@ func addRatingForMovie(db *mongodb.DB, ctx context.Context, rating NewRating, us
 	if err == nil {
 		// 1.2: If a rating exists, returns ErrRatingAlreadyExists
 		return Rating{}, ErrRatingAlreadyExists
-	} else if err != mongodb.ErrRecordNotFound {
+	} else if err != store.ErrRecordNotFound {
 		return Rating{}, err
 	}
 
 	// 1.3: If no rating exists, creates a new rating with the provided note value
-	ratingDb := mongodb.RatingDb{
+	ratingDb := models.UserRating{
 		TitleId: rating.TitleId,
 		UserId:  userId,
 		Note:    rating.Note,
@@ -262,7 +257,7 @@ func addRatingForMovie(db *mongodb.DB, ctx context.Context, rating NewRating, us
 
 	ratingDb, err = db.AddRating(ctx, ratingDb)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return Rating{}, ErrRatingAlreadyExists
 		}
 		return Rating{}, err
@@ -280,7 +275,7 @@ func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, 
 
 	rating, err := GetRatingById(db, ctx, ratingId, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return Rating{}, ErrRatingNotFound
 		}
 		return Rating{}, err
@@ -301,14 +296,14 @@ func UpdateRating(db *mongodb.DB, ctx context.Context, ratingId, userId string, 
 }
 
 func updateRatingForMovie(db *mongodb.DB, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
-	ratingDb := mongodb.RatingDb{
+	ratingDb := models.UserRating{
 		Id:   ratingId,
 		Note: updateReq.Note,
 	}
 
 	updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return Rating{}, ErrRatingNotFound
 		}
 		return Rating{}, err
@@ -392,11 +387,11 @@ func updateRatingForTVSeries(
 	// Start with existing DB structure to preserve all timestamps
 	seasonsRatings := existingRatingDb.SeasonsRatings
 	if seasonsRatings == nil {
-		seasonsRatings = &mongodb.SeasonsRatingsDb{}
+		seasonsRatings = &models.SeasonsRatings{}
 	}
 
 	// Update only the season being modified
-	(*seasonsRatings)[newSeasonAsString] = mongodb.SeasonRatingItemDb{
+	(*seasonsRatings)[newSeasonAsString] = models.SeasonRatingItem{
 		Rating:    updateReq.Note,
 		AddedAt:   existingSeasonRating.AddedAt,
 		UpdatedAt: now,
@@ -412,7 +407,7 @@ func updateRatingForTVSeries(
 	newOverallRating := sum / float32(count)
 
 	// 10. Prepare updated rating for persistence
-	ratingDb := mongodb.RatingDb{
+	ratingDb := models.UserRating{
 		Id:             rating.Id,
 		Note:           newOverallRating,
 		SeasonsRatings: seasonsRatings,
@@ -439,7 +434,7 @@ func updateRatingForTVSeries(
 func DeleteRating(db *mongodb.DB, ctx context.Context, ratingId, userId string) (int64, error) {
 	deletedCount, err := db.DeleteRating(ctx, ratingId, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return 0, ErrRatingNotFound
 		}
 		return 0, err
@@ -499,7 +494,7 @@ func DeleteRatingSeason(db *mongodb.DB, ctx context.Context, ratingId, userId st
 	// 4. Get the existing rating
 	existingRating, err := db.GetRatingById(ctx, ratingId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrRatingNotFound
 		}
 		return err
@@ -522,7 +517,7 @@ func DeleteRatingSeason(db *mongodb.DB, ctx context.Context, ratingId, userId st
 	if len(*existingRating.SeasonsRatings) == 0 {
 		_, err := db.DeleteRating(ctx, ratingId, userId)
 		if err != nil {
-			if err == mongodb.ErrRecordNotFound {
+			if err == store.ErrRecordNotFound {
 				return ErrRatingNotFound
 			}
 			return err
@@ -540,7 +535,7 @@ func DeleteRatingSeason(db *mongodb.DB, ctx context.Context, ratingId, userId st
 	newOverallRating := sum / float32(count)
 
 	// 10. Update the existing rating with remaining seasons and new overall rating
-	ratingDb := mongodb.RatingDb{
+	ratingDb := models.UserRating{
 		Id:             ratingId,
 		Note:           newOverallRating,
 		SeasonsRatings: existingRating.SeasonsRatings,
@@ -548,7 +543,7 @@ func DeleteRatingSeason(db *mongodb.DB, ctx context.Context, ratingId, userId st
 
 	_, err = db.UpdateRating(ctx, ratingDb, userId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if err == store.ErrRecordNotFound {
 			return ErrRatingNotFound
 		}
 		return err

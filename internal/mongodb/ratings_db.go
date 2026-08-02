@@ -2,8 +2,11 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -32,88 +35,94 @@ type SeasonsRatingsDb map[string]SeasonRatingItemDb
 
 // ----- Methods for the database -----
 
-func (db *DB) AddRating(ctx context.Context, rating RatingDb) (RatingDb, error) {
+func (db *DB) AddRating(ctx context.Context, rating models.UserRating) (models.UserRating, error) {
 	coll := db.Collection(RatingsCollection)
 
-	rating.Id = primitive.NewObjectID().Hex()
+	ratingDb := userRatingModelToDb(rating)
+	ratingDb.Id = primitive.NewObjectID().Hex()
 	now := time.Now()
-	rating.CreatedAt = now
-	rating.UpdatedAt = now
+	ratingDb.CreatedAt = now
+	ratingDb.UpdatedAt = now
 
-	_, err := coll.InsertOne(ctx, rating)
+	_, err := coll.InsertOne(ctx, ratingDb)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return RatingDb{}, ErrDuplicatedRecord
+			return models.UserRating{}, store.ErrDuplicatedRecord
 		}
-		return RatingDb{}, err
+		return models.UserRating{}, err
 	}
 
-	return rating, nil
+	return userRatingDbToModel(ratingDb), nil
 }
 
-func (db *DB) GetRatingsByTitleId(ctx context.Context, titleId string) ([]RatingDb, error) {
+func (db *DB) GetRatingsByTitleId(ctx context.Context, titleId string) ([]models.UserRating, error) {
 	coll := db.Collection(RatingsCollection)
 
 	filter := bson.M{"titleId": titleId}
 
 	cursor, err := coll.Find(ctx, filter)
 	if err != nil {
-		return []RatingDb{}, err
+		return []models.UserRating{}, err
 	}
 	defer cursor.Close(ctx)
 
 	var ratingsDb []RatingDb
 	if err = cursor.All(ctx, &ratingsDb); err != nil {
-		return []RatingDb{}, err
+		return []models.UserRating{}, err
 	}
 
-	return ratingsDb, nil
+	ratings := make([]models.UserRating, len(ratingsDb))
+	for i, r := range ratingsDb {
+		ratings[i] = userRatingDbToModel(r)
+	}
+
+	return ratings, nil
 }
 
-func (db *DB) GetRatingById(ctx context.Context, ratingId, userId string) (RatingDb, error) {
+func (db *DB) GetRatingById(ctx context.Context, ratingId, userId string) (models.UserRating, error) {
 	coll := db.Collection(RatingsCollection)
 
 	filter := bson.M{"_id": ratingId, "userId": userId}
 
-	var rating RatingDb
-	err := coll.FindOne(ctx, filter).Decode(&rating)
+	var ratingDb RatingDb
+	err := coll.FindOne(ctx, filter).Decode(&ratingDb)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return RatingDb{}, ErrRecordNotFound
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return models.UserRating{}, store.ErrRecordNotFound
 		}
-		return RatingDb{}, err
+		return models.UserRating{}, err
 	}
 
-	return rating, nil
+	return userRatingDbToModel(ratingDb), nil
 }
 
-func (db *DB) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId string) (RatingDb, error) {
+func (db *DB) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId string) (models.UserRating, error) {
 	coll := db.Collection(RatingsCollection)
 
 	filter := bson.M{"userId": userId, "titleId": titleId}
 
-	var rating RatingDb
-	err := coll.FindOne(ctx, filter).Decode(&rating)
+	var ratingDb RatingDb
+	err := coll.FindOne(ctx, filter).Decode(&ratingDb)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return RatingDb{}, ErrRecordNotFound
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return models.UserRating{}, store.ErrRecordNotFound
 		}
-		return RatingDb{}, err
+		return models.UserRating{}, err
 	}
 
-	return rating, nil
+	return userRatingDbToModel(ratingDb), nil
 }
 
-func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string) (RatingDb, error) {
+func (db *DB) UpdateRating(ctx context.Context, rating models.UserRating, userId string) (models.UserRating, error) {
 	coll := db.Collection(RatingsCollection)
 
-	filter := bson.M{"_id": ratingDb.Id, "userId": userId}
+	filter := bson.M{"_id": rating.Id, "userId": userId}
 
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
-			"note":           ratingDb.Note,
-			"seasonsRatings": ratingDb.SeasonsRatings,
+			"note":           rating.Note,
+			"seasonsRatings": seasonsRatingsModelToDb(rating.SeasonsRatings),
 			"updatedAt":      now,
 		},
 	}
@@ -122,34 +131,46 @@ func (db *DB) UpdateRating(ctx context.Context, ratingDb RatingDb, userId string
 	opts := options.FindOneAndUpdate()
 	opts.SetReturnDocument(options.After) // Return the document after update
 
-	var updatedRating RatingDb
-	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedRating)
+	var updatedRatingDb RatingDb
+	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&updatedRatingDb)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return RatingDb{}, ErrRecordNotFound
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return models.UserRating{}, store.ErrRecordNotFound
 		}
-		return RatingDb{}, err
+		return models.UserRating{}, err
 	}
 
-	return updatedRating, nil
+	return userRatingDbToModel(updatedRatingDb), nil
 }
 
-func (db *DB) GetRatings(ctx context.Context, args ...any) ([]RatingDb, error) {
+// GetRatingsByTitleIds fetches all ratings whose titleId is in titleIds. When
+// titleIds is empty, it returns all ratings (mirrors the previous
+// GetRatings(...any) behavior when called with an empty filter).
+func (db *DB) GetRatingsByTitleIds(ctx context.Context, titleIds []string) ([]models.UserRating, error) {
 	coll := db.Collection(RatingsCollection)
 
-	filter, opts := ResolveFilterAndOptionsSearch(args...)
-	cursor, err := coll.Find(ctx, filter, opts...)
+	filter := bson.M{}
+	if len(titleIds) > 0 {
+		filter["titleId"] = bson.M{"$in": titleIds}
+	}
+
+	cursor, err := coll.Find(ctx, filter)
 	if err != nil {
-		return []RatingDb{}, err
+		return []models.UserRating{}, err
 	}
 	defer cursor.Close(ctx)
 
 	var ratingsDb []RatingDb
 	if err := cursor.All(ctx, &ratingsDb); err != nil {
-		return []RatingDb{}, err
+		return []models.UserRating{}, err
 	}
 
-	return ratingsDb, nil
+	ratings := make([]models.UserRating, len(ratingsDb))
+	for i, r := range ratingsDb {
+		ratings[i] = userRatingDbToModel(r)
+	}
+
+	return ratings, nil
 }
 
 func (db *DB) DeleteRating(ctx context.Context, ratingId, userId string) (int64, error) {
@@ -159,14 +180,14 @@ func (db *DB) DeleteRating(ctx context.Context, ratingId, userId string) (int64,
 
 	result, err := coll.DeleteOne(ctx, filter)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return 0, ErrRecordNotFound
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return 0, store.ErrRecordNotFound
 		}
 		return 0, err
 	}
 
 	if result.DeletedCount == 0 {
-		return 0, ErrRecordNotFound
+		return 0, store.ErrRecordNotFound
 	}
 
 	return result.DeletedCount, nil
