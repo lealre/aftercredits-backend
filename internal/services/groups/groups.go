@@ -14,6 +14,7 @@ import (
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
@@ -22,17 +23,17 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 		return GroupResponse{}, ErrGroupNameInvalid
 	}
 
-	group := mongodb.GroupDb{
+	group := models.Group{
 		Name:        req.Name,
 		Description: strings.TrimSpace(req.Description),
 		OwnerId:     userId,
 		Users:       []string{userId},
-		Titles:      mongodb.GroupTitleDb{},
+		Titles:      models.GroupTitles{},
 	}
 
 	newGroup, err := db.CreateGroup(ctx, group)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return GroupResponse{}, ErrGroupDuplicatedName
 		}
 		return GroupResponse{}, err
@@ -49,7 +50,7 @@ func CreateGroup(db *mongodb.DB, ctx context.Context, req CreateGroupRequest, us
 func GetGroupById(db *mongodb.DB, ctx context.Context, groupId, userId string) (GroupResponse, error) {
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return GroupResponse{}, ErrGroupNotFound
 		}
 		return GroupResponse{}, err
@@ -69,7 +70,7 @@ func UpdateGroupInfo(db *mongodb.DB, ctx context.Context, groupId, ownerId, name
 
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return GroupResponse{}, ErrGroupNotFound
 		}
 		return GroupResponse{}, err
@@ -80,7 +81,7 @@ func UpdateGroupInfo(db *mongodb.DB, ctx context.Context, groupId, ownerId, name
 	}
 
 	if err := db.UpdateGroupInfo(ctx, groupId, name, description); err != nil {
-		if errors.Is(err, mongodb.ErrDuplicatedRecord) {
+		if errors.Is(err, store.ErrDuplicatedRecord) {
 			return GroupResponse{}, ErrGroupDuplicatedName
 		}
 		return GroupResponse{}, err
@@ -94,7 +95,7 @@ func UpdateGroupInfo(db *mongodb.DB, ctx context.Context, groupId, ownerId, name
 func AddUserToGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {
-		if err == mongodb.ErrRecordNotFound {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrGroupNotFound
 		}
 		return err
@@ -130,14 +131,14 @@ func GetTitlesFromGroup(
 ) (generics.Page[GroupTitleDetail], error) {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return generics.Page[GroupTitleDetail]{}, ErrGroupNotFound
 		}
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
 	var allTitlesIds []string
-	var titleGroupMap map[string]mongodb.GroupTitleItemDb = make(map[string]mongodb.GroupTitleItemDb)
+	var titleGroupMap map[string]models.GroupTitleItem = make(map[string]models.GroupTitleItem)
 	for _, title := range group.Titles {
 
 		if watched != nil && title.Watched != *watched {
@@ -158,7 +159,7 @@ func GetTitlesFromGroup(
 
 		// Filter allTitlesIds based on titleType
 		filteredTitlesIds := []string{}
-		filteredTitleGroupMap := make(map[string]mongodb.GroupTitleItemDb)
+		filteredTitleGroupMap := make(map[string]models.GroupTitleItem)
 
 		for _, titleId := range allTitlesIds {
 			titleTypeValue, exists := titleTypes[titleId]
@@ -209,7 +210,7 @@ func GetTitlesFromGroup(
 		// If its a group field sorting, we must sort on the ids order of the group titles.
 		// Later in GetPageOfTitles, it will mantain the order of the ids.
 		if orderBy == "addedAt" || orderBy == "watchedAt" {
-			getOrderValue := func(title mongodb.GroupTitleItemDb) (timeValue *time.Time) {
+			getOrderValue := func(title models.GroupTitleItem) (timeValue *time.Time) {
 				if orderBy == "watchedAt" {
 					return title.WatchedAt
 				}
@@ -294,32 +295,17 @@ func GetTitlesFromGroup(
 }
 
 func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {
-	usersDb, err := db.GetUsersFromGroup(ctx, groupId, userId)
+	usersFromGroup, err := db.GetUsersFromGroup(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return []users.UserResponse{}, ErrGroupNotFound
 		}
 		return []users.UserResponse{}, err
 	}
 
 	var usersResponse []users.UserResponse
-	for _, userDb := range usersDb {
-		// TODO(Task 6): GetUsersFromGroup will return []models.User directly
-		// once groups_db.go is converted; drop this inline conversion then.
-		usersResponse = append(usersResponse, users.MapDbUserToApiUserResponse(models.User{
-			Id:           userDb.Id,
-			Name:         userDb.Name,
-			Email:        userDb.Email,
-			Username:     userDb.Username,
-			PasswordHash: userDb.PasswordHash,
-			AvatarURL:    userDb.AvatarURL,
-			Groups:       userDb.Groups,
-			Role:         models.UserRole(userDb.Role),
-			IsActive:     userDb.IsActive,
-			LastLoginAt:  userDb.LastLoginAt,
-			CreatedAt:    userDb.CreatedAt,
-			UpdatedAt:    userDb.UpdatedAt,
-		}))
+	for _, user := range usersFromGroup {
+		usersResponse = append(usersResponse, users.MapDbUserToApiUserResponse(user))
 	}
 
 	return usersResponse, nil
@@ -328,13 +314,13 @@ func GetUsersFromGroup(db *mongodb.DB, ctx context.Context, groupId, userId stri
 func AddTitleToGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrGroupNotFound
 		}
 		return err
 	}
 
-	if _, exists := group.Titles[mongodb.TitleId(titleId)]; exists {
+	if _, exists := group.Titles[titleId]; exists {
 		return ErrTitleAlreadyInGroup
 	}
 
@@ -397,13 +383,13 @@ func updateGroupTitleWatchedForMovie(
 ) (GroupTitle, error) {
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return GroupTitle{}, ErrGroupNotFound
 		}
 		return GroupTitle{}, err
 	}
 
-	titleDb, exists := groupDb.Titles[mongodb.TitleId(title.Id)]
+	titleDb, exists := groupDb.Titles[title.Id]
 	if !exists {
 		return GroupTitle{}, ErrTitleNotInGroup
 	}
@@ -423,7 +409,7 @@ func updateGroupTitleWatchedForMovie(
 
 	groupTitleItem, err := db.UpdateGroupTitleWatchedForMovie(ctx, groupId, title.Id, watched, watchedAt)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return GroupTitle{}, ErrTitleNotInGroup
 		}
 		return GroupTitle{}, err
@@ -482,13 +468,13 @@ func updateGroupTitleWatchedForTVSeries(
 
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return GroupTitle{}, ErrGroupNotFound
 		}
 		return GroupTitle{}, err
 	}
 
-	titleDb, exists := groupDb.Titles[mongodb.TitleId(title.Id)]
+	titleDb, exists := groupDb.Titles[title.Id]
 	if !exists {
 		return GroupTitle{}, ErrTitleNotInGroup
 	}
@@ -514,7 +500,7 @@ func updateGroupTitleWatchedForTVSeries(
 	// 6. Update the season in the database
 	groupTitleItem, err := db.UpdateGroupTitleWatchedForTVSeries(ctx, groupId, title.Id, watched, watchedAt, *season, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return GroupTitle{}, ErrTitleNotInGroup
 		}
 		return GroupTitle{}, err
@@ -525,19 +511,19 @@ func updateGroupTitleWatchedForTVSeries(
 func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrGroupNotFound
 		}
 		return err
 	}
 
-	if _, exists := group.Titles[mongodb.TitleId(titleId)]; !exists {
+	if _, exists := group.Titles[titleId]; !exists {
 		return ErrTitleNotInGroup
 	}
 
 	err = db.RemoveTitleFromGroup(ctx, groupId, titleId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrTitleNotInGroup
 		}
 		return err
@@ -550,7 +536,7 @@ func RemoveTitleFromGroup(db *mongodb.DB, ctx context.Context, groupId, titleId,
 func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId string) error {
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrGroupNotFound
 		}
 		return err
@@ -559,7 +545,7 @@ func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId strin
 		return ErrGroupNotOwnedByUser
 	}
 	if err := db.SoftDeleteGroup(ctx, groupId); err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrGroupNotFound
 		}
 		return err
@@ -577,7 +563,7 @@ func SoftDeleteGroup(db *mongodb.DB, ctx context.Context, groupId, ownerId strin
 func LeaveGroup(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrGroupNotFound
 		}
 		return err
@@ -604,7 +590,7 @@ func GroupContainsTitle(db *mongodb.DB, ctx context.Context, groupId, titleId, u
 }
 
 // EnsureGroupExists returns nil if the group exists for the user, or the
-// underlying error (mongodb.ErrRecordNotFound when absent). Thin service
+// underlying error (store.ErrRecordNotFound when absent). Thin service
 // passthrough for handlers that only need the existence/ownership guard.
 func EnsureGroupExists(db *mongodb.DB, ctx context.Context, groupId, userId string) error {
 	_, err := db.GetGroupById(ctx, groupId, userId)

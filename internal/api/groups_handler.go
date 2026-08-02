@@ -11,10 +11,10 @@ import (
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +226,7 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 
 	err := groups.EnsureGroupExists(api.Db, r.Context(), groupId, currentUser.Id)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 			return
 		}
@@ -257,7 +257,7 @@ func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 
 	err := groups.EnsureGroupExists(api.Db, r.Context(), groupId, currentUser.Id)
 	if err != nil {
-		if errors.Is(err, mongodb.ErrRecordNotFound) {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			logger.Printf("Group with id %s not found", groupId)
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 			return

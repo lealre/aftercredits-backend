@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/lealre/movies-backend/internal/generics"
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -55,24 +57,25 @@ type SeasonWatchedItemDb struct {
 
 // ----- Methods for the database -----
 
-func (db *DB) CreateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
+func (db *DB) CreateGroup(ctx context.Context, group models.Group) (models.Group, error) {
 	coll := db.Collection(GroupsCollection)
 
-	group.Id = primitive.NewObjectID().Hex()
+	groupDb := groupModelToDb(group)
+	groupDb.Id = primitive.NewObjectID().Hex()
 	now := time.Now()
-	group.CreatedAt = now
-	group.UpdatedAt = now
-	group.Deleted = false
+	groupDb.CreatedAt = now
+	groupDb.UpdatedAt = now
+	groupDb.Deleted = false
 
-	_, err := coll.InsertOne(ctx, group)
+	_, err := coll.InsertOne(ctx, groupDb)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return GroupDb{}, ErrDuplicatedRecord
+			return models.Group{}, store.ErrDuplicatedRecord
 		}
-		return GroupDb{}, err
+		return models.Group{}, err
 	}
 
-	return group, nil
+	return groupDbToModel(groupDb), nil
 }
 
 func (db *DB) GroupExists(ctx context.Context, groupId, userId string) (bool, error) {
@@ -121,22 +124,22 @@ func (db *DB) GroupContainsTitle(ctx context.Context, groupId, titleId, userId s
 	return true, nil
 }
 
-func (db *DB) GetGroupById(ctx context.Context, groupId, userId string) (GroupDb, error) {
+func (db *DB) GetGroupById(ctx context.Context, groupId, userId string) (models.Group, error) {
 	coll := db.Collection(GroupsCollection)
 
-	var group GroupDb
+	var groupDb GroupDb
 	err := coll.FindOne(ctx, bson.M{
 		"_id":     groupId,
 		"users":   bson.M{"$in": []string{userId}},
 		"deleted": bson.M{"$ne": true},
-	}).Decode(&group)
+	}).Decode(&groupDb)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return GroupDb{}, ErrRecordNotFound
+			return models.Group{}, store.ErrRecordNotFound
 		}
-		return GroupDb{}, err
+		return models.Group{}, err
 	}
-	return group, nil
+	return groupDbToModel(groupDb), nil
 }
 
 func (db *DB) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddId string) error {
@@ -156,21 +159,21 @@ func (db *DB) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddId 
 
 	// Check if the group was found
 	if result.MatchedCount == 0 {
-		return ErrRecordNotFound
+		return store.ErrRecordNotFound
 	}
 
 	return nil
 }
 
-func (db *DB) GetUsersFromGroup(ctx context.Context, groupId, userId string) ([]UserDb, error) {
+func (db *DB) GetUsersFromGroup(ctx context.Context, groupId, userId string) ([]models.User, error) {
 	// First, get the group to find user IDs
 	group, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
-		return []UserDb{}, err
+		return []models.User{}, err
 	}
 
 	if len(group.Users) == 0 {
-		return []UserDb{}, nil
+		return []models.User{}, nil
 	}
 
 	// Query users collection with only _id and name fields
@@ -179,24 +182,30 @@ func (db *DB) GetUsersFromGroup(ctx context.Context, groupId, userId string) ([]
 
 	cursor, err := usersColl.Find(ctx, filter)
 	if err != nil {
-		return []UserDb{}, err
+		return []models.User{}, err
 	}
 	defer cursor.Close(ctx)
 
-	var users []UserDb
-	if err := cursor.All(ctx, &users); err != nil {
-		return []UserDb{}, err
+	var usersDb []UserDb
+	if err := cursor.All(ctx, &usersDb); err != nil {
+		return []models.User{}, err
+	}
+
+	users := make([]models.User, len(usersDb))
+	for i, u := range usersDb {
+		users[i] = userDbToModel(u)
 	}
 
 	return users, nil
 }
 
-func (db *DB) UpdateGroup(ctx context.Context, group GroupDb) (GroupDb, error) {
+func (db *DB) UpdateGroup(ctx context.Context, group models.Group) (models.Group, error) {
 	coll := db.Collection(GroupsCollection)
 
-	_, err := coll.UpdateOne(ctx, bson.M{"_id": group.Id}, bson.M{"$set": group})
+	groupDb := groupModelToDb(group)
+	_, err := coll.UpdateOne(ctx, bson.M{"_id": groupDb.Id}, bson.M{"$set": groupDb})
 	if err != nil {
-		return GroupDb{}, err
+		return models.Group{}, err
 	}
 	return group, nil
 }
@@ -235,7 +244,7 @@ func (db *DB) AddNewGroupTitle(ctx context.Context, groupId string, titleId stri
 //
 //   - UpdateGroupTitleWatchedForTVSeries: if season is provided (TV series case)
 //   - UpdateGroupTitleWatchedForMovie: if season is not provided (movie case)
-func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season *int, userId string) (*GroupTitleItemDb, error) {
+func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season *int, userId string) (*models.GroupTitleItem, error) {
 	if season != nil {
 		return db.UpdateGroupTitleWatchedForTVSeries(ctx, groupId, titleId, watched, watchedAt, *season, userId)
 	}
@@ -254,10 +263,10 @@ func (db *DB) UpdateGroupTitleWatched(ctx context.Context, groupId string, title
 // or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
 //
 // Possible errors:
-//   - ErrRecordNotFound: if the group or title is not found
+//   - store.ErrRecordNotFound: if the group or title is not found
 //   - fmt.Errorf("no fields to update"): if no watched or watchedAt fields are provided
 //   - Any error returned by the database update operation
-func (db *DB) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*GroupTitleItemDb, error) {
+func (db *DB) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*models.GroupTitleItem, error) {
 	coll := db.Collection(GroupsCollection)
 
 	// Use FindOneAndUpdate to get the updated document
@@ -299,7 +308,7 @@ func (db *DB) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId strin
 
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrRecordNotFound
+			return nil, store.ErrRecordNotFound
 		}
 		return nil, err
 	}
@@ -307,10 +316,11 @@ func (db *DB) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId strin
 	// Return the updated title from the map using direct key access
 	titleKey := TitleId(titleId)
 	if title, exists := updatedGroup.Titles[titleKey]; exists {
-		return &title, nil
+		item := groupTitleItemDbToModel(title)
+		return &item, nil
 	}
 
-	return nil, ErrRecordNotFound
+	return nil, store.ErrRecordNotFound
 }
 
 // UpdateGroupTitleWatchedForTVSeries updates the watched properties of a specific season of a TV series title in the database.
@@ -328,10 +338,10 @@ func (db *DB) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId strin
 // or watchedAt was set as empty string ("") in request body, watchedAt is set to null in database.
 //
 // Possible errors:
-//   - ErrRecordNotFound: if the group or title is not found
+//   - store.ErrRecordNotFound: if the group or title is not found
 //   - fmt.Errorf("no fields to update"): if no watched or watchedAt fields are provided
 //   - Any error returned by the database update operation
-func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season int, userId string) (*GroupTitleItemDb, error) {
+func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season int, userId string) (*models.GroupTitleItem, error) {
 	coll := db.Collection(GroupsCollection)
 
 	// Use FindOneAndUpdate to get the updated document
@@ -353,10 +363,9 @@ func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId st
 		return nil, err
 	}
 
-	titleKey := TitleId(titleId)
-	titleItem, exists := group.Titles[titleKey]
+	titleItem, exists := group.Titles[titleId]
 	if !exists {
-		return nil, ErrRecordNotFound
+		return nil, store.ErrRecordNotFound
 	}
 
 	// Build season update document
@@ -406,15 +415,16 @@ func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId st
 
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrRecordNotFound
+			return nil, store.ErrRecordNotFound
 		}
 		return nil, err
 	}
 
 	// Calculate and update top-level watched and watchedAt fields based on all seasons
+	titleKey := TitleId(titleId)
 	updatedTitle, exists := updatedGroup.Titles[titleKey]
 	if !exists {
-		return nil, ErrRecordNotFound
+		return nil, store.ErrRecordNotFound
 	}
 
 	// Calculate top-level watched: true if at least one season is watched
@@ -456,22 +466,23 @@ func (db *DB) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId st
 
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrRecordNotFound
+			return nil, store.ErrRecordNotFound
 		}
 		return nil, err
 	}
 
 	// Return the updated title from the map using direct key access
 	if title, exists := finalGroup.Titles[titleKey]; exists {
-		return &title, nil
+		item := groupTitleItemDbToModel(title)
+		return &item, nil
 	}
 
-	return nil, ErrRecordNotFound
+	return nil, store.ErrRecordNotFound
 }
 
 // UpdateGroupInfo sets the name and description on a non-deleted group. Returns
-// ErrDuplicatedRecord if the (ownerId, name) uniqueness is violated,
-// ErrRecordNotFound if absent.
+// store.ErrDuplicatedRecord if the (ownerId, name) uniqueness is violated,
+// store.ErrRecordNotFound if absent.
 func (db *DB) UpdateGroupInfo(ctx context.Context, groupId, name, description string) error {
 	coll := db.Collection(GroupsCollection)
 	res, err := coll.UpdateOne(ctx,
@@ -480,17 +491,17 @@ func (db *DB) UpdateGroupInfo(ctx context.Context, groupId, name, description st
 	)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return ErrDuplicatedRecord
+			return store.ErrDuplicatedRecord
 		}
 		return err
 	}
 	if res.MatchedCount == 0 {
-		return ErrRecordNotFound
+		return store.ErrRecordNotFound
 	}
 	return nil
 }
 
-// SoftDeleteGroup marks a non-deleted group as deleted. ErrRecordNotFound if it
+// SoftDeleteGroup marks a non-deleted group as deleted. store.ErrRecordNotFound if it
 // was already deleted or does not exist.
 func (db *DB) SoftDeleteGroup(ctx context.Context, groupId string) error {
 	coll := db.Collection(GroupsCollection)
@@ -503,7 +514,7 @@ func (db *DB) SoftDeleteGroup(ctx context.Context, groupId string) error {
 		return err
 	}
 	if res.MatchedCount == 0 {
-		return ErrRecordNotFound
+		return store.ErrRecordNotFound
 	}
 	return nil
 }
@@ -519,7 +530,7 @@ func (db *DB) RemoveUserFromGroup(ctx context.Context, groupId, userId string) e
 		return err
 	}
 	if res.MatchedCount == 0 {
-		return ErrRecordNotFound
+		return store.ErrRecordNotFound
 	}
 	return nil
 }
@@ -545,7 +556,7 @@ func (db *DB) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId
 
 	// Check if the group was found
 	if result.MatchedCount == 0 {
-		return ErrRecordNotFound
+		return store.ErrRecordNotFound
 	}
 
 	return nil
