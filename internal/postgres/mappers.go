@@ -96,6 +96,44 @@ func notFound(err error) error {
 	return err
 }
 
+// ratingRowToModel assembles a database.Rating row plus its (possibly nil)
+// season map into the storage-neutral models.UserRating.
+func ratingRowToModel(r database.Rating, seasons *models.SeasonsRatings) models.UserRating {
+	return models.UserRating{
+		Id:             r.ID,
+		TitleId:        r.TitleID,
+		SeasonsRatings: seasons,
+		UserId:         r.UserID,
+		Note:           r.Note,
+		CreatedAt:      r.CreatedAt.Time,
+		UpdatedAt:      r.UpdatedAt.Time,
+	}
+}
+
+// ratingSeasonRowToItem converts a database.RatingSeason row into a
+// models.SeasonRatingItem.
+func ratingSeasonRowToItem(s database.RatingSeason) models.SeasonRatingItem {
+	return models.SeasonRatingItem{
+		Rating:    s.Rating,
+		AddedAt:   s.AddedAt.Time,
+		UpdatedAt: s.UpdatedAt.Time,
+	}
+}
+
+// assembleSeasonsRatings groups rating_seasons rows for a single rating into
+// a *models.SeasonsRatings, matching mongodb's nil/empty convention: nil
+// when there are no season rows (movie ratings), a non-nil map otherwise.
+func assembleSeasonsRatings(rows []database.RatingSeason) *models.SeasonsRatings {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make(models.SeasonsRatings, len(rows))
+	for _, r := range rows {
+		out[r.Season] = ratingSeasonRowToItem(r)
+	}
+	return &out
+}
+
 // titleToRow converts a models.Title into the params for InsertTitle. The
 // query columns (primary_title, type, start_year, ...) are denormalized
 // copies used for filtering/sorting/indexing; metadata holds the complete
