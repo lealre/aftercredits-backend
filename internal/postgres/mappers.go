@@ -176,6 +176,66 @@ func assembleSeasonsComments(rows []database.CommentSeason) *models.SeasonsComme
 	return &out
 }
 
+// groupRowToModel assembles a database.Group row plus its resolved member ids
+// and its already-assembled titles map into the storage-neutral models.Group.
+// titles is always a non-nil (possibly empty) map, matching mongodb's group
+// document convention where the titles field is always present.
+func groupRowToModel(g database.Group, users []string, titles models.GroupTitles) models.Group {
+	return models.Group{
+		Id:          g.ID,
+		Name:        g.Name,
+		Description: g.Description,
+		OwnerId:     g.OwnerID,
+		Users:       users,
+		Titles:      titles,
+		CreatedAt:   g.CreatedAt.Time,
+		UpdatedAt:   g.UpdatedAt.Time,
+		Deleted:     g.Deleted,
+		DeletedAt:   timestamptzToPtr(g.DeletedAt),
+	}
+}
+
+// groupTitleRowToModel converts a database.GroupTitle row plus its (possibly
+// nil) per-season watched map into a models.GroupTitleItem. seasons is nil for
+// a movie (no season rows) and non-nil for a series, matching mongodb's
+// seasonsWatched convention.
+func groupTitleRowToModel(t database.GroupTitle, seasons *models.SeasonsWatched) models.GroupTitleItem {
+	return models.GroupTitleItem{
+		TitleId:        t.TitleID,
+		TitleType:      t.TitleType,
+		SeasonsWatched: seasons,
+		Watched:        t.Watched,
+		AddedAt:        t.AddedAt.Time,
+		UpdatedAt:      t.UpdatedAt.Time,
+		WatchedAt:      timestamptzToPtr(t.WatchedAt),
+	}
+}
+
+// groupTitleSeasonRowToItem converts a database.GroupTitleSeason row into a
+// models.SeasonWatchedItem.
+func groupTitleSeasonRowToItem(s database.GroupTitleSeason) models.SeasonWatchedItem {
+	return models.SeasonWatchedItem{
+		Watched:   s.Watched,
+		WatchedAt: timestamptzToPtr(s.WatchedAt),
+		AddedAt:   s.AddedAt.Time,
+		UpdatedAt: s.UpdatedAt.Time,
+	}
+}
+
+// assembleSeasonsWatched groups group_title_seasons rows for a single title
+// into a *models.SeasonsWatched, matching mongodb's nil/empty convention: nil
+// when there are no season rows (a movie), a non-nil map otherwise (a series).
+func assembleSeasonsWatched(rows []database.GroupTitleSeason) *models.SeasonsWatched {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make(models.SeasonsWatched, len(rows))
+	for _, r := range rows {
+		out[r.Season] = groupTitleSeasonRowToItem(r)
+	}
+	return &out
+}
+
 // titleToRow converts a models.Title into the params for InsertTitle. The
 // query columns (primary_title, type, start_year, ...) are denormalized
 // copies used for filtering/sorting/indexing; metadata holds the complete
