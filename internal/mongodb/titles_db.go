@@ -136,39 +136,118 @@ func (db *DB) DeleteTitle(ctx context.Context, id string) (bool, error) {
 	return res.DeletedCount > 0, nil
 }
 
-func (db *DB) GetTitles(ctx context.Context, args ...any) ([]models.Title, error) {
+// GetTitlesPage is the single Mongo-specific entry point for paginated title
+// listing. It owns every Mongo-only concern that used to leak into the
+// titles service: filter/pipeline construction, the two sort strategies
+// (custom ids-order for group-field sorting vs. standard Mongo sort), the
+// Mongo-specific orderBy field remapping ("" -> primaryTitle, imdbRating ->
+// rating.aggregateRating), and the total-count query. size and page are
+// expected to already be normalized (positive) by the caller; ids and
+// orderBy/ascending are passed through as-is.
+//
+// 🟦 CASE 1: when ids is non-empty and orderBy is one of the group-title
+// fields (watched/watchedAt/addedAt), results are sorted by the position of
+// each id within ids (preserving the caller-supplied order) via an
+// aggregation pipeline.
+//
+// 🟩 CASE 2: standard Mongo find+sort on the (possibly remapped) orderBy
+// field.
+func (db *DB) GetTitlesPage(
+	ctx context.Context,
+	ids []string,
+	orderBy string,
+	ascending *bool,
+	size, page int,
+) ([]models.Title, int64, error) {
 	coll := db.Collection(TitlesCollection)
 
-	filter, opts := ResolveFilterAndOptionsSearch(args...)
-	cursor, err := coll.Find(ctx, filter, opts...)
+	if ids != nil && len(ids) == 0 {
+		// Empty list provided explicitly - return no results
+		return []models.Title{}, 0, nil
+	}
+
+	skip := (int64(page) - 1) * int64(size)
+
+	ascendingValue := 1
+	if ascending != nil && !*ascending {
+		ascendingValue = -1
+	}
+
+	filter := bson.M{}
+	if len(ids) > 0 {
+		filter["_id"] = bson.M{"$in": ids}
+	}
+
+	totalResults, err := coll.CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+
+	groupFieldsSort := orderBy == "watched" || orderBy == "watchedAt" || orderBy == "addedAt"
+	if len(ids) > 0 && groupFieldsSort {
+		idsAsInterfaces := make([]interface{}, len(ids))
+		for i, id := range ids {
+			idsAsInterfaces[i] = id
+		}
+
+		pipeline := mongo.Pipeline{
+			{{Key: "$match", Value: filter}},
+			{{Key: "$addFields", Value: bson.M{
+				"sortOrder": bson.M{"$indexOfArray": []interface{}{idsAsInterfaces, "$_id"}},
+			}}},
+			{{Key: "$sort", Value: bson.M{"sortOrder": 1}}},
+			{{Key: "$skip", Value: skip}},
+			{{Key: "$limit", Value: int64(size)}},
+		}
+
+		cursor, err := coll.Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer cursor.Close(ctx)
+
+		var dbTitles []TitleDb
+		if err := cursor.All(ctx, &dbTitles); err != nil {
+			return nil, 0, err
+		}
+
+		titles := make([]models.Title, len(dbTitles))
+		for i, t := range dbTitles {
+			titles[i] = titleDbToModel(t)
+		}
+
+		return titles, totalResults, nil
+	}
+
+	if orderBy == "" {
+		orderBy = "primaryTitle"
+	}
+	if orderBy == "imdbRating" {
+		orderBy = "rating.aggregateRating"
+	}
+
+	opts := options.Find().
+		SetLimit(int64(size)).
+		SetSkip(skip).
+		SetSort(bson.D{{Key: orderBy, Value: ascendingValue}})
+
+	cursor, err := coll.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer cursor.Close(ctx)
 
 	var allTitlesDb []TitleDb
 	if err := cursor.All(ctx, &allTitlesDb); err != nil {
-		return []models.Title{}, err
+		return nil, 0, err
 	}
 
-	allTitles := make([]models.Title, len(allTitlesDb))
+	titles := make([]models.Title, len(allTitlesDb))
 	for i, t := range allTitlesDb {
-		allTitles[i] = titleDbToModel(t)
+		titles[i] = titleDbToModel(t)
 	}
 
-	return allTitles, nil
-}
-
-func (db *DB) CountTotalTitles(ctx context.Context, args ...any) (int, error) {
-	coll := db.Collection(TitlesCollection)
-
-	filter, _ := ResolveFilterAndOptionsSearch(args...)
-	totalTitles, err := coll.CountDocuments(ctx, filter)
-	if err != nil {
-		return 0, err
-	}
-
-	return int(totalTitles), nil
+	return titles, totalResults, nil
 }
 
 func (db *DB) TitleExists(ctx context.Context, id string) (bool, error) {
@@ -185,28 +264,6 @@ func (db *DB) TitleExists(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	return true, nil
-}
-
-func (db *DB) AggregateTitles(ctx context.Context, pipeline mongo.Pipeline) ([]models.Title, error) {
-	coll := db.Collection(TitlesCollection)
-
-	cursor, err := coll.Aggregate(ctx, pipeline)
-	if err != nil {
-		return []models.Title{}, err
-	}
-	defer cursor.Close(ctx)
-
-	var dbTitles []TitleDb
-	if err := cursor.All(ctx, &dbTitles); err != nil {
-		return []models.Title{}, err
-	}
-
-	titles := make([]models.Title, len(dbTitles))
-	for i, t := range dbTitles {
-		titles[i] = titleDbToModel(t)
-	}
-
-	return titles, nil
 }
 
 // GetTitleTypes fetches title types from the database for the given title IDs.

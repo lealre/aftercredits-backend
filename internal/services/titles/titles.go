@@ -11,9 +11,6 @@ import (
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 /*
@@ -38,6 +35,8 @@ func GetPageOfTitles(
 	titleIds []string,
 ) (generics.Page[Title], error) {
 
+	// App-level pagination normalization - stays in the service, it has
+	// nothing to do with the storage backend.
 	if size <= 0 {
 		size = config.DefaultPageSize()
 	}
@@ -48,103 +47,23 @@ func GetPageOfTitles(
 		page = 1
 	}
 
-	skip := (int64(page) - 1) * int64(size)
-
-	ascendingValue := 1
-	if ascending != nil && !*ascending {
-		ascendingValue = -1
-	}
-
-	if titleIds != nil && len(titleIds) == 0 {
-		// Empty list provided explicitly - return no results
-		return generics.Page[Title]{
-			TotalResults: 0,
-			Size:         size,
-			Page:         page,
-			TotalPages:   0,
-			Content:      []Title{},
-		}, nil
-	}
-
-	filter := bson.M{}
-	if len(titleIds) > 0 {
-		filter["_id"] = bson.M{"$in": titleIds}
-	}
-
-	totalResults, err := db.CountTotalTitles(ctx, filter)
+	// Everything storage-specific (filter/pipeline construction, the two
+	// sort strategies, and the orderBy field remapping) lives in the store.
+	titlesModel, totalResults, err := db.GetTitlesPage(ctx, titleIds, orderByField, ascending, size, page)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}
 
-	////////////////////////////////////////////////////////////////////////////
-	//  🟦 CASE 1 — MUST USE CUSTOM ORDER (group fields sorting)
-	////////////////////////////////////////////////////////////////////////////
-	groupFieldsSort := orderByField == "watched" || orderByField == "watchedAt" || orderByField == "addedAt"
-	if len(titleIds) > 0 && groupFieldsSort {
-		idsAsInterfaces := make([]interface{}, len(titleIds))
-		for i, id := range titleIds {
-			idsAsInterfaces[i] = id
-		}
-
-		pipeline := mongo.Pipeline{
-			{{Key: "$match", Value: filter}},
-			{{Key: "$addFields", Value: bson.M{
-				"sortOrder": bson.M{"$indexOfArray": []interface{}{idsAsInterfaces, "$_id"}},
-			}}},
-			{{Key: "$sort", Value: bson.M{"sortOrder": 1}}},
-			{{Key: "$skip", Value: skip}},
-			{{Key: "$limit", Value: int64(size)}},
-		}
-
-		titlesDb, err := db.AggregateTitles(ctx, pipeline)
-		if err != nil {
-			return generics.Page[Title]{}, err
-		}
-
-		titles := make([]Title, len(titlesDb))
-		for i, t := range titlesDb {
-			titles[i] = MapDbTitleToApiTitle(t)
-		}
-
-		return generics.Page[Title]{
-			TotalResults: totalResults,
-			Size:         size,
-			Page:         page,
-			TotalPages:   int((totalResults + size - 1) / size),
-			Content:      titles,
-		}, nil
-	}
-
-	////////////////////////////////////////////////////////////////////////////
-	//  🟩 CASE 2 — STANDARD MONGO SORTING (no group fields sorting)
-	////////////////////////////////////////////////////////////////////////////
-	if orderByField == "" {
-		orderByField = "primaryTitle"
-	}
-	if orderByField == "imdbRating" {
-		orderByField = "rating.aggregateRating"
-	}
-
-	opts := options.Find().
-		SetLimit(int64(size)).
-		SetSkip(skip).
-		SetSort(bson.D{{Key: orderByField, Value: ascendingValue}})
-
-	dbTitles, err := db.GetTitles(ctx, filter, opts)
-	if err != nil {
-		return generics.Page[Title]{}, err
-	}
-
-	titles := make([]Title, len(dbTitles))
-	for i, t := range dbTitles {
+	titles := make([]Title, len(titlesModel))
+	for i, t := range titlesModel {
 		titles[i] = MapDbTitleToApiTitle(t)
 	}
 
 	return generics.Page[Title]{
-		TotalResults: totalResults,
+		TotalResults: int(totalResults),
 		Size:         size,
 		Page:         page,
-		TotalPages:   int((totalResults + size - 1) / size),
+		TotalPages:   int((totalResults + int64(size) - 1) / int64(size)),
 		Content:      titles,
 	}, nil
 }
