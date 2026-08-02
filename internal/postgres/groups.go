@@ -137,7 +137,15 @@ func (s *Store) GetGroupById(ctx context.Context, groupId, userId string) (model
 // (ON CONFLICT DO NOTHING), matching mongodb's $addToSet. A group ownerId is
 // not a member of is reported as store.ErrRecordNotFound.
 func (s *Store) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddId string) error {
-	ok, err := s.q.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: ownerId})
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.q.WithTx(tx)
+
+	ok, err := qtx.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: ownerId})
 	if err != nil {
 		return err
 	}
@@ -145,14 +153,18 @@ func (s *Store) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddI
 		return store.ErrRecordNotFound
 	}
 
-	if err := s.q.AddGroupMember(ctx, database.AddGroupMemberParams{
+	if err := qtx.AddGroupMember(ctx, database.AddGroupMemberParams{
 		GroupID: groupId,
 		UserID:  userToAddId,
 	}); err != nil {
 		return err
 	}
 
-	return s.q.TouchGroup(ctx, groupId)
+	if err := qtx.TouchGroup(ctx, groupId); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 // GetUsersFromGroup returns the full member users of a non-deleted group that
@@ -438,7 +450,15 @@ func (s *Store) SoftDeleteGroup(ctx context.Context, groupId string) error {
 // mirroring mongodb.RemoveUserFromGroup: the not-found error keys off the group
 // (missing/deleted), not off whether userId was actually a member.
 func (s *Store) RemoveUserFromGroup(ctx context.Context, groupId, userId string) error {
-	ok, err := s.q.GroupExistsNotDeleted(ctx, groupId)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.q.WithTx(tx)
+
+	ok, err := qtx.GroupExistsNotDeleted(ctx, groupId)
 	if err != nil {
 		return err
 	}
@@ -446,21 +466,33 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, groupId, userId string)
 		return store.ErrRecordNotFound
 	}
 
-	if err := s.q.RemoveGroupMember(ctx, database.RemoveGroupMemberParams{
+	if err := qtx.RemoveGroupMember(ctx, database.RemoveGroupMemberParams{
 		GroupID: groupId,
 		UserID:  userId,
 	}); err != nil {
 		return err
 	}
 
-	return s.q.TouchGroup(ctx, groupId)
+	if err := qtx.TouchGroup(ctx, groupId); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its
 // seasons cascade), mirroring mongodb.RemoveTitleFromGroup: the not-found error
 // keys off group membership, not off whether the title was actually present.
 func (s *Store) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
-	ok, err := s.q.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: userId})
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.q.WithTx(tx)
+
+	ok, err := qtx.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: userId})
 	if err != nil {
 		return err
 	}
@@ -468,12 +500,16 @@ func (s *Store) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, user
 		return store.ErrRecordNotFound
 	}
 
-	if _, err := s.q.DeleteGroupTitle(ctx, database.DeleteGroupTitleParams{
+	if _, err := qtx.DeleteGroupTitle(ctx, database.DeleteGroupTitleParams{
 		GroupID: groupId,
 		TitleID: titleId,
 	}); err != nil {
 		return err
 	}
 
-	return s.q.TouchGroup(ctx, groupId)
+	if err := qtx.TouchGroup(ctx, groupId); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }

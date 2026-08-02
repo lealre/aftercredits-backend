@@ -263,10 +263,43 @@ func titleToRow(t models.Title) (database.InsertTitleParams, error) {
 // it reproduces the exact models.Title (including nested seasons/episodes/
 // cast and nil/empty conventions) that was passed to titleToRow. The
 // denormalized query columns on the row are ignored here.
+//
+// json.Unmarshal preserves JSON null as a nil Go slice, but mongodb's mapper
+// (titleDbToModel, via personsDbToModel/codeNamesDbToModel/
+// interestsDbToModel/seasonsDbToModel/episodesDbToModel, which all make() a
+// slice of len(x)) always returns a non-nil (possibly empty) slice for these
+// fields. Normalize them here to match. Genres is passthrough in mongodb
+// (t.Genres, never make()'d) so it is deliberately left untouched.
 func rowToTitle(r database.Title) (models.Title, error) {
 	var t models.Title
 	if err := json.Unmarshal(r.Metadata, &t); err != nil {
 		return models.Title{}, fmt.Errorf("unmarshal title metadata: %w", err)
 	}
+
+	if t.Directors == nil {
+		t.Directors = []models.Person{}
+	}
+	if t.Writers == nil {
+		t.Writers = []models.Person{}
+	}
+	if t.Stars == nil {
+		t.Stars = []models.Person{}
+	}
+	if t.OriginCountries == nil {
+		t.OriginCountries = []models.CodeName{}
+	}
+	if t.SpokenLanguages == nil {
+		t.SpokenLanguages = []models.CodeName{}
+	}
+	if t.Interests == nil {
+		t.Interests = []models.Interest{}
+	}
+	if t.Seasons == nil {
+		t.Seasons = []models.Seasons{}
+	}
+	if t.Episodes == nil {
+		t.Episodes = []models.Episode{}
+	}
+
 	return t, nil
 }

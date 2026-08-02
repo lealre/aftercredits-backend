@@ -11,7 +11,7 @@ SELECT * FROM users WHERE id = $1;
 
 -- name: GetUserByUsernameOrEmail :one
 SELECT * FROM users
-WHERE (username <> '' AND username = $1) OR (email <> '' AND email = $2);
+WHERE (username = $1 OR $1 = '') AND (email = $2 OR $2 = '');
 
 -- name: GetAllUsers :many
 SELECT * FROM users ORDER BY id;

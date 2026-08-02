@@ -119,6 +119,47 @@ func TestStore_AddTitle_GetTitleById_RoundTrip(t *testing.T) {
 	require.Equal(t, title, got, "GetTitleById must return the exact models.Title that was added (metadata JSONB round trip)")
 }
 
+// TestStore_GetTitleById_NonNilEmptySlices proves that reading back a title
+// whose optional slice fields were never set (a minimal movie, built via
+// newTestMovieTitle, which leaves Directors/Writers/Stars/OriginCountries/
+// SpokenLanguages/Interests/Seasons/Episodes as their nil zero value) still
+// comes back with those 8 fields as non-nil, empty slices — matching
+// mongodb's titleDbToModel, whose personsDbToModel/codeNamesDbToModel/
+// interestsDbToModel/seasonsDbToModel/episodesDbToModel each make() a slice
+// of len(x), never returning nil. This is a read-shape assertion against the
+// mongodb contract, not a round-trip-with-the-input check (the input here IS
+// nil for these fields; the output must not be).
+func TestStore_GetTitleById_NonNilEmptySlices(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	title := newTestMovieTitle(t, "tt-minimal", "Minimal Movie", 5.0)
+	require.Nil(t, title.Directors, "sanity: fixture leaves Directors nil")
+	require.Nil(t, title.Seasons, "sanity: fixture leaves Seasons nil")
+	require.NoError(t, s.AddTitle(ctx, title))
+
+	got, err := s.GetTitleById(ctx, title.ID)
+	require.NoError(t, err)
+
+	require.NotNil(t, got.Directors)
+	require.Len(t, got.Directors, 0)
+	require.NotNil(t, got.Writers)
+	require.Len(t, got.Writers, 0)
+	require.NotNil(t, got.Stars)
+	require.Len(t, got.Stars, 0)
+	require.NotNil(t, got.OriginCountries)
+	require.Len(t, got.OriginCountries, 0)
+	require.NotNil(t, got.SpokenLanguages)
+	require.Len(t, got.SpokenLanguages, 0)
+	require.NotNil(t, got.Interests)
+	require.Len(t, got.Interests, 0)
+	require.NotNil(t, got.Seasons)
+	require.Len(t, got.Seasons, 0)
+	require.NotNil(t, got.Episodes)
+	require.Len(t, got.Episodes, 0)
+}
+
 func TestStore_AddTitle_Duplicate(t *testing.T) {
 	resetDB(t)
 	s := newTestStore(t)

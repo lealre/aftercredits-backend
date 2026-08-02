@@ -137,7 +137,7 @@ func (q *Queries) GetUserById(ctx context.Context, id string) (User, error) {
 
 const getUserByUsernameOrEmail = `-- name: GetUserByUsernameOrEmail :one
 SELECT id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at FROM users
-WHERE (username <> '' AND username = $1) OR (email <> '' AND email = $2)
+WHERE (username = $1 OR $1 = '') AND (email = $2 OR $2 = '')
 `
 
 type GetUserByUsernameOrEmailParams struct {

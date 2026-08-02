@@ -149,6 +149,39 @@ func TestStore_GetUserByUsernameOrEmail(t *testing.T) {
 		_, err := s.GetUserByUsernameOrEmail(ctx, "nobody", "nobody@example.com")
 		require.ErrorIs(t, err, store.ErrRecordNotFound)
 	})
+
+	t.Run("both supplied matching the same user is found", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		user := newTestUser(t)
+		require.NoError(t, s.AddUser(ctx, user))
+
+		got, err := s.GetUserByUsernameOrEmail(ctx, user.Username, user.Email)
+		require.NoError(t, err)
+		require.Equal(t, user.Id, got.Id)
+	})
+
+	// This is the case that distinguishes Mongo's AND semantics (a dynamic
+	// filter that only requires the non-empty fields to match, on the SAME
+	// document) from a plain OR: username matches user A while email matches
+	// a completely different user B. Mongo's FindOne with both filter keys
+	// set requires a single document satisfying both, so this must be
+	// store.ErrRecordNotFound, not a match on either user.
+	t.Run("both supplied but matching different users is not found", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		userA := newTestUser(t)
+		userB := newTestUser(t)
+		require.NoError(t, s.AddUser(ctx, userA))
+		require.NoError(t, s.AddUser(ctx, userB))
+
+		_, err := s.GetUserByUsernameOrEmail(ctx, userA.Username, userB.Email)
+		require.ErrorIs(t, err, store.ErrRecordNotFound)
+	})
 }
 
 func TestStore_UpdateUserInfo(t *testing.T) {
