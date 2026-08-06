@@ -118,6 +118,28 @@ func (q *Queries) GetGroupRow(ctx context.Context, arg GetGroupRowParams) (Group
 	return i, err
 }
 
+const getGroupRowAnyById = `-- name: GetGroupRowAnyById :one
+SELECT id, name, description, owner_id, deleted, deleted_at, created_at, updated_at FROM groups WHERE id = $1
+`
+
+// Migration-only verification read: fetches a group row by id regardless of
+// deleted state or membership (the store's readers filter both out).
+func (q *Queries) GetGroupRowAnyById(ctx context.Context, id string) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupRowAnyById, id)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.OwnerID,
+		&i.Deleted,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getGroupTitleRow = `-- name: GetGroupTitleRow :one
 SELECT group_id, title_id, title_type, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 AND title_id = $2
 `
@@ -373,6 +395,38 @@ func (q *Queries) InsertGroup(ctx context.Context, arg InsertGroupParams) (Group
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const insertGroupFull = `-- name: InsertGroupFull :exec
+INSERT INTO groups (id, name, description, owner_id, deleted, deleted_at, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type InsertGroupFullParams struct {
+	ID          string
+	Name        string
+	Description string
+	OwnerID     string
+	Deleted     bool
+	DeletedAt   pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+// Migration-only (cmd/mongo-to-postgres): unlike InsertGroup, preserves the
+// original deleted/deleted_at values from the Mongo document.
+func (q *Queries) InsertGroupFull(ctx context.Context, arg InsertGroupFullParams) error {
+	_, err := q.db.Exec(ctx, insertGroupFull,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.OwnerID,
+		arg.Deleted,
+		arg.DeletedAt,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	return err
 }
 
 const softDeleteGroupRow = `-- name: SoftDeleteGroupRow :execrows
