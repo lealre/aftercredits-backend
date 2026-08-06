@@ -11,42 +11,37 @@ export $(grep -v '^#' .env | xargs)
 
 BACKUP_DIR="./backups"
 
-# Check if backup file is provided
 if [ -z "$1" ]; then
   echo "❌ Usage: $0 <backup_file.tar.gz>"
-  echo "   Example: $0 backups/mongo_dump_20231214_160208.tar.gz"
+  echo "   Example: $0 backups/pg_dump_20260806_120000.tar.gz"
   exit 1
 fi
 
 BACKUP_FILE="$1"
 
-# Check if backup file exists
 if [ ! -f "${BACKUP_FILE}" ]; then
   echo "❌ Backup file not found: ${BACKUP_FILE}"
   exit 1
 fi
 
-# Extract backup name from file path
 BACKUP_NAME=$(basename "${BACKUP_FILE}" .tar.gz)
-EXTRACT_DIR="${BACKUP_DIR}/${BACKUP_NAME}"
 
 echo "📦 Extracting backup file..."
 tar -xzf "${BACKUP_FILE}" -C "${BACKUP_DIR}"
 
 echo "📦 Copying backup to container..."
-docker cp "${EXTRACT_DIR}" "aftercredits-mongo:/tmp/${BACKUP_NAME}"
+docker cp "${BACKUP_DIR}/${BACKUP_NAME}.dump" "aftercredits-postgres:/tmp/${BACKUP_NAME}.dump"
 
-echo "📦 Starting MongoDB restore..."
-docker exec aftercredits-mongo mongorestore \
-  -u "${MONGO_USER}" \
-  -p "${MONGO_PASSWORD}" \
-  --authenticationDatabase admin \
-  --drop \
-  "/tmp/${BACKUP_NAME}"
+echo "📦 Starting Postgres restore..."
+docker exec aftercredits-postgres pg_restore \
+  -U "${POSTGRES_USER:-aftercredits}" \
+  -d "${POSTGRES_DB:-aftercredits}" \
+  --clean --if-exists \
+  "/tmp/${BACKUP_NAME}.dump"
 
 echo "🧹 Cleaning up..."
-docker exec aftercredits-mongo rm -rf "/tmp/${BACKUP_NAME}"
-rm -rf "${EXTRACT_DIR}"
+docker exec aftercredits-postgres rm -f "/tmp/${BACKUP_NAME}.dump"
+rm -f "${BACKUP_DIR}/${BACKUP_NAME}.dump"
 
 echo "✅ Restore completed!"
 
