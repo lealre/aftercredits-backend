@@ -2,87 +2,91 @@ package tests
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http/httptest"
 	"os"
 	"testing"
 
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/lealre/movies-backend/internal/database"
+	pgstore "github.com/lealre/movies-backend/internal/postgres"
 	"github.com/lealre/movies-backend/internal/server"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+const schemaDir = "../sql/schema"
 
 var (
-	testClient *mongo.Client
-	testServer *httptest.Server
+	testPool    *pgxpool.Pool
+	testStore   *pgstore.Store
+	testQueries *database.Queries
+	testServer  *httptest.Server
 )
-
-const TEST_DB_NAME = "testDb"
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	os.Setenv("MONGO_DB", TEST_DB_NAME)
-	req := testcontainers.ContainerRequest{
-		Image:        "mongo:7.0",
-		ExposedPorts: []string{"27017/tcp"},
-		WaitingFor:   wait.ForListeningPort("27017/tcp"),
-	}
-	mongoC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+	pgC, err := postgres.Run(ctx,
+		"postgres:16",
+		postgres.WithDatabase("testdb"),
+		postgres.WithUsername("postgres"),
+		postgres.WithPassword("postgres"),
+		postgres.BasicWaitStrategies(),
+	)
 	if err != nil {
-		log.Fatalf("failed to start mongo container: %v", err)
+		log.Fatalf("failed to start postgres container: %v", err)
 	}
 
-	endpoint, err := mongoC.Endpoint(ctx, "")
+	dsn, err := pgC.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		log.Fatalf("failed to get mongo endpoint: %v", err)
-	}
-	uri := "mongodb://" + endpoint
-
-	testClient, err = mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	if err != nil {
-		log.Fatalf("failed to connect to test mongo: %v", err)
+		log.Fatalf("failed to get connection string: %v", err)
 	}
 
-	handler := server.NewServerWithProvider(testClient, newFakeTitleProvider(), "test-secret")
+	if err := runMigrations(dsn); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
+
+	testPool, err = pgxpool.New(ctx, dsn)
+	if err != nil {
+		log.Fatalf("failed to create pgx pool: %v", err)
+	}
+	testStore = pgstore.New(testPool)
+	testQueries = database.New(testPool)
+
+	handler := server.NewServerWithProvider(testStore, newFakeTitleProvider(), "test-secret")
 	testServer = httptest.NewServer(handler)
 
 	code := m.Run()
 
-	// Cleanup
 	testServer.Close()
-	_ = testClient.Disconnect(ctx)
-	_ = mongoC.Terminate(ctx)
+	testPool.Close()
+	_ = pgC.Terminate(ctx)
 
 	os.Exit(code)
 }
 
+func runMigrations(dsn string) error {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := goose.SetDialect("postgres"); err != nil {
+		return err
+	}
+	return goose.Up(db, schemaDir)
+}
+
 func resetDB(t *testing.T) {
 	t.Helper()
-
-	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-
-	collections, err := db.ListCollectionNames(ctx, bson.D{})
-	if err != nil {
-		t.Fatalf("failed to list collections: %v", err)
-	}
-
-	for _, coll := range collections {
-		if err := db.Collection(coll).Drop(ctx); err != nil {
-			t.Fatalf("failed to drop collection %s: %v", coll, err)
-		}
-	}
-
-	// Recreate indexes after dropping collections
-	if err := mongodb.CreateAllIndexes(ctx, db, false); err != nil {
-		t.Fatalf("failed to create indexes: %v", err)
+	const stmt = `TRUNCATE users, titles, ratings, rating_seasons, comments,
+		comment_seasons, groups, group_members, group_titles,
+		group_title_seasons RESTART IDENTITY CASCADE`
+	if _, err := testPool.Exec(context.Background(), stmt); err != nil {
+		t.Fatalf("failed to reset db: %v", err)
 	}
 }

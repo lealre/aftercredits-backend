@@ -8,10 +8,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/comments"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
 func addComment(t *testing.T, newComment comments.NewComment, innerToken string) *http.Response {
@@ -98,30 +97,56 @@ func deleteCommentSeasonFromApi(t *testing.T, groupId, titleId, commentId, inner
 	return resp
 }
 
-func getCommentFromDB(t *testing.T, commentId string) mongodb.CommentDb {
+func getCommentFromDB(t *testing.T, commentId string) models.Comment {
 	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.CommentsCollection)
 
-	var comment mongodb.CommentDb
-	err := coll.FindOne(ctx, bson.M{"_id": commentId}).Decode(&comment)
+	var c models.Comment
+	err := testPool.QueryRow(ctx,
+		"SELECT id, title_id, user_id, comment, created_at, updated_at FROM comments WHERE id = $1", commentId).
+		Scan(&c.Id, &c.TitleId, &c.UserId, &c.Comment, &c.CreatedAt, &c.UpdatedAt)
 	require.NoError(t, err, "error querying a comment from db")
 
-	return comment
+	rows, err := testQueries.GetCommentSeasons(ctx, commentId)
+	require.NoError(t, err)
+	if len(rows) > 0 {
+		m := make(models.SeasonsComments, len(rows))
+		for _, row := range rows {
+			m[row.Season] = models.SeasonCommentItem{Comment: row.Comment, AddedAt: row.AddedAt.Time, UpdatedAt: row.UpdatedAt.Time}
+		}
+		c.SeasonsComments = &m
+	}
+	return c
 }
 
-func getCommentsFromDB(t *testing.T, titleId string) []mongodb.CommentDb {
+func getCommentsFromDB(t *testing.T, titleId string) []models.Comment {
 	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.CommentsCollection)
 
-	var comments []mongodb.CommentDb
-	cursor, err := coll.Find(ctx, bson.M{"titleId": titleId})
+	rows, err := testPool.Query(ctx,
+		"SELECT id, title_id, user_id, comment, created_at, updated_at FROM comments WHERE title_id = $1 ORDER BY id", titleId)
 	require.NoError(t, err, "error querying comments from db")
-	defer cursor.Close(ctx)
+	defer rows.Close()
 
-	err = cursor.All(ctx, &comments)
-	require.NoError(t, err, "error decoding comments from db")
+	var commentIds []string
+	comments := []models.Comment{}
+	for rows.Next() {
+		var c models.Comment
+		require.NoError(t, rows.Scan(&c.Id, &c.TitleId, &c.UserId, &c.Comment, &c.CreatedAt, &c.UpdatedAt))
+		comments = append(comments, c)
+		commentIds = append(commentIds, c.Id)
+	}
+	require.NoError(t, rows.Err())
+
+	for i, commentId := range commentIds {
+		seasonRows, err := testQueries.GetCommentSeasons(ctx, commentId)
+		require.NoError(t, err)
+		if len(seasonRows) > 0 {
+			m := make(models.SeasonsComments, len(seasonRows))
+			for _, row := range seasonRows {
+				m[row.Season] = models.SeasonCommentItem{Comment: row.Comment, AddedAt: row.AddedAt.Time, UpdatedAt: row.UpdatedAt.Time}
+			}
+			comments[i].SeasonsComments = &m
+		}
+	}
 
 	return comments
 }

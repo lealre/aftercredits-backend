@@ -16,7 +16,6 @@ import (
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestCreateGroup(t *testing.T) {
@@ -522,7 +521,7 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 		require.NotEmpty(t, groupDb.Titles)
 		require.Equal(t, len(groupDb.Titles), 1)
 
-		groupTitleDb, exists := groupDb.Titles[mongodb.TitleId(expectedOwnerTitle.ID)]
+		groupTitleDb, exists := groupDb.Titles[expectedOwnerTitle.ID]
 		require.True(t, exists, "Expected title to exist in group titles map")
 		require.Equal(t, groupTitleDb.TitleId, expectedOwnerTitle.ID, "group title ID should match expected title ID when adding a title to a group")
 		require.NotEmpty(t, groupTitleDb.AddedAt, "AddedAt should not be empty when adding a title to a group")
@@ -932,7 +931,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
-		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
+		titleToassert, exists := groupDb.Titles[expectedTitle.ID]
 		require.True(t, exists, "Expected title to be in group titles db")
 		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true")
 		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty")
@@ -958,10 +957,10 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
-		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
+		titleToassert, exists := groupDb.Titles[expectedTitle.ID]
 		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitle.ID)
 		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true, got: %v", titleToassert.Watched)
-		require.Equal(t, &testDate, titleToassert.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleToassert.WatchedAt)
+		require.True(t, titleToassert.WatchedAt != nil && testDate.Equal(*titleToassert.WatchedAt), "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", testDate, titleToassert.WatchedAt)
 	})
 
 	t.Run("Set watched as false should set watchedAt as empty successfully", func(t *testing.T) {
@@ -982,7 +981,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
-		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitle.ID)]
+		titleToassert, exists := groupDb.Titles[expectedTitle.ID]
 		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitle.ID)
 		require.False(t, titleToassert.Watched, "Expected title Watched in db to be false, got: %v", titleToassert.Watched)
 		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty when watched is false")
@@ -1034,7 +1033,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
-		titleToassert, exists := groupDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
+		titleToassert, exists := groupDb.Titles[expectedTitleTwo.ID]
 		require.True(t, exists, "Expected title to be in group titles db")
 		require.True(t, titleToassert.Watched, "Expected title Watched in db to be true")
 		require.Empty(t, titleToassert.WatchedAt, "Expected title WatchedAt in db to be empty")
@@ -1060,10 +1059,10 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTitleTwo.ID]
 		require.True(t, exists, "Expected title %s to be in group titles db", expectedTitleTwo.ID)
 		require.True(t, titleToAssert.Watched, "Expected title Watched in db to be true, got: %v", titleToAssert.Watched)
-		require.Equal(t, &testDate, titleToAssert.WatchedAt, "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, titleToAssert.WatchedAt)
+		require.True(t, titleToAssert.WatchedAt != nil && testDate.Equal(*titleToAssert.WatchedAt), "Expected title WatchedAt in db to match testDate, expected: %v, got: %v", testDate, titleToAssert.WatchedAt)
 	})
 
 	t.Run("Set a title group as watched not being from the group should return 404", func(t *testing.T) {
@@ -1125,7 +1124,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 		require.Equal(t, 3, len(groupDb.Titles), "Expected group should have 3 titles, got %d", len(groupDb.Titles))
 
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		require.NotEmpty(t, titleToAssert.SeasonsWatched, "Expected SeasonsWatched to not be empty")
 		seasonWatched, seasonExists := (*titleToAssert.SeasonsWatched)[strconv.Itoa(season)]
@@ -1170,12 +1169,12 @@ func TestGroupTitlesPatch(t *testing.T) {
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		seasonWatched, seasonExists := (*titleToAssert.SeasonsWatched)[strconv.Itoa(season)]
 		require.True(t, seasonExists, "Expected season %d to exist in SeasonsWatched", season)
 		require.True(t, seasonWatched.Watched, "Expected season Watched in db to be true")
-		require.Equal(t, &testDate, seasonWatched.WatchedAt, "Expected season WatchedAt in db to match testDate, expected: %v, got: %v", &testDate, seasonWatched.WatchedAt)
+		require.True(t, seasonWatched.WatchedAt != nil && testDate.Equal(*seasonWatched.WatchedAt), "Expected season WatchedAt in db to match testDate, expected: %v, got: %v", testDate, seasonWatched.WatchedAt)
 
 		// Verify top-level watched and watchedAt
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when season is watched")
@@ -1185,7 +1184,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		// Database assertion for top-level fields
 		require.True(t, titleToAssert.Watched, "Expected top-level Watched in db to be true")
 		require.NotNil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to not be nil")
-		require.Equal(t, testDate, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to match season's WatchedAt")
+		require.True(t, testDate.Equal(*titleToAssert.WatchedAt), "Expected top-level WatchedAt in db to match season's WatchedAt")
 	})
 
 	t.Run("Set TV series season watched as false should set watchedAt as empty successfully", func(t *testing.T) {
@@ -1211,7 +1210,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		seasonWatched, seasonExists := (*titleToAssert.SeasonsWatched)[strconv.Itoa(season)]
 		require.True(t, seasonExists, "Expected season %d to exist in SeasonsWatched", season)
@@ -1354,7 +1353,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 		groupDb := getGroup(t, group.Id)
 		require.NotEmpty(t, groupDb, "Expected group to not be empty")
 
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		require.NotEmpty(t, titleToAssert.SeasonsWatched, "Expected SeasonsWatched to not be empty")
 
@@ -1405,11 +1404,11 @@ func TestGroupTitlesPatch(t *testing.T) {
 
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		require.True(t, titleToAssert.Watched, "Expected top-level Watched in db to be true")
 		require.NotNil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to not be nil")
-		require.Equal(t, testDate1, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to match season's WatchedAt")
+		require.True(t, testDate1.Equal(*titleToAssert.WatchedAt), "Expected top-level WatchedAt in db to match season's WatchedAt")
 	})
 
 	t.Run("Setting all seasons to unwatched should update top-level watched to false", func(t *testing.T) {
@@ -1458,7 +1457,7 @@ func TestGroupTitlesPatch(t *testing.T) {
 
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		require.False(t, titleToAssert.Watched, "Expected top-level Watched in db to be false")
 		require.Nil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be nil")
@@ -1503,11 +1502,11 @@ func TestGroupTitlesPatch(t *testing.T) {
 
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		require.True(t, titleToAssert.Watched, "Expected top-level Watched in db to be true")
 		require.NotNil(t, titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to not be nil")
-		require.Equal(t, testDate2, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be the latest date")
+		require.True(t, testDate2.Equal(*titleToAssert.WatchedAt), "Expected top-level WatchedAt in db to be the latest date")
 	})
 
 	t.Run("Updating a season with an earlier date should not change top-level watchedAt if another season has a later date", func(t *testing.T) {
@@ -1534,9 +1533,9 @@ func TestGroupTitlesPatch(t *testing.T) {
 
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
-		require.Equal(t, testDate2, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to remain the latest date")
+		require.True(t, testDate2.Equal(*titleToAssert.WatchedAt), "Expected top-level WatchedAt in db to remain the latest date")
 	})
 
 	t.Run("Updating a season with a later date should update top-level watchedAt", func(t *testing.T) {
@@ -1561,9 +1560,9 @@ func TestGroupTitlesPatch(t *testing.T) {
 
 		// Database assertion
 		groupDb := getGroup(t, group.Id)
-		titleToAssert, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleToAssert, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to be in group titles db")
-		require.Equal(t, testDate3, *titleToAssert.WatchedAt, "Expected top-level WatchedAt in db to be updated to the latest date")
+		require.True(t, testDate3.Equal(*titleToAssert.WatchedAt), "Expected top-level WatchedAt in db to be updated to the latest date")
 	})
 }
 
@@ -1670,7 +1669,7 @@ func TestGroupTitlesDelete(t *testing.T) {
 		require.NotEmpty(t, grouDb, "Expected group to not be empty")
 		require.Equal(t, 1, len(grouDb.Titles), "Expected group should have 1 title, got %d", len(grouDb.Titles))
 
-		titleToAssert, exists := grouDb.Titles[mongodb.TitleId(expectedTitleTwo.ID)]
+		titleToAssert, exists := grouDb.Titles[expectedTitleTwo.ID]
 		require.True(t, exists, "Expected title to exist in group titles map")
 		require.Equal(t, titleToAssert.TitleId, expectedTitleTwo.ID)
 	})
@@ -1747,7 +1746,7 @@ func TestAddTVSeriesToGroupAsOwner(t *testing.T) {
 		require.NotEmpty(t, groupDb.Titles)
 		require.Equal(t, 1, len(groupDb.Titles))
 
-		groupTitleDb, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		groupTitleDb, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists, "Expected TV series title to exist in group titles map")
 		require.Equal(t, expectedTVSeriesTitle.ID, groupTitleDb.TitleId, "group title ID should match expected TV series ID when adding a title to a group")
 		require.NotEmpty(t, groupTitleDb.AddedAt, "AddedAt should not be empty when adding a title to a group")
@@ -1898,11 +1897,11 @@ func TestGroupTitlesSeriesRatingAndWatchedAggregation(t *testing.T) {
 
 		// Database assertion for the watched/watchedAt aggregation
 		groupDb := getGroup(t, group.Id)
-		titleDb, exists := groupDb.Titles[mongodb.TitleId(expectedTVSeriesTitle.ID)]
+		titleDb, exists := groupDb.Titles[expectedTVSeriesTitle.ID]
 		require.True(t, exists)
 		require.True(t, titleDb.Watched)
 		require.NotNil(t, titleDb.WatchedAt)
-		require.Equal(t, testDate2, *titleDb.WatchedAt)
+		require.True(t, testDate2.Equal(*titleDb.WatchedAt))
 	})
 }
 
@@ -2080,8 +2079,7 @@ func TestSoftDeleteGroup(t *testing.T) {
 
 		// Mark the group deleted directly in the DB.
 		ctx := context.Background()
-		coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
-		_, err := coll.UpdateOne(ctx, bson.M{"_id": group.Id}, bson.M{"$set": bson.M{"deleted": true}})
+		_, err := testPool.Exec(ctx, "UPDATE groups SET deleted = true WHERE id = $1", group.Id)
 		require.NoError(t, err)
 
 		resp := getGroupFromApi(t, group.Id, token)
@@ -2147,32 +2145,4 @@ func TestLeaveGroup(t *testing.T) {
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	})
-}
-
-func TestBackfillGroupFields(t *testing.T) {
-	resetDB(t)
-	ctx := context.Background()
-	coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.GroupsCollection)
-
-	// Simulate a legacy group document created before the deleted/description fields.
-	_, err := coll.InsertOne(ctx, bson.M{"_id": "legacy-grp", "name": "Legacy", "ownerId": "u1", "users": []string{"u1"}})
-	require.NoError(t, err)
-
-	db := mongodb.NewDB(testClient)
-
-	deletedN, descN, err := db.BackfillGroupFields(ctx)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, deletedN)
-	require.EqualValues(t, 1, descN)
-
-	var got bson.M
-	require.NoError(t, coll.FindOne(ctx, bson.M{"_id": "legacy-grp"}).Decode(&got))
-	require.Equal(t, false, got["deleted"])
-	require.Equal(t, "", got["description"])
-
-	// Idempotent: a second run touches nothing.
-	deletedN2, descN2, err := db.BackfillGroupFields(ctx)
-	require.NoError(t, err)
-	require.EqualValues(t, 0, deletedN2)
-	require.EqualValues(t, 0, descN2)
 }

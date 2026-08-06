@@ -8,21 +8,30 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
-func getRating(t *testing.T, ratingId string) mongodb.RatingDb {
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.RatingsCollection)
+func getRating(t *testing.T, ratingId string) models.UserRating {
+	ctx := context.Background()
 
-	var rating mongodb.RatingDb
-	err := coll.FindOne(context.Background(), bson.M{"_id": ratingId}).Decode(&rating)
-	require.NoError(t, err, "error queryind a rating from db")
+	var r models.UserRating
+	err := testPool.QueryRow(ctx,
+		"SELECT id, title_id, user_id, note, created_at, updated_at FROM ratings WHERE id = $1", ratingId).
+		Scan(&r.Id, &r.TitleId, &r.UserId, &r.Note, &r.CreatedAt, &r.UpdatedAt)
+	require.NoError(t, err, "error querying a rating from db")
 
-	return rating
+	rows, err := testQueries.GetRatingSeasons(ctx, ratingId)
+	require.NoError(t, err)
+	if len(rows) > 0 {
+		m := make(models.SeasonsRatings, len(rows))
+		for _, row := range rows {
+			m[row.Season] = models.SeasonRatingItem{Rating: row.Rating, AddedAt: row.AddedAt.Time, UpdatedAt: row.UpdatedAt.Time}
+		}
+		r.SeasonsRatings = &m
+	}
+	return r
 }
 
 func addRating(t *testing.T, newRating ratings.NewRating, innerToken string) *http.Response {
