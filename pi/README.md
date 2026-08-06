@@ -134,6 +134,11 @@ images), this section can be deleted.
 Run these steps from the deploy directory on the Pi (where `docker-compose-pi.yaml`
 and `.env` live), in order:
 
+0. **Copy the updated deploy files to the Pi.** From this repo, copy `pi/docker-compose-pi.yaml`
+   and an updated `.env` (containing the `POSTGRES_*` block — see `pi/.env.example`)
+   into the Pi's deploy directory, replacing the pre-cutover versions. Every step
+   below runs from that directory.
+
 1. **Take a final Mongo backup.** Run the existing backup cron job once more (it
    is still pointing at the pre-cutover image, which does a `mongodump`) so you
    have a tarball that reflects the database at the moment of cutover. This is
@@ -147,17 +152,22 @@ and `.env` live), in order:
    ```
 
 3. **Bring up Postgres and apply the schema.** Start the new `postgres` service
-   and apply the schema migrations only — do **not** run `-superuser` yet. The
-   migration tool refuses to load into a non-empty database, and creating a
-   superuser first would trip that check:
+   and wait for it to report healthy — `--wait` blocks until the `pg_isready`
+   healthcheck passes, which matters here because the first boot runs `initdb`
+   on the USB storage and is slow — then apply the schema migrations only. Do
+   **not** run `-superuser` yet: the migration tool refuses to load into a
+   non-empty database, and creating a superuser first would trip that check:
    ```bash
-   docker compose -f docker-compose-pi.yaml up -d postgres
+   docker compose -f docker-compose-pi.yaml up -d --wait postgres
    docker run --rm --network <network> --env-file .env \
      lealre/aftercredits-backend:latest /app/database -migrate
    ```
 
 4. **Run the migration.** Extract the `mongodump` tarball from step 1 to a local
-   directory, then run the migration from the backend image:
+   directory. It unpacks to `mongo_dump_<ts>/aftercreditsdb/…` — mount the
+   `mongo_dump_<ts>` directory (the one **containing** `aftercreditsdb/`) as
+   `/dump`, or point `-dump` at the `aftercreditsdb` folder directly; both
+   layouts are accepted. Then run the migration from the backend image:
    ```bash
    docker run --rm --network <network> --env-file .env \
      -v /path/to/extracted-dump:/dump \

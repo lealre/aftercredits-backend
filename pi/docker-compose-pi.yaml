@@ -39,6 +39,7 @@ services:
   backend:
     image: lealre/aftercredits-backend:latest
     container_name: aftercredits-backend
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false

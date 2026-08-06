@@ -2,7 +2,7 @@
 
 This is the backend part of [this project](https://github.com/lealre/aftercredits)
 
-It's written in Go, and the docker-compose file includes the respective MongoDB database image.
+It's written in Go, and the docker-compose file includes the respective Postgres database image. A MongoDB service is also kept in the compose file, but only as a legacy service for the one-time Mongo → Postgres migration.
 
 Title metadata (ratings, seasons/episodes, posters, cast) comes from a pluggable
 provider selected by the `TITLE_PROVIDER` env var. The default deployment uses the
@@ -21,11 +21,11 @@ invariants) are documented in **[CONVENTIONS.md](CONVENTIONS.md)**.
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
 - [Running Tests](#running-tests)
-- [MongoDB Data Backup & Restore](#mongodb-data-backup--restore)
-  - [1. Backup MongoDB Data (Local)](#1-backup-mongodb-data-local)
-  - [2. Backup MongoDB Data to Google Drive](#2-backup-mongodb-data-to-google-drive)
+- [Database Backup & Restore](#database-backup--restore)
+  - [1. Backup Postgres Data (Local)](#1-backup-postgres-data-local)
+  - [2. Backup MongoDB Data to Google Drive (Legacy)](#2-backup-mongodb-data-to-google-drive-legacy)
   - [3. Scheduled Backups and Updates (Raspberry Pi / Cron)](#3-scheduled-backups-and-updates-raspberry-pi--cron)
-  - [4. Restore MongoDB Data](#4-restore-mongodb-data)
+  - [4. Restore Postgres Data](#4-restore-postgres-data)
 
 ## How to Run
 
@@ -85,7 +85,7 @@ The server will start and connect to the Postgres database. Make sure the postgr
 
 ## Running Tests
 
-The test folder contain the tests to the api. The test setup is using testcontainers to start a MongoDB container and run the tests.
+The test folder contain the tests to the api. The test setup is using testcontainers to start a Postgres container and run the tests.
 
 To run the tests:
 
@@ -95,22 +95,22 @@ go test ./tests -v
 
 This will run all the tests in the tests directory.
 
-## MongoDB Data Backup & Restore
+## Database Backup & Restore
 
-### 1. Backup MongoDB Data (Local)
+### 1. Backup Postgres Data (Local)
 
-Create a local backup of your MongoDB data:
+Create a local backup of your Postgres data:
 
 ```bash
 ./scripts/backup.sh
 ```
 
 This script:
-- Creates a logical backup using `mongodump` from the Docker container
-- Stores backup in `./backups/` directory as a compressed tar.gz file
-- Requires MongoDB to be running in Docker container named `aftercredits-mongo`
+- Creates a logical backup using `pg_dump` (custom format) from the Docker container
+- Wraps the dump into a compressed tar.gz at `./backups/pg_dump_<timestamp>.tar.gz`
+- Requires Postgres to be running in Docker container named `aftercredits-postgres`
 
-### 2. Backup MongoDB Data to Google Drive
+### 2. Backup MongoDB Data to Google Drive (Legacy)
 
 Backup MongoDB data directly to Google Drive using rclone:
 
@@ -129,6 +129,9 @@ This script:
 - Uploads to Google Drive at `drive-pi:aftercredits_backups/`
 - Automatically cleans up temporary files
 
+This script targets the legacy Mongo service kept only as the source for the
+one-time migration; it is unrelated to the Pi's scheduled Postgres backups (see #3).
+
 **Setup rclone:**
 ```bash
 rclone config
@@ -140,7 +143,7 @@ rclone config
 For automated scheduled tasks (backups to Google Drive and movie information updates), see the `pi/` directory.
 
 **Features:**
-- **Automated MongoDB backups** to Google Drive using rclone
+- **Automated Postgres backups** to Google Drive using rclone
 - **Automated movie information updates** from IMDb API
 - Uses OS-level cron jobs for scheduling
 - Runs in Docker containers with automatic cleanup
@@ -148,7 +151,7 @@ For automated scheduled tasks (backups to Google Drive and movie information upd
 **Requirements:**
 - rclone configured with Google Drive remote (see `pi/README.md` for details)
 - Docker and Docker Compose
-- MongoDB running in docker-compose network
+- Postgres running in docker-compose network
 
 **Setup:**
 1. Configure rclone with your Google Drive:
@@ -171,16 +174,16 @@ For automated scheduled tasks (backups to Google Drive and movie information upd
 
 For detailed documentation, see [pi/README.md](pi/README.md).
 
-### 4. Restore MongoDB Data
+### 4. Restore Postgres Data
 
 To restore data from a backup:
 
 ```bash
-./scripts/restore.sh backups/mongo_dump_YYYYMMDD_HHMMSS.tar.gz
+./scripts/restore.sh backups/pg_dump_YYYYMMDD_HHMMSS.tar.gz
 ```
 
 This script:
 
 - Extracts the backup file
-- Restores data using `mongorestore`
+- Restores data using `pg_restore --clean --if-exists`
 - Automatically cleans up temporary files
