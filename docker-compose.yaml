@@ -1,5 +1,7 @@
 
 services:
+  # Mongo: legacy — only needed to restore old mongo backups for the
+  # one-time migration (removed in the cleanup PR).
   mongo:
     image: mongo:7
     container_name: aftercredits-mongo
@@ -17,10 +19,10 @@ services:
       timeout: 5s
       retries: 5
 
-  # Postgres for the v0.1.0 migration (matches the postgres:16 the tests use).
-  # Apply the goose schema after `docker compose up -d postgres`:
-  #   goose -dir sql/schema postgres \
-  #     "postgres://aftercredits:aftercredits@localhost:5432/aftercredits?sslmode=disable" up
+  # Postgres: the application database (replaces Mongo after the v0.1.0
+  # cutover; matches the postgres:16 the tests use). Apply schema migrations
+  # after `docker compose up -d postgres`:
+  #   go run ./cmd/database -migrate
   postgres:
     image: postgres:16
     container_name: aftercredits-postgres

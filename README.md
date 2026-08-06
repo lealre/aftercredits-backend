@@ -42,12 +42,12 @@ invariants) are documented in **[CONVENTIONS.md](CONVENTIONS.md)**.
    cp env.example .env
    ```
 
-2. **Edit `.env` file** with your configuration (MongoDB credentials, superuser details, etc.)
+2. **Edit `.env` file** with your configuration (Postgres credentials, superuser details, etc.)
 
-3. **Start MongoDB using Docker Compose:**
+3. **Start Postgres using Docker Compose:**
 
    ```bash
-   docker-compose up -d
+   docker compose up -d postgres
    ```
 
 4. **Install Go dependencies:**
@@ -56,18 +56,18 @@ invariants) are documented in **[CONVENTIONS.md](CONVENTIONS.md)**.
    go mod download
    ```
 
-5. **Create database indexes:**
+5. **Apply schema migrations:**
 
    ```bash
-   go run cmd/database/main.go -indexes
+   go run ./cmd/database -migrate
    ```
 
-   This will create all necessary indexes for users, ratings, and comments collections.
+   This applies the embedded goose schema migrations, creating all necessary tables.
 
 6. **Create a superuser (optional):**
 
    ```bash
-   go run cmd/database/main.go -superuser
+   go run ./cmd/database -superuser
    ```
 
    This will create an admin user using the credentials from your `.env` file:
@@ -78,10 +78,10 @@ invariants) are documented in **[CONVENTIONS.md](CONVENTIONS.md)**.
 
 7. **Run the application:**
    ```bash
-   go run main.go
+   go run .
    ```
 
-The server will start and connect to the MongoDB database. Make sure the MongoDB container is running before starting the application.
+The server will start and connect to the Postgres database. Make sure the postgres container is running (and migrated) before starting the application.
 
 ## Running Tests
 
