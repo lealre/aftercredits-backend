@@ -13,7 +13,7 @@ import (
 // docker-compose postgres service. It pings before returning so a bad URL
 // fails at startup, not on the first query.
 func Connect(ctx context.Context) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, postgresURI())
+	pool, err := pgxpool.New(ctx, URI())
 	if err != nil {
 		return nil, fmt.Errorf("postgres pool error: %v", err)
 	}
@@ -24,7 +24,8 @@ func Connect(ctx context.Context) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func postgresURI() string {
+// URI returns the POSTGRES_*-derived connection string Connect uses.
+func URI() string {
 	get := func(key, def string) string {
 		if v := os.Getenv(key); v != "" {
 			return v
