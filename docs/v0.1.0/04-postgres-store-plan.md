@@ -1,0 +1,368 @@
+# v0.1.0 (2/4) — Postgres store (goose + sqlc) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+
+**Goal:** A `postgres.Store` implementing the existing `store.Store` interface against Postgres (goose schema + sqlc queries + pgx/v5), behaviorally equivalent to the Mongo store, tested in isolation — NOT wired into the running app.
+
+**Architecture:** goose migrations (`sql/schema`) build a relational schema (TEXT PKs, child tables for season maps, hybrid `titles` with `metadata JSONB`). sqlc (`sql/queries` → `internal/database`, engine postgresql, sql_package pgx/v5) generates typed queries. `internal/postgres` wraps a `*pgxpool.Pool` + the sqlc `Queries`, implements all 42 `store.Store` methods (thin sqlc calls for simple CRUD; hand-assembled reads for aggregates; pgx transactions for writes touching child tables; hand-written `GetTitlesPage`), mapping rows ↔ `models.*` with the same nil/empty convention as the Mongo mappers. A testcontainers-postgres harness runs the migrations and exercises the store directly.
+
+**Tech Stack:** Go 1.24, pgx/v5 (+ pgxpool), sqlc, goose (`github.com/pressly/goose/v3`), testcontainers-go postgres module, testify.
+
+## Global Constraints
+- Module `github.com/lealre/movies-backend`; Go directive stays `1.24.0` — no dependency may bump it. New deps: `github.com/jackc/pgx/v5`, `github.com/pressly/goose/v3`, `github.com/testcontainers/testcontainers-go/modules/postgres` only.
+- Public repo: NO co-author trailer, keep the public repo free of personal or private-infrastructure references.
+- **The `store.Store` interface (`internal/store/store.go`) and `internal/models` are FIXED — do not modify them.** `git diff` of those = empty at the end.
+- **Not wired in:** `internal/server`, `internal/config`, `main.go`, and the Mongo store are untouched; the app still runs on Mongo. The existing Mongo integration suite must stay green.
+- `internal/database` is sqlc-GENERATED — never hand-edit; regenerate with `sqlc generate`.
+- Postgres `postgres.Store` methods return the shared sentinels `store.ErrRecordNotFound` / `store.ErrDuplicatedRecord` (translate `pgx.ErrNoRows` and unique-violation `23505`).
+- Mapping honors the Mongo nil/empty-slice convention (byte-identical `models.*`): person/codename/etc. slices that the Mongo mapper returns as non-nil empty must also be non-nil empty here; nil maps stay nil.
+- Branch `v0.1.0-postgres` off `main`; PR title `v0.1.0 (2/4) — Postgres store (goose + sqlc)`. No deploy.
+
+## Reference: the models (source of truth for DDL + mapping)
+`internal/models`: `User{Id,Name,Email,Username,PasswordHash,AvatarURL *string,Groups []string,Role,IsActive,LastLoginAt *time,CreatedAt,UpdatedAt}`; `Title{ID,Type,PrimaryTitle,PrimaryImage,StartYear,RuntimeSeconds,Genres,Rating{AggregateRating,VoteCount},Metacritic *,Plot,Directors/Writers/Stars []Person,OriginCountries/SpokenLanguages []CodeName,Interests,Seasons,Episodes,AddedAt *,UpdatedAt *}`; `UserRating{Id,TitleId,SeasonsRatings *map[string]SeasonRatingItem{Rating,AddedAt,UpdatedAt},UserId,Note,CreatedAt,UpdatedAt}`; `Comment{Id,TitleId,UserId,Comment *string,SeasonsComments *map[string]SeasonCommentItem{Comment,AddedAt,UpdatedAt},CreatedAt,UpdatedAt}`; `Group{Id,Name,Description,OwnerId,Users []string,Titles map[string]GroupTitleItem{TitleId,TitleType,SeasonsWatched *map[string]SeasonWatchedItem{Watched,WatchedAt,AddedAt,UpdatedAt},Watched,AddedAt,UpdatedAt,WatchedAt *},CreatedAt,UpdatedAt,Deleted,DeletedAt *}`.
+
+The interface method set is `internal/store/store.go` (42 methods) — the postgres methods must match those signatures EXACTLY.
+
+---
+
+## Task 1: Tooling, schema, and the testcontainers-postgres harness
+
+**Files:**
+- Create: `sqlc.yaml`, `sql/schema/001_init.sql`, `internal/postgres/testharness_test.go` (the container harness), `internal/postgres/doc.go` (package doc)
+- Generate: `internal/database/*` (via `sqlc generate`)
+- Modify: `go.mod`/`go.sum` (deps)
+
+**Interfaces:**
+- Produces: the full schema; `internal/database` sqlc structs (`database.User`, `database.Title`, … one per table); a test helper `newTestStore(t *testing.T) *postgres.Store` (added in Task 2 once the Store type exists — here the harness exposes `newTestPool(t) *pgxpool.Pool` + runs migrations).
+
+- [ ] **Step 1: Add dependencies**
+```bash
+go get github.com/jackc/pgx/v5@latest github.com/jackc/pgx/v5/pgxpool
+go get github.com/pressly/goose/v3@latest
+go get github.com/testcontainers/testcontainers-go/modules/postgres@latest
+```
+After each, confirm `go.mod`'s `go 1.24.0` directive did NOT change (revert the toolchain/go line if a tool bumped it; pin dep versions that keep 1.24.0). Run `go mod tidy`.
+
+- [ ] **Step 2: Write the schema** `sql/schema/001_init.sql` (goose):
+```sql
+-- +goose Up
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT,
+    role TEXT NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX users_username_unique ON users(username) WHERE username <> '';
+CREATE UNIQUE INDEX users_email_unique ON users(email) WHERE email <> '';
+
+CREATE TABLE titles (
+    id TEXT PRIMARY KEY,
+    primary_title TEXT NOT NULL DEFAULT '',
+    type TEXT NOT NULL DEFAULT '',
+    start_year INT NOT NULL DEFAULT 0,
+    rating_aggregate DOUBLE PRECISION NOT NULL DEFAULT 0,
+    vote_count INT NOT NULL DEFAULT 0,
+    added_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ,
+    metadata JSONB NOT NULL
+);
+CREATE INDEX titles_primary_title_idx ON titles(primary_title);
+CREATE INDEX titles_type_idx ON titles(type);
+CREATE INDEX titles_rating_idx ON titles(rating_aggregate);
+
+CREATE TABLE ratings (
+    id TEXT PRIMARY KEY,
+    title_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    note REAL NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(user_id, title_id)
+);
+CREATE TABLE rating_seasons (
+    rating_id TEXT NOT NULL REFERENCES ratings(id) ON DELETE CASCADE,
+    season TEXT NOT NULL,
+    rating REAL NOT NULL DEFAULT 0,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(rating_id, season)
+);
+
+CREATE TABLE comments (
+    id TEXT PRIMARY KEY,
+    title_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE comment_seasons (
+    comment_id TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+    season TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(comment_id, season)
+);
+
+CREATE TABLE groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    owner_id TEXT NOT NULL,
+    deleted BOOLEAN NOT NULL DEFAULT false,
+    deleted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX groups_owner_name_unique ON groups(owner_id, name) WHERE NOT deleted;
+
+CREATE TABLE group_members (
+    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    PRIMARY KEY(group_id, user_id)
+);
+CREATE TABLE group_titles (
+    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    title_id TEXT NOT NULL,
+    title_type TEXT NOT NULL DEFAULT '',
+    watched BOOLEAN NOT NULL DEFAULT false,
+    watched_at TIMESTAMPTZ,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(group_id, title_id)
+);
+CREATE TABLE group_title_seasons (
+    group_id TEXT NOT NULL,
+    title_id TEXT NOT NULL,
+    season TEXT NOT NULL,
+    watched BOOLEAN NOT NULL DEFAULT false,
+    watched_at TIMESTAMPTZ,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(group_id, title_id, season),
+    FOREIGN KEY(group_id, title_id) REFERENCES group_titles(group_id, title_id) ON DELETE CASCADE
+);
+
+-- +goose Down
+DROP TABLE group_title_seasons;
+DROP TABLE group_titles;
+DROP TABLE group_members;
+DROP TABLE groups;
+DROP TABLE comment_seasons;
+DROP TABLE comments;
+DROP TABLE rating_seasons;
+DROP TABLE ratings;
+DROP TABLE titles;
+DROP TABLE users;
+```
+
+- [ ] **Step 3: sqlc config** `sqlc.yaml`:
+```yaml
+version: "2"
+sql:
+  - schema: "sql/schema"
+    queries: "sql/queries"
+    engine: "postgresql"
+    gen:
+      go:
+        out: "internal/database"
+        package: "database"
+        sql_package: "pgx/v5"
+        emit_json_tags: false
+        emit_interface: false
+```
+Create an empty `sql/queries/.gitkeep` so sqlc has the dir. Run `sqlc generate` (install sqlc if needed: `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`) — with only schema it emits `internal/database/models.go` (a struct per table) + `db.go`. Confirm `internal/database` compiles.
+
+- [ ] **Step 4: The testcontainers harness** `internal/postgres/testharness_test.go`:
+Start a `postgres:16` container (via `testcontainers-go/modules/postgres`), build a `*pgxpool.Pool` to it, and run the goose migrations against it. Provide `func newTestPool(t *testing.T) *pgxpool.Pool` that: spins the container (once per package via `TestMain`, or per-test with cleanup — prefer `TestMain` starting one container + a `resetDB(t)` that TRUNCATEs all tables between tests, mirroring the Mongo suite's `resetDB`). Run goose up with `goose.RunContext(ctx, "up", stdlib.OpenDBFromPool(pool)-equivalent, "sql/schema")` — use goose's Postgres dialect against a `*sql.DB` opened via `pgx stdlib` (`github.com/jackc/pgx/v5/stdlib`) on the same DSN, OR embed the schema and exec it directly. Pick the simplest that applies `001_init.sql`. Expose `resetDB(t)` = `TRUNCATE users, titles, ratings, rating_seasons, comments, comment_seasons, groups, group_members, group_titles, group_title_seasons RESTART IDENTITY CASCADE`.
+
+- [ ] **Step 5: Verify migrations apply up/down** — a test `TestMigrationsUpDown` that runs goose up then down then up on a fresh container and asserts no error, and `\dt`-equivalent shows the 10 tables after up.
+
+- [ ] **Step 6: Commit**
+```bash
+go build ./... && go vet ./... && go test ./internal/postgres/ -run TestMigrationsUpDown -count=1
+git add sqlc.yaml sql/ internal/database internal/postgres go.mod go.sum
+git commit -m "feat: postgres schema, sqlc config, and testcontainers harness"
+```
+
+## Task 2: Users store methods
+
+**Files:** Create `sql/queries/users.sql`, `internal/postgres/store.go` (the Store type + New + `mappers.go`), `internal/postgres/users.go`, `internal/postgres/users_test.go`. Regenerate `internal/database`.
+
+**Interfaces:**
+- Produces: `postgres.Store{pool *pgxpool.Pool; q *database.Queries}`, `func New(pool *pgxpool.Pool) *Store`; the 10 user methods matching `store.Store` (`GetUserById`, `GetUserByUsernameOrEmail`, `GetAllUsers`, `UserExists`, `AddUser`, `DeleteUserById`, `UpdateUserInfo`, `UpdateUserLastLoginAt`, `UpdateUserGroup`, `RemoveGroupFromUser`); `newTestStore(t) *Store` helper.
+
+- [ ] **Step 1: Create the Store type** `internal/postgres/store.go`:
+```go
+package postgres
+
+import (
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lealre/movies-backend/internal/database"
+)
+
+type Store struct {
+	pool *pgxpool.Pool
+	q    *database.Queries
+}
+
+func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool, q: database.New(pool)} }
+```
+Add `newTestStore(t) *Store { return New(newTestPool(t)) }` to the harness.
+
+- [ ] **Step 2: sqlc queries** `sql/queries/users.sql` — `CreateUser :exec` (INSERT all columns), `GetUserById :one`, `GetUserByUsernameOrEmail :one` (`WHERE (username <> '' AND username=$1) OR (email <> '' AND email=$2)` — match the Mongo semantics; read `mongodb.GetUserByUsernameOrEmail` for exact behavior), `GetAllUsers :many`, `UserExists :one` (`SELECT EXISTS(...)`), `DeleteUserById :exec`, `UpdateUserInfo :one` (UPDATE name/email/username/updated_at RETURNING *), `UpdateUserLastLoginAt :one` (SET last_login_at=now() RETURNING *). Membership: `AddGroupMember :exec` (`INSERT ... ON CONFLICT DO NOTHING`), `RemoveGroupMember :exec` (`DELETE FROM group_members WHERE group_id=$1 AND user_id=$2`), `GetUserGroupIds :many` (`SELECT g.id FROM group_members m JOIN groups g ON g.id=m.group_id WHERE m.user_id=$1 AND NOT g.deleted`). Run `sqlc generate`.
+
+- [ ] **Step 3: Mapper + methods.** `mappers.go`: `func userRowToModel(u database.User, groups []string) models.User` (copy fields; `AvatarURL` from `*string`; `Role models.UserRole(u.Role)`; `Groups` from the passed slice; `LastLoginAt`/timestamps from pgtype→time). `internal/postgres/users.go`: implement the 10 methods. Reads that return a user must fill `Groups` via `GetUserGroupIds`. `AddUser` → `CreateUser`, translate unique-violation → `store.ErrDuplicatedRecord`. `GetUserById`/etc → `pgx.ErrNoRows` → `store.ErrRecordNotFound`. `UpdateUserGroup(userId, groupId)` → `AddGroupMember` then return the reloaded user. `RemoveGroupFromUser(userId, groupId)` → `RemoveGroupMember`. `UserExists` → the EXISTS query. Add a helper `isUniqueViolation(err error) bool` (checks `*pgconn.PgError` Code `23505`) and `notFound(err error) error` (maps `pgx.ErrNoRows`→`store.ErrRecordNotFound`).
+
+- [ ] **Step 4: Tests** `users_test.go` (against `newTestStore`): add+get round-trip (all fields incl. AvatarURL nil + set, Role); duplicate username/email → `store.ErrDuplicatedRecord`; get-missing → `store.ErrRecordNotFound`; UpdateUserInfo; UpdateUserLastLoginAt sets a time; UpdateUserGroup then GetUserById shows the group id in `Groups`; RemoveGroupFromUser removes it; GetAllUsers; UserExists true/false. `resetDB(t)` at the top of each.
+
+- [ ] **Step 5: Verify + commit**
+```bash
+go build ./... && go vet ./... && go test ./internal/postgres/ -count=1
+git add sql/queries/users.sql internal/database internal/postgres
+git commit -m "feat: postgres users store methods"
+```
+
+## Task 3: Titles store methods (hybrid JSONB + GetTitlesPage)
+
+**Files:** Create `sql/queries/titles.sql`, `internal/postgres/titles.go`, `internal/postgres/titles_test.go`. Regenerate.
+
+**Interfaces:** Produces `GetTitleById`, `AddTitle`, `DeleteTitle`, `GetTitlesPage`, `TitleExists`, `GetTitleTypes` matching `store.Store`.
+
+- [ ] **Step 1: Queries** `sql/queries/titles.sql` — `InsertTitle :exec` (INSERT id, primary_title, type, start_year, rating_aggregate, vote_count, added_at, updated_at, metadata), `GetTitleById :one`, `TitleExists :one` (EXISTS), `DeleteTitle :execrows` (returns affected count), `GetTitleTypes :many` (`SELECT id, type FROM titles WHERE id = ANY($1::text[])`). NOTE: `GetTitlesPage` is hand-written (Step 3), not sqlc. Run `sqlc generate`.
+
+- [ ] **Step 2: Title mapping (JSONB source of truth).** In `mappers.go`: `func titleToRow(t models.Title) database.InsertTitleParams` — sets the query columns from `t` AND `metadata = json.Marshal(t)` (the full object). `func rowToTitle(r database.Title) (models.Title, error)` — `json.Unmarshal(r.Metadata, &t)` (metadata is the source of truth; columns are ignored on read). Because the JSON round-trips the exact `models.Title`, nil/empty conventions are preserved automatically IF `AddTitle` receives a `models.Title` already normalized by the provider mapper (it does). Add `AddTitle` translate unique-violation→`store.ErrDuplicatedRecord` (matches Mongo's duplicate path).
+
+- [ ] **Step 3: `GetTitlesPage` (hand-written)** `internal/postgres/titles.go`:
+```go
+func (s *Store) GetTitlesPage(ctx context.Context, ids []string, orderBy string, ascending *bool, size, page int) ([]models.Title, int64, error)
+```
+Reproduce the Mongo `GetTitlesPage` behavior exactly (read `internal/mongodb/titles_db.go` `GetTitlesPage`):
+- empty non-nil `ids` (len 0) → return `([]models.Title{}, 0, nil)`.
+- WHERE clause: if `len(ids)>0` → `WHERE id = ANY($1)`, else no filter.
+- total = `SELECT count(*)` with the same WHERE.
+- CASE 1: `orderBy ∈ {"watched","watchedAt","addedAt"} && len(ids)>0` → `ORDER BY array_position($ids::text[], id)` (preserves caller order).
+- CASE 2: map orderBy → column via a FIXED whitelist `{"":"primary_title","primaryTitle":"primary_title","imdbRating":"rating_aggregate", "startYear":"start_year", ...}` (include exactly the fields the Mongo version accepts — read it); direction from `ascending` (default ASC). Build `ORDER BY <col> <ASC|DESC>` with the column taken ONLY from the whitelist (never string-interpolate user input).
+- `LIMIT $size OFFSET (page-1)*size`. Read rows → `rowToTitle` each. Return `(titles, total, nil)`.
+Use `pool.Query`/`pool.QueryRow` directly (pgx) with bound params.
+
+- [ ] **Step 4: Tests** `titles_test.go`: add a full TV-series title (with seasons+episodes+cast+metacritic) and get it back — assert deep-equal to the input `models.Title` (JSONB round-trip fidelity is the key test). Duplicate add → `store.ErrDuplicatedRecord`; get-missing → not-found; DeleteTitle returns true/false. `GetTitleTypes` for a set. `GetTitlesPage`: (a) all-titles paginated + sorted by primary_title asc/desc; (b) sorted by imdbRating; (c) CASE-1 custom order — pass ids in a specific order with orderBy "addedAt" and assert the result order matches the ids order; (d) empty-ids → empty+0; (e) total count correct across pages.
+
+- [ ] **Step 5: Verify + commit**
+```bash
+go build ./... && go vet ./... && go test ./internal/postgres/ -count=1
+git add sql/queries/titles.sql internal/database internal/postgres
+git commit -m "feat: postgres titles store (hybrid JSONB + GetTitlesPage)"
+```
+
+## Task 4: Ratings store methods (+ rating_seasons, transactional)
+
+**Files:** Create `sql/queries/ratings.sql`, `internal/postgres/ratings.go`, `internal/postgres/ratings_test.go`. Regenerate.
+
+**Interfaces:** `AddRating`, `GetRatingsByTitleId`, `GetRatingById`, `GetRatingByUserIdAndTitleId`, `UpdateRating`, `GetRatingsByTitleIds`, `DeleteRating` matching `store.Store`.
+
+- [ ] **Step 1: Queries** `ratings.sql` — `InsertRating :one` (RETURNING *), `UpdateRatingRow :one` (UPDATE note, updated_at WHERE id=$ AND user_id=$ RETURNING *), `GetRatingRowById :one` (WHERE id=$ AND user_id=$), `GetRatingRowByUserTitle :one` (WHERE user_id=$ AND title_id=$), `GetRatingRowsByTitleId :many` (WHERE title_id=$), `GetRatingRowsByTitleIds :many` (WHERE title_id = ANY($1)), `DeleteRatingRow :execrows`, and for the child: `GetRatingSeasons :many` (WHERE rating_id=$), `GetRatingSeasonsByRatingIds :many` (WHERE rating_id = ANY($1)), `DeleteRatingSeasons :exec` (WHERE rating_id=$), `InsertRatingSeason :exec`. Run `sqlc generate`.
+
+- [ ] **Step 2: Mapper + assembly.** `ratingRowToModel(r database.Rating, seasons *models.SeasonsRatings) models.UserRating`. A read fetches the rating row(s) + their `rating_seasons` and assembles the `*SeasonsRatings` map (nil if the row has no season entries AND the original had nil — match Mongo: if there are no season rows, `SeasonsRatings` is nil). For the batch `GetRatingsByTitleIds`, fetch all rating rows for the ids, then all their season rows in one `= ANY(ratingIds)` query, group in Go.
+
+- [ ] **Step 3: Transactional writes.** `AddRating(rating)`: in a `pool.Begin` tx — insert the rating row, then insert each `SeasonsRatings` entry into `rating_seasons`; commit; return the assembled model. Unique(user_id,title_id) violation → `store.ErrDuplicatedRecord`. `UpdateRating(rating, userId)`: in a tx — update the rating row (WHERE id AND user_id), `DeleteRatingSeasons(rating_id)` then re-insert the current `SeasonsRatings` (whole-map replace, matching Mongo's doc replace); commit; return assembled. `DeleteRating(ratingId,userId) (int64,error)` → `DeleteRatingRow` (child rows cascade); return affected count. Reads (`GetRatingById` etc.) assemble seasons; not-found → `store.ErrRecordNotFound`.
+
+- [ ] **Step 4: Tests** `ratings_test.go`: add a movie rating (no seasons) → round-trips with `SeasonsRatings == nil`; add a series rating with 2 seasons → round-trips the map; UpdateRating replaces the season set (add season 3, drop season 1) and re-read reflects exactly the new map; GetRatingsByTitleId(s) batch grouping; duplicate (same user+title) → `store.ErrDuplicatedRecord`; DeleteRating returns 1 and cascades the season rows (assert `rating_seasons` empty); not-found paths.
+
+- [ ] **Step 5: Verify + commit**
+```bash
+go build ./... && go vet ./... && go test ./internal/postgres/ -count=1
+git add sql/queries/ratings.sql internal/database internal/postgres
+git commit -m "feat: postgres ratings store (rating_seasons, transactional)"
+```
+
+## Task 5: Comments store methods (+ comment_seasons, transactional)
+
+**Files:** Create `sql/queries/comments.sql`, `internal/postgres/comments.go`, `internal/postgres/comments_test.go`. Regenerate.
+
+**Interfaces:** `GetCommentsByTitleId`, `GetUserCommentByTitleId`, `GetCommentById`, `AddComment`, `UpdateComment`, `DeleteComment` matching `store.Store`.
+
+- [ ] **Step 1: Queries** `comments.sql` — mirror ratings: `InsertComment :one`, `UpdateCommentRow :one` (SET comment, updated_at WHERE id AND user_id RETURNING *), `GetCommentRowById :one` (WHERE id AND user_id), `GetUserCommentRowByTitle :one` (WHERE title_id AND user_id), `GetCommentRowsByTitleId :many` (`WHERE title_id=$1 AND user_id = ANY($2::text[])` — matches Mongo `GetCommentsByTitleId(titleId, usersFromGroup)`), `DeleteCommentRow :execrows`; child: `GetCommentSeasons :many`, `GetCommentSeasonsByCommentIds :many`, `DeleteCommentSeasons :exec`, `InsertCommentSeason :exec`. Run `sqlc generate`.
+
+- [ ] **Step 2: Mapper + assembly.** `commentRowToModel(c database.Comment, seasons *models.SeasonsComments) models.Comment` — `Comment *string` from the nullable column; `SeasonsComments` assembled from child rows (nil if none). PRESERVE the movie-vs-series invariant: a movie comment has `Comment` set + `SeasonsComments==nil`; a series comment has `Comment==nil` + the map. The mapping must not fabricate an empty map for a movie.
+
+- [ ] **Step 3: Transactional writes** (same pattern as ratings): `AddComment` — tx insert comment row + `comment_seasons` entries. `UpdateComment(comment,userId)` — tx update row + delete/re-insert `comment_seasons` (whole-map replace). `DeleteComment(id,userId) (int64,error)` — delete row (children cascade). Reads assemble; not-found → sentinel. `GetCommentsByTitleId(titleId, usersFromGroup)` — pass the user id slice as `= ANY`.
+
+- [ ] **Step 4: Tests** `comments_test.go`: movie comment (Comment set, no seasons) round-trips with `SeasonsComments==nil`; series comment (Comment nil, seasons map) round-trips; UpdateComment replaces the season set; GetCommentsByTitleId filtered by a `usersFromGroup` id list (only those users' comments returned); DeleteComment cascades; not-found paths.
+
+- [ ] **Step 5: Verify + commit**
+```bash
+go build ./... && go vet ./... && go test ./internal/postgres/ -count=1
+git add sql/queries/comments.sql internal/database internal/postgres
+git commit -m "feat: postgres comments store (comment_seasons, transactional)"
+```
+
+## Task 6: Groups store methods (members + titles + title_seasons, assembly + transactions)
+
+**Files:** Create `sql/queries/groups.sql`, `internal/postgres/groups.go`, `internal/postgres/groups_test.go`. Regenerate.
+
+**Interfaces:** `CreateGroup`, `GroupExists`, `GroupContainsTitle`, `GetGroupById`, `AddUserToGroup`, `GetUsersFromGroup`, `AddNewGroupTitle`, `UpdateGroupTitleWatchedForMovie`, `UpdateGroupTitleWatchedForTVSeries`, `UpdateGroupInfo`, `SoftDeleteGroup`, `RemoveUserFromGroup`, `RemoveTitleFromGroup` matching `store.Store` (read the exact signatures — `UpdateGroupTitleWatched*` take `*generics.FlexibleDate` and return `*models.GroupTitleItem`).
+
+- [ ] **Step 1: Queries** `groups.sql` —
+  Group row: `InsertGroup :one`, `GetGroupRow :one` (`WHERE id=$1 AND NOT deleted AND EXISTS(SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2)`), `GroupExists :one` (EXISTS same membership+not-deleted filter), `GroupContainsTitle :one` (EXISTS + a `group_titles` row for title), `UpdateGroupInfoRow :execrows` (SET name, description, updated_at WHERE id AND NOT deleted; unique-violation aware), `SoftDeleteGroupRow :execrows` (SET deleted=true, deleted_at=now(), updated_at WHERE id AND NOT deleted).
+  Members: `AddGroupMember`/`RemoveGroupMember`/`GetGroupMemberIds :many` (reuse/parallel Task 2), `GetGroupMemberUsers :many` (JOIN users).
+  Titles: `UpsertGroupTitle`, `GetGroupTitleRows :many` (WHERE group_id), `DeleteGroupTitle :execrows`, and season child: `UpsertGroupTitleSeason`, `GetGroupTitleSeasonRows :many` (WHERE group_id), `GetGroupTitleSeasonRowsForTitle :many`.
+  Run `sqlc generate`.
+
+- [ ] **Step 2: `GetGroupById` assembly.** `internal/postgres/groups.go`: fetch the group row (membership+not-deleted guarded; `pgx.ErrNoRows`→`store.ErrRecordNotFound`), then `GetGroupMemberIds` → `Users []string`, `GetGroupTitleRows` + `GetGroupTitleSeasonRows` → assemble `Titles map[string]GroupTitleItem` (each item's `SeasonsWatched *map` from its season rows, nil if none). Map to `models.Group` via `groupRowToModel`. `GetUsersFromGroup` → membership-guard then `GetGroupMemberUsers` → `[]models.User` (each user's `Groups` need NOT be filled here — match what the Mongo `GetUsersFromGroup` returns; read it: it returns users with their own `Groups`? confirm and match).
+
+- [ ] **Step 3: Writes.** `CreateGroup(group)` — tx: insert group row, insert the owner into `group_members` (the model's `Users` has the owner); return assembled. Unique(owner,name) partial → `store.ErrDuplicatedRecord`. `AddUserToGroup(groupId,ownerId,userToAddId)` — insert membership (guard owner exists as in Mongo; read `mongodb.AddUserToGroup` for the guard). `RemoveUserFromGroup(groupId,userId)`/`RemoveGroupFromUser` — delete membership. `AddNewGroupTitle(groupId,titleId)` — insert a `group_titles` row (title_type defaults per Mongo: "movie", watched=false). `UpdateGroupTitleWatchedForMovie` / `...ForTVSeries` — **read the Mongo versions and reproduce exactly**: the movie path sets the group_title watched/watched_at; the TV path upserts a `group_title_seasons` row and recomputes the top-level `watched`/`watched_at` from the seasons (whatever the Mongo logic is). Do it in a tx; return the updated `*models.GroupTitleItem`. `RemoveTitleFromGroup` — delete the `group_titles` row (seasons cascade). `UpdateGroupInfo` — update row; unique → `ErrGroupDuplicatedName`-equivalent (`store.ErrDuplicatedRecord`). `SoftDeleteGroup` — mark deleted.
+
+- [ ] **Step 4: Tests** `groups_test.go`: create group (owner auto-member) → GetGroupById returns it with the owner in `Users`; non-member GetGroupById → `store.ErrRecordNotFound`; soft-deleted group → not found; add member → appears in `Users` and in that member's user `Groups`; add title → appears in `Titles`; UpdateGroupTitleWatchedForMovie sets watched; UpdateGroupTitleWatchedForTVSeries adds a season and recomputes top-level watched — assert the assembled `SeasonsWatched` map + top-level match the Mongo behavior; RemoveTitleFromGroup cascades seasons; UpdateGroupInfo rename+description; duplicate active name → `store.ErrDuplicatedRecord`; name reusable after soft-delete; RemoveUserFromGroup; GetUsersFromGroup lists members.
+
+- [ ] **Step 5: Verify + commit**
+```bash
+go build ./... && go vet ./... && go test ./internal/postgres/ -count=1
+git add sql/queries/groups.sql internal/database internal/postgres
+git commit -m "feat: postgres groups store (members, titles, seasons; assembly + tx)"
+```
+
+## Task 7: Assert interface conformance + PR
+
+**Files:** Modify `internal/postgres/store.go` (add the assertion), CHANGELOG note optional.
+
+- [ ] **Step 1: Assert conformance**
+Add to `internal/postgres/store.go`: `var _ store.Store = (*Store)(nil)`. Run `go build ./...` — this forces every one of the 42 methods to be present with the EXACT `store.Store` signature. Fix any signature drift (a method whose param/return types don't match) until it compiles.
+
+- [ ] **Step 2: Full verification (acceptance)**
+```bash
+go build ./... && go vet ./...
+gofmt -l internal/postgres sql | grep -v cmd/dev-migrations || echo fmtok
+git diff --stat main -- internal/store internal/models   # expect: EMPTY (interface + models unchanged)
+grep -rn "postgres" internal/server internal/config main.go   # expect: EMPTY (not wired in)
+go test ./... -count=1   # postgres tests (Docker) + existing Mongo suite, all green
+```
+Expected: `var _ store.Store = (*postgres.Store)(nil)` compiles; interface/models untouched; app still on Mongo; all suites green.
+
+- [ ] **Step 3: Commit + PR**
+```bash
+git add internal/postgres/store.go
+git commit -m "feat: assert postgres.Store implements store.Store"
+git push -u origin v0.1.0-postgres
+gh pr create --base main --head v0.1.0-postgres \
+  --title "v0.1.0 (2/4) — Postgres store (goose + sqlc)" \
+  --body "Adds a Postgres implementation of the store.Store interface: goose relational schema (TEXT PKs, child tables for season maps, hybrid titles with metadata JSONB), sqlc (pgx/v5) queries, and internal/postgres implementing all 42 methods (assembled aggregate reads, transactional child writes, hand-written GetTitlesPage). Tested in isolation via testcontainers-postgres. NOT wired into the app (still runs on Mongo); store.Store + internal/models unchanged. Second of four PRs toward the Postgres migration (v0.1.0)."
+```
+
+---
+
+## Self-review notes
+- **Spec coverage:** schema+tooling+harness (T1); users (T2); titles hybrid+GetTitlesPage (T3); ratings+child (T4); comments+child+invariant (T5); groups assembly+tx (T6); interface assertion + not-wired + unchanged-interface acceptance (T7). All spec sections mapped.
+- **No new-test caveat does NOT apply here** — unlike sub-project 1, this is NEW code with no existing coverage, so each task writes real tests against the Postgres container (TDD-appropriate). The Mongo suite stays untouched/green.
+- **Nil/empty convention**: titles preserved automatically via JSONB round-trip; ratings/comments/group-title season maps explicitly nil-when-no-child-rows (matches Mongo). Flag to reviewers as the key fidelity risk.
+- **Type consistency**: `postgres.Store` method signatures MUST equal `store.Store` (enforced by the T7 `var _` assertion — the compile gate). Mapper names `<entity>RowToModel`/`<entity>ToRow`; helpers `isUniqueViolation`/`notFound`.
+- **Behavior parity risk**: `UpdateGroupTitleWatchedForTVSeries`'s top-level watched recompute and `GetUsersFromGroup`'s returned `Groups` field must be read from the Mongo impl and reproduced — called out in T6 steps. The final review should diff behavior against the Mongo store for these two.
