@@ -238,6 +238,17 @@ func verifyGroupRows(ctx context.Context, res *Result, q *database.Queries, g mo
 		res.failf("group %s: %d title rows, expected %d", g.Id, len(titleRows), len(g.Titles))
 		return
 	}
+
+	seasonRows, err := q.GetGroupTitleSeasonRows(ctx, g.Id)
+	if err != nil {
+		res.failf("group %s: season rows read failed: %v", g.Id, err)
+		return
+	}
+	seasonsByTitle := make(map[string][]database.GroupTitleSeason)
+	for _, sr := range seasonRows {
+		seasonsByTitle[sr.TitleID] = append(seasonsByTitle[sr.TitleID], sr)
+	}
+
 	for _, tr := range titleRows {
 		item, ok := g.Titles[mongodb.TitleId(tr.TitleID)]
 		if !ok {
@@ -248,6 +259,35 @@ func verifyGroupRows(ctx context.Context, res *Result, q *database.Queries, g mo
 			!timePtrEqual(timestamptzPtr(tr.WatchedAt), item.WatchedAt) ||
 			!tr.AddedAt.Time.Equal(item.AddedAt) || !tr.UpdatedAt.Time.Equal(item.UpdatedAt) {
 			res.failf("group %s title %s: row mismatch: got %+v", g.Id, tr.TitleID, tr)
+		}
+
+		verifyGroupTitleSeasonRows(res, g.Id, tr.TitleID, seasonsByTitle[tr.TitleID], item.SeasonsWatched)
+	}
+}
+
+// verifyGroupTitleSeasonRows compares the group_title_seasons rows for one
+// group's title against the dump's SeasonsWatched map. Store-invisible
+// (deleted/memberless) groups have no other path that reaches season-level
+// data, so this is the only check catching corruption there.
+func verifyGroupTitleSeasonRows(res *Result, groupId, titleId string, rows []database.GroupTitleSeason, seasons *mongodb.SeasonWatchedDb) {
+	want := map[string]mongodb.SeasonWatchedItemDb{}
+	if seasons != nil {
+		want = *seasons
+	}
+	if len(rows) != len(want) {
+		res.failf("group %s title %s: %d season rows, expected %d", groupId, titleId, len(rows), len(want))
+		return
+	}
+	for _, sr := range rows {
+		wantItem, ok := want[sr.Season]
+		if !ok {
+			res.failf("group %s title %s: unexpected season row %s", groupId, titleId, sr.Season)
+			continue
+		}
+		if sr.Watched != wantItem.Watched ||
+			!timePtrEqual(timestamptzPtr(sr.WatchedAt), wantItem.WatchedAt) ||
+			!sr.AddedAt.Time.Equal(wantItem.AddedAt) || !sr.UpdatedAt.Time.Equal(wantItem.UpdatedAt) {
+			res.failf("group %s title %s season %s: row mismatch: got %+v", groupId, titleId, sr.Season, sr)
 		}
 	}
 }

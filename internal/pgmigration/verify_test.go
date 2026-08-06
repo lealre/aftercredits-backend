@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lealre/movies-backend/internal/mongodb"
 )
 
 func TestVerify_CleanAfterLoad(t *testing.T) {
@@ -80,4 +82,42 @@ func TestVerify_MembershipDriftWarns(t *testing.T) {
 	assert.True(t, res.OK(), "drift must not fail verification; failures: %v", res.Failures)
 	require.NotEmpty(t, res.Warnings)
 	assert.Contains(t, strings.Join(res.Warnings, "\n"), fixU2)
+}
+
+func TestVerify_DetectsGroupTitleSeasonCorruptionForDeletedGroup(t *testing.T) {
+	resetDB(t)
+	ctx := context.Background()
+	pool := newTestPool(t)
+
+	dump := fixtureDump()
+	// fixG2 is soft-deleted, so it's invisible to the store's getters — the
+	// row-level path in verifyGroupRows must catch season-level corruption
+	// there, since verifyCounts (row count unchanged) cannot.
+	seasonsWatched := mongodb.SeasonWatchedDb{
+		"1": {Watched: true, WatchedAt: tsPtr(60), AddedAt: ts(58), UpdatedAt: ts(60)},
+	}
+	dump.Groups[1].Titles = mongodb.GroupTitleDb{
+		mongodb.TitleId(fixT2): {
+			TitleId: fixT2, TitleType: "tvSeries", SeasonsWatched: &seasonsWatched,
+			Watched: true, WatchedAt: tsPtr(60), AddedAt: ts(55), UpdatedAt: ts(60),
+		},
+	}
+
+	dir := t.TempDir()
+	writeDumpFiles(t, dir, dump)
+	fromFiles, err := ReadDump(dir)
+	require.NoError(t, err)
+
+	_, err = Load(ctx, pool, fromFiles, false)
+	require.NoError(t, err)
+
+	res := Verify(ctx, pool, fromFiles)
+	assert.True(t, res.OK(), "faithful data must verify clean; failures: %v", res.Failures)
+
+	_, err = pool.Exec(ctx, "UPDATE group_title_seasons SET watched_at = now() WHERE group_id = $1", fixG2)
+	require.NoError(t, err)
+
+	res = Verify(ctx, pool, fromFiles)
+	assert.False(t, res.OK())
+	assert.Contains(t, strings.Join(res.Failures, "\n"), fixG2)
 }
