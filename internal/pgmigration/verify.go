@@ -384,6 +384,9 @@ func normalizeGroup(g models.Group) models.Group {
 	}
 	titles := make(models.GroupTitles, len(g.Titles))
 	for id, item := range g.Titles {
+		// Mirrors the loader's map-key-wins behavior: title_id is written from
+		// the map key, not the item's own (possibly disagreeing) titleId.
+		item.TitleId = id
 		item.AddedAt = item.AddedAt.UTC()
 		item.UpdatedAt = item.UpdatedAt.UTC()
 		item.WatchedAt = utcPtr(item.WatchedAt)

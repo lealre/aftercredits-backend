@@ -84,6 +84,33 @@ func TestVerify_MembershipDriftWarns(t *testing.T) {
 	assert.Contains(t, strings.Join(res.Warnings, "\n"), fixU2)
 }
 
+func TestVerify_TitlesMapKeyWinsOverEmbeddedTitleId(t *testing.T) {
+	resetDB(t)
+	ctx := context.Background()
+	pool := newTestPool(t)
+
+	dump := fixtureDump()
+	// Mongo drift: the titles-map key disagrees with the item's own embedded
+	// titleId. sanityCheck warns about this at read time ("the map key
+	// wins"), and the loader writes title_id from the map key — the verifier
+	// must normalize the expected side the same way, not hard-fail.
+	item := dump.Groups[0].Titles[mongodb.TitleId(fixT1)]
+	item.TitleId = "tt-mismatch"
+	dump.Groups[0].Titles[mongodb.TitleId(fixT1)] = item
+
+	dir := t.TempDir()
+	writeDumpFiles(t, dir, dump)
+	fromFiles, err := ReadDump(dir)
+	require.NoError(t, err)
+	assert.NotEmpty(t, fromFiles.Warnings, "reader's sanityCheck must flag the map key/titleId mismatch")
+
+	_, err = Load(ctx, pool, fromFiles, false)
+	require.NoError(t, err)
+
+	res := Verify(ctx, pool, fromFiles)
+	assert.True(t, res.OK(), "the map key won on load; the verifier must agree, not fail; failures: %v", res.Failures)
+}
+
 func TestVerify_DetectsGroupTitleSeasonCorruptionForDeletedGroup(t *testing.T) {
 	resetDB(t)
 	ctx := context.Background()
