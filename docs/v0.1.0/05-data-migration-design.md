@@ -46,7 +46,7 @@ Exit 0 only when load + verification succeed (warnings allowed).
 ### Small exported additions to existing packages
 - **`internal/mongodb`**: exported wrappers over the existing unexported Db→model mappers for the five entities (needed by the loader for titles and by the verifier for expected values). One small file; ground-truth mapping stays in one place. (The package dies in sub-project 4 anyway.)
 - **`internal/postgres`**: export `titleToRow` (→ `TitleToRow`) and the pgtype converter helpers the loader needs (`timeToTimestamptz`, `ptrToTimestamptz`, `ptrToText`), so the migration writes rows byte-identical to what the store writes. No behavior changes.
-- **`sql/queries/groups.sql`**: add `InsertGroupFull` (:one) and `GetGroupRowAnyById` (:one); `sqlc generate` refreshes `internal/database`.
+- **`sql/queries/groups.sql`**: add `InsertGroupFull` (:exec) and `GetGroupRowAnyById` (:one); `sqlc generate` refreshes `internal/database`.
 
 ## Testing (testcontainers-postgres, same harness pattern as `internal/postgres`)
 Tests fabricate mongodump-layout fixture dumps by `bson.Marshal`-ing Db structs into a temp dir — no Mongo container needed.
