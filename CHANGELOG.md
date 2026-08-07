@@ -1,3 +1,18 @@
+<a name="v0.1.0"></a>
+## [v0.1.0](https://github.com/lealre/aftercredits-backend/compare/v0.0.12...v0.1.0) (2026-08-07)
+
+Migrate the datastore from MongoDB to Postgres. Behaviour-preserving: no API,
+response-shape or auth changes.
+
+* Add a storage-neutral `store.Store` interface and `internal/models` domain types; services and handlers no longer depend on any concrete database package
+* Add a Postgres implementation behind that interface: goose schema migrations plus sqlc-generated queries over pgx/v5
+* Model titles as a hybrid — queried/sorted fields as real columns, the full title document in a `metadata` JSONB column
+* Normalise the relational data: per-season state moves to child tables, and group membership collapses from Mongo's two-sided arrays into a single `group_members` join table
+* Add a one-time `mongo-to-postgres` migration CLI that loads a `mongodump` backup in a single transaction and verifies every record by reading it back through the store
+* Enforce one comment per (user, title) at the schema level — parity with the unique index the Mongo store had
+* Run the app, the deploy one-shot, the scheduled title sync and the integration suite on Postgres; `database -migrate` applies the embedded goose migrations
+* Switch backups from `mongodump` to `pg_dump`/`pg_restore`
+
 <a name="v0.0.13-groups"></a>
 ## v0.0.13 — Group management (2026-07-31)
 
