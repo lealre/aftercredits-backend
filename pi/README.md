@@ -6,15 +6,27 @@ This directory contains Dockerfiles and setup scripts for running scheduled task
 
 Two scheduled tasks are configured:
 1. **Backup Task** - Backs up the Postgres database to Google Drive using `pg_dump` + rclone
-2. **Movies Update Task** - Updates movie information from IMDb API
+2. **Movies Update Task** - Refreshes stored title metadata from the configured
+   title provider (`TITLE_PROVIDER`, e.g. the TMDB + OMDb hybrid)
 
 ## Files
 
 - `Dockerfile.backup` - Docker image for backup task
 - `Dockerfile.routines` - Docker image for movies update task
+- `backup_to_drive.sh` - Backup script run inside the backup image
 - `setup-cron.sh` - Script to set up OS-level cron jobs
+- `.env.example` - Example configuration for `pi/.env`
 - `backup.log` - Log file for backup task (created automatically)
 - `movies-update.log` - Log file for movies update task (created automatically)
+
+## Deployment compose
+
+This directory holds only the **scheduled-task** assets. The compose file that
+runs the actual stack (`postgres`, `db-setup`, `backend`, `frontend`) lives in
+the frontend repository as `docker-compose-pi.yaml`, because the `frontend`
+service is built from that repository's source. Deploy from a checkout of the
+frontend repo on the Pi; the commands in the runbook below assume you are in
+that directory.
 
 ## Setup
 
@@ -132,12 +144,13 @@ PR lands (dropping the `mongo` service and the `mongo-to-postgres` binary from t
 images), this section can be deleted.
 
 Run these steps from the deploy directory on the Pi (where `docker-compose-pi.yaml`
-and `.env` live), in order:
+and `.env` live — a checkout of the frontend repository), in order:
 
-0. **Copy the updated deploy files to the Pi.** From this repo, copy `pi/docker-compose-pi.yaml`
-   and an updated `.env` (containing the `POSTGRES_*` block — see `pi/.env.example`)
-   into the Pi's deploy directory, replacing the pre-cutover versions. Every step
-   below runs from that directory.
+0. **Update the deploy files on the Pi.** Pull the frontend repository's
+   post-cutover `docker-compose-pi.yaml` (it replaces the `mongo` service with
+   `postgres` and changes `db-setup` to `-migrate && -superuser`), and update
+   `.env` so it contains the `POSTGRES_*` block — see `pi/.env.example`. Every
+   step below runs from that directory.
 
 1. **Take a final Mongo backup.** Run the existing backup cron job once more (it
    is still pointing at the pre-cutover image, which does a `mongodump`) so you
@@ -164,10 +177,12 @@ and `.env` live), in order:
    ```
 
 4. **Run the migration.** Extract the `mongodump` tarball from step 1 to a local
-   directory. It unpacks to `mongo_dump_<ts>/aftercreditsdb/…` — mount the
-   `mongo_dump_<ts>` directory (the one **containing** `aftercreditsdb/`) as
-   `/dump`, or point `-dump` at the `aftercreditsdb` folder directly; both
-   layouts are accepted. Then run the migration from the backend image:
+   directory. It unpacks to `mongo_dump_<ts>/<MONGO_DB>/…`, where `<MONGO_DB>` is
+   the database name from `.env` (check the extracted tree — it is the directory
+   holding the `.bson` files). Mount the `mongo_dump_<ts>` directory (the one
+   **containing** that database folder) as `/dump`, or point `-dump` at the
+   database folder directly; both layouts are accepted. Then run the migration
+   from the backend image:
    ```bash
    docker run --rm --network <network> --env-file .env \
      -v /path/to/extracted-dump:/dump \
@@ -189,8 +204,9 @@ and `.env` live), in order:
    docker compose -f docker-compose-pi.yaml up -d
    ```
    (Compose will also run its own `db-setup` service as part of this; that's
-   fine — the migration is idempotent and the superuser step skips if the user
-   already exists.)
+   fine — `-migrate` is a no-op once the schema is at the latest version, and
+   `-superuser` skips if the user already exists. Note `db-setup` runs the
+   *schema* migrations only; it never re-runs the one-time data migration.)
 
 7. **Smoke-test.** Log in from the frontend and browse a group to confirm the
    migrated data is reachable end-to-end.
