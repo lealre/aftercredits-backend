@@ -34,7 +34,7 @@ func insertRatingSeasons(ctx context.Context, qtx *database.Queries, ratingId st
 
 // assembleRatingRows builds a models.UserRating for each row, fetching all
 // of their rating_seasons in a single batched query and grouping the
-// results in Go, matching mongodb's read-many behavior (and its
+// results in Go, matching the store's read-many behavior (and its
 // return-empty, never-nil-slice convention).
 func (s *Store) assembleRatingRows(ctx context.Context, rows []database.Rating) ([]models.UserRating, error) {
 	if len(rows) == 0 {
@@ -64,7 +64,7 @@ func (s *Store) assembleRatingRows(ctx context.Context, rows []database.Rating) 
 }
 
 // AddRating inserts a new rating row plus its season rows (if any) in a
-// single transaction, mirroring mongodb.AddRating: the id and timestamps
+// single transaction: the id and timestamps
 // are generated here, not taken from the caller-supplied rating.
 func (s *Store) AddRating(ctx context.Context, rating models.UserRating) (models.UserRating, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -145,7 +145,7 @@ func (s *Store) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId
 }
 
 // UpdateRating replaces the rating row's note plus its whole season set
-// (delete-then-reinsert), mirroring mongodb.UpdateRating's document
+// (delete-then-reinsert)'s document
 // replace semantics for the seasonsRatings field.
 func (s *Store) UpdateRating(ctx context.Context, rating models.UserRating, userId string) (models.UserRating, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -192,7 +192,7 @@ func (s *Store) GetRatingsByTitleIds(ctx context.Context, titleIds []string) ([]
 }
 
 // DeleteRating deletes the rating row owned by userId (rating_seasons rows
-// cascade), mirroring mongodb.DeleteRating: no rows affected is reported as
+// cascade): no rows affected is reported as
 // store.ErrRecordNotFound rather than (0, nil).
 func (s *Store) DeleteRating(ctx context.Context, ratingId, userId string) (int64, error) {
 	n, err := s.q.DeleteRatingRow(ctx, database.DeleteRatingRowParams{ID: ratingId, UserID: userId})

@@ -1,3 +1,17 @@
+<a name="v0.1.1"></a>
+## [v0.1.1](https://github.com/lealre/aftercredits-backend/compare/v0.1.0...v0.1.1) (2026-08-07)
+
+Remove MongoDB from the codebase now that production runs on Postgres. No
+behaviour change: the app, the deploy one-shot, the scheduled job and the
+integration suite are untouched in what they do.
+
+* Delete the Mongo store (`internal/mongodb`), the one-time migration engine and CLI (`internal/pgmigration`, `cmd/mongo-to-postgres`), the Mongo-era one-off scripts (`cmd/dev-migrations`) and the fixture generator (`cmd/test-fixtures`)
+* Drop the `go.mongodb.org/mongo-driver` dependency
+* Convert the test fixtures to the `models.Title` shape so the integration suite no longer decodes through Mongo types; fixture content is unchanged
+* Remove the migration binary from both Dockerfiles, the legacy `mongo` service from docker-compose, and the `MONGO_*` blocks from both env examples
+* Delete `scripts/backup_to_drive.sh`, which still used `mongodump` and had been superseded by `scripts/backup.sh` and the Pi's `pi/backup_to_drive.sh`
+* Strip the vestigial `bson` struct tags from the titles service types and remove the now-historical cutover runbook from `pi/README.md`
+
 <a name="v0.1.0"></a>
 ## [v0.1.0](https://github.com/lealre/aftercredits-backend/compare/v0.0.12...v0.1.0) (2026-08-07)
 

@@ -267,7 +267,7 @@ func TestStore_DeleteComment(t *testing.T) {
 	})
 
 	t.Run("not found reports a zero count with no error", func(t *testing.T) {
-		// mongodb.DeleteComment never maps a zero-affected delete to
+		// A zero-affected delete is not mapped to
 		// store.ErrRecordNotFound; it just returns the (zero) count.
 		resetDB(t)
 		s := newTestStore(t)

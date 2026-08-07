@@ -8,24 +8,23 @@ import (
 	"testing"
 
 	"github.com/lealre/movies-backend/internal/models"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/stretchr/testify/require"
 )
 
 const MOVIE_TILES_FIXTURES_PATH = "fixtures/movieTitles.json"
 const TV_SERIES_TILES_FIXTURES_PATH = "fixtures/tvSeriesTitles.json"
 
-func seedTitles(t *testing.T, titles []mongodb.TitleDb) {
+func seedTitles(t *testing.T, titles []models.Title) {
 	t.Helper()
 	ctx := context.Background()
 	for _, tt := range titles {
-		if err := testStore.AddTitle(ctx, mongodb.TitleDbToModel(tt)); err != nil {
+		if err := testStore.AddTitle(ctx, tt); err != nil {
 			t.Fatalf("failed to insert seed title %s: %v", tt.ID, err)
 		}
 	}
 }
 
-func loadTitlesFixture(t *testing.T) []mongodb.TitleDb {
+func loadTitlesFixture(t *testing.T) []models.Title {
 	t.Helper()
 
 	absPath, err := filepath.Abs(MOVIE_TILES_FIXTURES_PATH)
@@ -38,7 +37,7 @@ func loadTitlesFixture(t *testing.T) []mongodb.TitleDb {
 		t.Fatalf("failed to read fixture file %s: %v", absPath, err)
 	}
 
-	var docs []mongodb.TitleDb
+	var docs []models.Title
 	if err := json.Unmarshal(data, &docs); err != nil {
 		t.Fatalf("failed to unmarshal fixture JSON: %v", err)
 	}
@@ -46,7 +45,7 @@ func loadTitlesFixture(t *testing.T) []mongodb.TitleDb {
 	return docs
 }
 
-func loadTVSeriesTitlesFixture(t *testing.T) []mongodb.TitleDb {
+func loadTVSeriesTitlesFixture(t *testing.T) []models.Title {
 	t.Helper()
 
 	absPath, err := filepath.Abs(TV_SERIES_TILES_FIXTURES_PATH)
@@ -59,7 +58,7 @@ func loadTVSeriesTitlesFixture(t *testing.T) []mongodb.TitleDb {
 		t.Fatalf("failed to read fixture file %s: %v", absPath, err)
 	}
 
-	var docs []mongodb.TitleDb
+	var docs []models.Title
 	if err := json.Unmarshal(data, &docs); err != nil {
 		t.Fatalf("failed to unmarshal fixture JSON: %v", err)
 	}

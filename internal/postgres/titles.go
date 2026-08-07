@@ -46,7 +46,7 @@ func (s *Store) TitleExists(ctx context.Context, id string) (bool, error) {
 }
 
 // GetTitleTypes fetches title types for the given title IDs, returning a map
-// of titleId -> type. Matches mongodb.GetTitleTypes: an empty/nil input
+// of titleId -> type. Matches the previous behavior: an empty/nil input
 // short-circuits to an empty map without hitting the database.
 func (s *Store) GetTitleTypes(ctx context.Context, titleIds []string) (map[string]string, error) {
 	if len(titleIds) == 0 {
@@ -66,7 +66,7 @@ func (s *Store) GetTitleTypes(ctx context.Context, titleIds []string) (map[strin
 // titleOrderColumns is the FIXED whitelist of orderBy -> titles column used
 // by GetTitlesPage's CASE 2 (standard column sort). Column names in the
 // generated SQL come ONLY from this map — the caller-supplied orderBy string
-// is never interpolated directly. Mirrors mongodb.GetTitlesPage's remapping
+// is never interpolated directly. Applies the remapping
 // ("" and "imdbRating"), plus every other titles column a client can
 // reasonably ask to sort by. Any orderBy value not present here (including
 // "watched", which has no titles-table equivalent and only makes sense for
@@ -84,12 +84,12 @@ var titleOrderColumns = map[string]string{
 
 // isGroupFieldOrderBy reports whether orderBy refers to a group-titles-join
 // field (watched/watchedAt/addedAt) rather than a native titles column.
-// Matches the groupFieldsSort check in mongodb.GetTitlesPage.
+// Matches the group-fields sort check.
 func isGroupFieldOrderBy(orderBy string) bool {
 	return orderBy == "watched" || orderBy == "watchedAt" || orderBy == "addedAt"
 }
 
-// GetTitlesPage reproduces mongodb.GetTitlesPage's behavior against the
+// GetTitlesPage pages and sorts titles against the
 // hybrid JSONB titles table:
 //
 //   - empty (non-nil) ids -> ([]models.Title{}, 0, nil), no query issued.
@@ -100,7 +100,7 @@ func isGroupFieldOrderBy(orderBy string) bool {
 //     order.
 //   - CASE 2: otherwise -> ORDER BY <whitelisted column> <ASC|DESC>, column
 //     from titleOrderColumns, direction from ascending (default ASC).
-//   - LIMIT size OFFSET (page-1)*size, matching Mongo's skip/limit
+//   - LIMIT size OFFSET (page-1)*size, matching the previous skip/limit
 //     computation verbatim (no extra clamping here; that's the service
 //     layer's job).
 func (s *Store) GetTitlesPage(

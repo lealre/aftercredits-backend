@@ -2,7 +2,7 @@
 
 This is the backend part of [this project](https://github.com/lealre/aftercredits)
 
-It's written in Go, and the docker-compose file includes the respective Postgres database image. A MongoDB service is also kept in the compose file, but only as a legacy service for the one-time Mongo → Postgres migration.
+It's written in Go, and the docker-compose file includes the respective Postgres database image.
 
 Title metadata (ratings, seasons/episodes, posters, cast) comes from a pluggable
 provider selected by the `TITLE_PROVIDER` env var. The default deployment uses the
@@ -23,9 +23,8 @@ invariants) are documented in **[CONVENTIONS.md](CONVENTIONS.md)**.
 - [Running Tests](#running-tests)
 - [Database Backup & Restore](#database-backup--restore)
   - [1. Backup Postgres Data (Local)](#1-backup-postgres-data-local)
-  - [2. Backup MongoDB Data to Google Drive (Legacy)](#2-backup-mongodb-data-to-google-drive-legacy)
-  - [3. Scheduled Backups and Updates (Raspberry Pi / Cron)](#3-scheduled-backups-and-updates-raspberry-pi--cron)
-  - [4. Restore Postgres Data](#4-restore-postgres-data)
+  - [2. Scheduled Backups and Updates (Raspberry Pi / Cron)](#2-scheduled-backups-and-updates-raspberry-pi--cron)
+  - [3. Restore Postgres Data](#3-restore-postgres-data)
 
 ## How to Run
 
@@ -110,35 +109,13 @@ This script:
 - Wraps the dump into a compressed tar.gz at `./backups/pg_dump_<timestamp>.tar.gz`
 - Requires Postgres to be running in Docker container named `aftercredits-postgres`
 
-### 2. Backup MongoDB Data to Google Drive (Legacy)
-
-Backup MongoDB data directly to Google Drive using rclone:
-
-```bash
-./scripts/backup_to_drive.sh
-```
-
-**Requirements:**
-- rclone installed and configured
-- Google Drive remote configured (default remote name: `drive-pi`)
-- MongoDB accessible (either locally or via Docker container)
-
-This script:
-- Creates a logical backup using `mongodump`
-- Compresses the backup
-- Uploads to Google Drive at `drive-pi:aftercredits_backups/`
-- Automatically cleans up temporary files
-
-This script targets the legacy Mongo service kept only as the source for the
-one-time migration; it is unrelated to the Pi's scheduled Postgres backups (see #3).
-
 **Setup rclone:**
 ```bash
 rclone config
 # Create a remote named "drive-pi" pointing to your Google Drive
 ```
 
-### 3. Scheduled Backups and Updates (Raspberry Pi / Cron)
+### 2. Scheduled Backups and Updates (Raspberry Pi / Cron)
 
 For automated scheduled tasks (backups to Google Drive and movie information updates), see the `pi/` directory.
 
@@ -174,7 +151,7 @@ For automated scheduled tasks (backups to Google Drive and movie information upd
 
 For detailed documentation, see [pi/README.md](pi/README.md).
 
-### 4. Restore Postgres Data
+### 3. Restore Postgres Data
 
 To restore data from a backup:
 

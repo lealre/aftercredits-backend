@@ -44,7 +44,7 @@ provider's `ErrTitleNotFound`) into their own vocabulary before returning.
 
 ## 3. Comment invariants (movie vs. TV series)
 
-A stored comment (`internal/mongodb` comments) has a top-level `Comment` and a
+A stored comment has a top-level `Comment` and a
 per-season `SeasonsComments` map. Exactly one is used, by title type:
 
 - **Movie:** top-level `Comment` is set; `SeasonsComments` MUST be empty/nil.

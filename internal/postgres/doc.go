@@ -6,7 +6,7 @@
 // compiled by sqlc into internal/database (do not hand-edit that package —
 // regenerate it with `sqlc generate`). This package wraps a *pgxpool.Pool
 // and the generated database.Queries, mapping rows to/from internal/models
-// the same way the Mongo store does.
+// the same way the store does.
 //
 // Tests in this package run against a real postgres:16 container started
 // via testcontainers-go (see testharness_test.go), not a mock.

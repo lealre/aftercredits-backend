@@ -3,7 +3,7 @@ package models
 import "time"
 
 // Title is the storage-neutral representation of a title (movie or TV
-// series) mirroring mongodb.TitleDb, without persistence tags.
+// series), carrying no persistence tags.
 type Title struct {
 	ID              string
 	Type            string

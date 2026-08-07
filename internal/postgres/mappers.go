@@ -121,7 +121,7 @@ func ratingSeasonRowToItem(s database.RatingSeason) models.SeasonRatingItem {
 }
 
 // assembleSeasonsRatings groups rating_seasons rows for a single rating into
-// a *models.SeasonsRatings, matching mongodb's nil/empty convention: nil
+// a *models.SeasonsRatings, matching the store's nil/empty convention: nil
 // when there are no season rows (movie ratings), a non-nil map otherwise.
 func assembleSeasonsRatings(rows []database.RatingSeason) *models.SeasonsRatings {
 	if len(rows) == 0 {
@@ -138,7 +138,7 @@ func assembleSeasonsRatings(rows []database.RatingSeason) *models.SeasonsRatings
 // season map into the storage-neutral models.Comment. Comment is nullable at
 // the column level (movies set it, series leave it NULL), mapped via
 // textToPtr; seasons is nil for a movie comment and non-nil (the season map)
-// for a series comment, matching mongodb's convention.
+// for a series comment, matching the store's convention.
 func commentRowToModel(c database.Comment, seasons *models.SeasonsComments) models.Comment {
 	return models.Comment{
 		Id:              c.ID,
@@ -162,7 +162,7 @@ func commentSeasonRowToItem(s database.CommentSeason) models.SeasonCommentItem {
 }
 
 // assembleSeasonsComments groups comment_seasons rows for a single comment
-// into a *models.SeasonsComments, matching mongodb's nil/empty convention:
+// into a *models.SeasonsComments, matching the store's nil/empty convention:
 // nil when there are no season rows (movie comments), a non-nil map
 // otherwise (series comments).
 func assembleSeasonsComments(rows []database.CommentSeason) *models.SeasonsComments {
@@ -178,8 +178,8 @@ func assembleSeasonsComments(rows []database.CommentSeason) *models.SeasonsComme
 
 // groupRowToModel assembles a database.Group row plus its resolved member ids
 // and its already-assembled titles map into the storage-neutral models.Group.
-// titles is always a non-nil (possibly empty) map, matching mongodb's group
-// document convention where the titles field is always present.
+// titles is always a non-nil (possibly empty) map: a group always reports a
+// titles map, even when it holds none.
 func groupRowToModel(g database.Group, users []string, titles models.GroupTitles) models.Group {
 	return models.Group{
 		Id:          g.ID,
@@ -197,7 +197,7 @@ func groupRowToModel(g database.Group, users []string, titles models.GroupTitles
 
 // groupTitleRowToModel converts a database.GroupTitle row plus its (possibly
 // nil) per-season watched map into a models.GroupTitleItem. seasons is nil for
-// a movie (no season rows) and non-nil for a series, matching mongodb's
+// a movie (no season rows) and non-nil for a series, matching the store's
 // seasonsWatched convention.
 func groupTitleRowToModel(t database.GroupTitle, seasons *models.SeasonsWatched) models.GroupTitleItem {
 	return models.GroupTitleItem{
@@ -223,7 +223,7 @@ func groupTitleSeasonRowToItem(s database.GroupTitleSeason) models.SeasonWatched
 }
 
 // assembleSeasonsWatched groups group_title_seasons rows for a single title
-// into a *models.SeasonsWatched, matching mongodb's nil/empty convention: nil
+// into a *models.SeasonsWatched, matching the store's nil/empty convention: nil
 // when there are no season rows (a movie), a non-nil map otherwise (a series).
 func assembleSeasonsWatched(rows []database.GroupTitleSeason) *models.SeasonsWatched {
 	if len(rows) == 0 {
@@ -264,12 +264,10 @@ func titleToRow(t models.Title) (database.InsertTitleParams, error) {
 // cast and nil/empty conventions) that was passed to titleToRow. The
 // denormalized query columns on the row are ignored here.
 //
-// json.Unmarshal preserves JSON null as a nil Go slice, but mongodb's mapper
-// (titleDbToModel, via personsDbToModel/codeNamesDbToModel/
-// interestsDbToModel/seasonsDbToModel/episodesDbToModel, which all make() a
-// slice of len(x)) always returns a non-nil (possibly empty) slice for these
-// fields. Normalize them here to match. Genres is passthrough in mongodb
-// (t.Genres, never make()'d) so it is deliberately left untouched.
+// json.Unmarshal preserves JSON null as a nil Go slice, but a title read must
+// always report these 8 slice fields as non-nil (possibly empty) — that is the
+// shape the API contract depends on. Normalize them here. Genres is deliberately
+// left untouched: it is passed through as stored, nil included.
 func rowToTitle(r database.Title) (models.Title, error) {
 	var t models.Title
 	if err := json.Unmarshal(r.Metadata, &t); err != nil {

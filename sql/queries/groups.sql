@@ -95,13 +95,7 @@ SELECT * FROM group_title_seasons WHERE group_id = $1 ORDER BY title_id, season;
 -- name: GetGroupTitleSeasonRowsForTitle :many
 SELECT * FROM group_title_seasons WHERE group_id = $1 AND title_id = $2 ORDER BY season;
 
--- name: InsertGroupFull :exec
--- Migration-only (cmd/mongo-to-postgres): unlike InsertGroup, preserves the
--- original deleted/deleted_at values from the Mongo document.
-INSERT INTO groups (id, name, description, owner_id, deleted, deleted_at, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-
 -- name: GetGroupRowAnyById :one
--- Migration-only verification read: fetches a group row by id regardless of
--- deleted state or membership (the store's readers filter both out).
+-- Test-only read: fetches a group row by id regardless of deleted state or
+-- membership (the store's readers filter both out).
 SELECT * FROM groups WHERE id = $1;

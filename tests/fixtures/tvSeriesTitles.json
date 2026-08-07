@@ -1,53 +1,54 @@
 [
   {
-    "id": "tt1190634",
-    "type": "tvSeries",
-    "primaryTitle": "The Boys",
-    "primaryImage": {
-      "url": "https://m.media-amazon.com/images/M/MV5BMGRlZDE2ZGEtZTU5Mi00ODdkLWFmMTEtY2UwMmViNWNmZjczXkEyXkFqcGc@._V1_.jpg",
-      "width": 2000,
-      "height": 3000
+    "ID": "tt1190634",
+    "Type": "tvSeries",
+    "PrimaryTitle": "The Boys",
+    "PrimaryImage": {
+      "URL": "https://m.media-amazon.com/images/M/MV5BMGRlZDE2ZGEtZTU5Mi00ODdkLWFmMTEtY2UwMmViNWNmZjczXkEyXkFqcGc@._V1_.jpg",
+      "Width": 2000,
+      "Height": 3000
     },
-    "startYear": 2019,
-    "runtimeSeconds": 3600,
-    "genres": [
+    "StartYear": 2019,
+    "RuntimeSeconds": 3600,
+    "Genres": [
       "Action",
       "Comedy",
       "Crime",
       "Drama",
       "Sci-Fi"
     ],
-    "rating": {
-      "aggregateRating": 8.6,
-      "voteCount": 828450
+    "Rating": {
+      "AggregateRating": 8.6,
+      "VoteCount": 828450
     },
-    "plot": "A group of vigilantes set out to take down corrupt superheroes who abuse their superpowers.",
-    "directors": [
+    "Metacritic": null,
+    "Plot": "A group of vigilantes set out to take down corrupt superheroes who abuse their superpowers.",
+    "Directors": [
       {
-        "id": "nm0004223",
-        "displayName": "Philip Sgriccia",
-        "alternativeNames": [
+        "ID": "nm0004223",
+        "DisplayName": "Philip Sgriccia",
+        "AlternativeNames": [
           "Philip I. Sgriccia",
           "Philip J. Sgriccia",
           "Phillip J. Sgriccia",
           "Phillip Sgriccia",
           "Phil Sgriccia"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BOWY5NTY2ZTYtMGY0ZC00NmE2LTg5ZjAtMDgwZDJmMzU1YTU0XkEyXkFqcGc@._V1_.jpg",
-          "width": 370,
-          "height": 469
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BOWY5NTY2ZTYtMGY0ZC00NmE2LTg5ZjAtMDgwZDJmMzU1YTU0XkEyXkFqcGc@._V1_.jpg",
+          "Width": 370,
+          "Height": 469
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "editor",
           "producer"
         ]
       },
       {
-        "id": "nm0870295",
-        "displayName": "Frederick E.O. Toye",
-        "alternativeNames": [
+        "ID": "nm0870295",
+        "DisplayName": "Frederick E.O. Toye",
+        "AlternativeNames": [
           "Fred E.O. Toye",
           "Frederick E. O. Toye",
           "Frederick O.E. Toye",
@@ -55,1362 +56,1388 @@
           "Fredrick E.O. Toye",
           "Fred Toye"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZGYyYmEzZTktMDkwZC00MTgyLWIzY2EtN2NkZTMyYjQ2MWJmXkEyXkFqcGc@._V1_.jpg",
-          "width": 4032,
-          "height": 3024
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZGYyYmEzZTktMDkwZC00MTgyLWIzY2EtN2NkZTMyYjQ2MWJmXkEyXkFqcGc@._V1_.jpg",
+          "Width": 4032,
+          "Height": 3024
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "editor",
           "producer"
         ]
       },
       {
-        "id": "nm0101908",
-        "displayName": "Sarah Boyd",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZjE1ZjMwZjEtZDdmZS00MWQ5LTk0ZjYtOWUyMDZlNTVjY2FlXkEyXkFqcGc@._V1_CR154,1,905,1358_.jpg",
-          "width": 905,
-          "height": 1358
+        "ID": "nm0101908",
+        "DisplayName": "Sarah Boyd",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZjE1ZjMwZjEtZDdmZS00MWQ5LTk0ZjYtOWUyMDZlNTVjY2FlXkEyXkFqcGc@._V1_CR154,1,905,1358_.jpg",
+          "Width": 905,
+          "Height": 1358
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "editor",
           "editorial_department"
         ]
       }
     ],
-    "writers": [
+    "Writers": [
       {
-        "id": "nm1212017",
-        "displayName": "Garth Ennis",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTYzNDY3MzU4N15BMl5BanBnXkFtZTgwMjE4NTMzODE@._V1_.jpg",
-          "width": 1363,
-          "height": 2048
+        "ID": "nm1212017",
+        "DisplayName": "Garth Ennis",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTYzNDY3MzU4N15BMl5BanBnXkFtZTgwMjE4NTMzODE@._V1_.jpg",
+          "Width": 1363,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0471392",
-        "displayName": "Eric Kripke",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjEzOTYzNTEzOV5BMl5BanBnXkFtZTcwMDcwNTE4Ng@@._V1_.jpg",
-          "width": 1370,
-          "height": 2048
+        "ID": "nm0471392",
+        "DisplayName": "Eric Kripke",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjEzOTYzNTEzOV5BMl5BanBnXkFtZTcwMDcwNTE4Ng@@._V1_.jpg",
+          "Width": 1370,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "miscellaneous",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm1352769",
-        "displayName": "Darick Robertson",
-        "primaryProfessions": [
+        "ID": "nm1352769",
+        "DisplayName": "Darick Robertson",
+        "AlternativeNames": null,
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       }
     ],
-    "stars": [
+    "Stars": [
       {
-        "id": "nm0881631",
-        "displayName": "Karl Urban",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjA1MTMwMjMxN15BMl5BanBnXkFtZTgwNjA1MTA1OTE@._V1_.jpg",
-          "width": 1364,
-          "height": 2048
+        "ID": "nm0881631",
+        "DisplayName": "Karl Urban",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjA1MTMwMjMxN15BMl5BanBnXkFtZTgwNjA1MTA1OTE@._V1_.jpg",
+          "Width": 1364,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "miscellaneous",
           "producer"
         ]
       },
       {
-        "id": "nm3929195",
-        "displayName": "Erin Moriarty",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMmZlNDQ5MzktMWMzOS00NTQ3LWE3ZGEtY2U2MzlkNTA2M2UyXkEyXkFqcGc@._V1_.jpg",
-          "width": 1350,
-          "height": 1797
+        "ID": "nm3929195",
+        "DisplayName": "Erin Moriarty",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMmZlNDQ5MzktMWMzOS00NTQ3LWE3ZGEtY2U2MzlkNTA2M2UyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1350,
+          "Height": 1797
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "soundtrack"
         ]
       },
       {
-        "id": "nm4425051",
-        "displayName": "Jack Quaid",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BYjc5MmNjM2UtMDllYy00NjZiLTlkN2ItZDg3YjNhYjRmYmVjXkEyXkFqcGc@._V1_.jpg",
-          "width": 552,
-          "height": 822
+        "ID": "nm4425051",
+        "DisplayName": "Jack Quaid",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BYjc5MmNjM2UtMDllYy00NjZiLTlkN2ItZDg3YjNhYjRmYmVjXkEyXkFqcGc@._V1_.jpg",
+          "Width": 552,
+          "Height": 822
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm1102278",
-        "displayName": "Antony Starr",
-        "alternativeNames": [
+        "ID": "nm1102278",
+        "DisplayName": "Antony Starr",
+        "AlternativeNames": [
           "Anthony Starr"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTQxMDg1Nzc0OV5BMl5BanBnXkFtZTcwODc4NTkyNw@@._V1_.jpg",
-          "width": 1465,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTQxMDg1Nzc0OV5BMl5BanBnXkFtZTcwODc4NTkyNw@@._V1_.jpg",
+          "Width": 1465,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer"
         ]
       }
     ],
-    "originCountries": [
+    "OriginCountries": [
       {
-        "code": "US",
-        "name": "United States"
+        "Code": "US",
+        "Name": "United States"
       }
     ],
-    "spokenLanguages": [
+    "SpokenLanguages": [
       {
-        "code": "eng",
-        "name": "English"
+        "Code": "eng",
+        "Name": "English"
       }
     ],
-    "interests": [
+    "Interests": [
       {
-        "id": "in0000001",
-        "name": "Action"
+        "ID": "in0000001",
+        "Name": "Action",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000008",
-        "name": "Superhero",
-        "isSubgenre": true
+        "ID": "in0000008",
+        "Name": "Superhero",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000034",
-        "name": "Comedy"
+        "ID": "in0000034",
+        "Name": "Comedy",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000035",
-        "name": "Dark Comedy",
-        "isSubgenre": true
+        "ID": "in0000035",
+        "Name": "Dark Comedy",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000041",
-        "name": "Raunchy Comedy",
-        "isSubgenre": true
+        "ID": "in0000041",
+        "Name": "Raunchy Comedy",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000042",
-        "name": "Satire",
-        "isSubgenre": true
+        "ID": "in0000042",
+        "Name": "Satire",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000052",
-        "name": "Crime"
+        "ID": "in0000052",
+        "Name": "Crime",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000076",
-        "name": "Drama"
+        "ID": "in0000076",
+        "Name": "Drama",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000086",
-        "name": "Psychological Drama",
-        "isSubgenre": true
+        "ID": "in0000086",
+        "Name": "Psychological Drama",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000162",
-        "name": "Sci-Fi"
+        "ID": "in0000162",
+        "Name": "Sci-Fi",
+        "IsSubgenre": false
       }
     ],
-    "seasons": [
+    "Seasons": [
       {
-        "season": "1",
-        "episodeCount": 8
+        "Season": "1",
+        "EpisodeCount": 8
       },
       {
-        "season": "2",
-        "episodeCount": 8
+        "Season": "2",
+        "EpisodeCount": 8
       },
       {
-        "season": "3",
-        "episodeCount": 8
+        "Season": "3",
+        "EpisodeCount": 8
       },
       {
-        "season": "4",
-        "episodeCount": 8
+        "Season": "4",
+        "EpisodeCount": 8
       },
       {
-        "season": "5",
-        "episodeCount": 8
+        "Season": "5",
+        "EpisodeCount": 8
       }
     ],
-    "episodes": [
+    "Episodes": [
       {
-        "id": "tt7775902",
-        "title": "The Name of the Game",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMzM4OTA4NDQtYWVlOC00NjkxLTk4NTEtNTY5ZDY4NTgwZjMyXkEyXkFqcGc@._V1_.jpg",
-          "width": 6000,
-          "height": 4000
+        "ID": "tt7775902",
+        "Title": "The Name of the Game",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMzM4OTA4NDQtYWVlOC00NjkxLTk4NTEtNTY5ZDY4NTgwZjMyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 6000,
+          "Height": 4000
         },
-        "season": "1",
-        "episodeNumber": 1,
-        "runtimeSeconds": 3600,
-        "plot": "When a Supe kills the love of his life, A/V salesman Hughie Campbell teams up with Billy Butcher, a vigilante hell-bent on punishing corrupt Supes -- and Hughie's life will never be the same again.",
-        "rating": {
-          "aggregateRating": 8.7,
-          "voteCount": 25069
+        "Season": "1",
+        "EpisodeNumber": 1,
+        "RuntimeSeconds": 3600,
+        "Plot": "When a Supe kills the love of his life, A/V salesman Hughie Campbell teams up with Billy Butcher, a vigilante hell-bent on punishing corrupt Supes -- and Hughie's life will never be the same again.",
+        "Rating": {
+          "AggregateRating": 8.7,
+          "VoteCount": 25069
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt8100946",
-        "title": "Cherry",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNmZmZmMzYTQtOGQ3Ny00MzVjLWE2NTItMGQ5ODQzYWQxMmM2XkEyXkFqcGc@._V1_.jpg",
-          "width": 6000,
-          "height": 4000
+        "ID": "tt8100946",
+        "Title": "Cherry",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNmZmZmMzYTQtOGQ3Ny00MzVjLWE2NTItMGQ5ODQzYWQxMmM2XkEyXkFqcGc@._V1_.jpg",
+          "Width": 6000,
+          "Height": 4000
         },
-        "season": "1",
-        "episodeNumber": 2,
-        "runtimeSeconds": 3540,
-        "plot": "The Boys get themselves a Superhero, Starlight gets payback, Homelander gets naughty, and a Senator gets naughtier.",
-        "rating": {
-          "aggregateRating": 8.5,
-          "voteCount": 21088
+        "Season": "1",
+        "EpisodeNumber": 2,
+        "RuntimeSeconds": 3540,
+        "Plot": "The Boys get themselves a Superhero, Starlight gets payback, Homelander gets naughty, and a Senator gets naughtier.",
+        "Rating": {
+          "AggregateRating": 8.5,
+          "VoteCount": 21088
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt8100948",
-        "title": "Get Some",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BODNjMjQ1ZDktZTliNC00OGNlLTkzNTUtYmY0OTZiMTBmYjgxXkEyXkFqcGc@._V1_.jpg",
-          "width": 6720,
-          "height": 4480
+        "ID": "tt8100948",
+        "Title": "Get Some",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BODNjMjQ1ZDktZTliNC00OGNlLTkzNTUtYmY0OTZiMTBmYjgxXkEyXkFqcGc@._V1_.jpg",
+          "Width": 6720,
+          "Height": 4480
         },
-        "season": "1",
-        "episodeNumber": 3,
-        "runtimeSeconds": 3240,
-        "plot": "It's the race of the century. A-Train versus Shockwave, vying for the title of World's Fastest Man. Meanwhile, the Boys are reunited and it feels so good.",
-        "rating": {
-          "aggregateRating": 8.3,
-          "voteCount": 19764
+        "Season": "1",
+        "EpisodeNumber": 3,
+        "RuntimeSeconds": 3240,
+        "Plot": "It's the race of the century. A-Train versus Shockwave, vying for the title of World's Fastest Man. Meanwhile, the Boys are reunited and it feels so good.",
+        "Rating": {
+          "AggregateRating": 8.3,
+          "VoteCount": 19764
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt8100950",
-        "title": "The Female of the Species",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNDVjMWVmYTQtZTE4NS00N2MyLTk0MzktOTVmYzAyMDE2MDllXkEyXkFqcGc@._V1_.jpg",
-          "width": 6000,
-          "height": 4000
+        "ID": "tt8100950",
+        "Title": "The Female of the Species",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNDVjMWVmYTQtZTE4NS00N2MyLTk0MzktOTVmYzAyMDE2MDllXkEyXkFqcGc@._V1_.jpg",
+          "Width": 6000,
+          "Height": 4000
         },
-        "season": "1",
-        "episodeNumber": 4,
-        "runtimeSeconds": 3360,
-        "plot": "On a very special episode of The Boys... an hour of guts, gutterballs, airplane hijackings, madness, ghosts, and one very intriguing Female. Oh, and lots of heart -- both in the sentimental sense, and in the gory literal sense.",
-        "rating": {
-          "aggregateRating": 8.7,
-          "voteCount": 19931
+        "Season": "1",
+        "EpisodeNumber": 4,
+        "RuntimeSeconds": 3360,
+        "Plot": "On a very special episode of The Boys... an hour of guts, gutterballs, airplane hijackings, madness, ghosts, and one very intriguing Female. Oh, and lots of heart -- both in the sentimental sense, and in the gory literal sense.",
+        "Rating": {
+          "AggregateRating": 8.7,
+          "VoteCount": 19931
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt8100952",
-        "title": "Good for the Soul",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNjY0Y2IxN2MtMDI5My00ZjRjLTgzMzMtYTZjODllZDhkNzkyXkEyXkFqcGc@._V1_.jpg",
-          "width": 6000,
-          "height": 4000
+        "ID": "tt8100952",
+        "Title": "Good for the Soul",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNjY0Y2IxN2MtMDI5My00ZjRjLTgzMzMtYTZjODllZDhkNzkyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 6000,
+          "Height": 4000
         },
-        "season": "1",
-        "episodeNumber": 5,
-        "runtimeSeconds": 3600,
-        "plot": "The Boys head to the \"Believe\" Expo to follow a promising lead in their ongoing war against the Supes. There might -- MIGHT -- be a homicidal infant, but you'll have to see for yourself.",
-        "rating": {
-          "aggregateRating": 8.3,
-          "voteCount": 19106
+        "Season": "1",
+        "EpisodeNumber": 5,
+        "RuntimeSeconds": 3600,
+        "Plot": "The Boys head to the \"Believe\" Expo to follow a promising lead in their ongoing war against the Supes. There might -- MIGHT -- be a homicidal infant, but you'll have to see for yourself.",
+        "Rating": {
+          "AggregateRating": 8.3,
+          "VoteCount": 19106
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt8100954",
-        "title": "The Innocents",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNDkyMzA3YTMtMWEzYy00ODVhLTkxMDUtNDgxZmQ4NzA3YWU1XkEyXkFqcGc@._V1_.jpg",
-          "width": 1990,
-          "height": 844
+        "ID": "tt8100954",
+        "Title": "The Innocents",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNDkyMzA3YTMtMWEzYy00ODVhLTkxMDUtNDgxZmQ4NzA3YWU1XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1990,
+          "Height": 844
         },
-        "season": "1",
-        "episodeNumber": 6,
-        "runtimeSeconds": 3600,
-        "plot": "SUPER IN AMERICA (2019). Vought Studios. Genre: Reality. Starring: Homelander, Queen Maeve, Black Noir, The Deep, A-Train, Starlight, Tara Reid, Billy Zane.",
-        "rating": {
-          "aggregateRating": 8.1,
-          "voteCount": 18125
+        "Season": "1",
+        "EpisodeNumber": 6,
+        "RuntimeSeconds": 3600,
+        "Plot": "SUPER IN AMERICA (2019). Vought Studios. Genre: Reality. Starring: Homelander, Queen Maeve, Black Noir, The Deep, A-Train, Starlight, Tara Reid, Billy Zane.",
+        "Rating": {
+          "AggregateRating": 8.1,
+          "VoteCount": 18125
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt8100956",
-        "title": "The Self-Preservation Society",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMGIxM2YyYmYtN2MxOC00YTI4LTgxY2YtYTY5MzJkNWEyNjcyXkEyXkFqcGc@._V1_.jpg",
-          "width": 500,
-          "height": 375
+        "ID": "tt8100956",
+        "Title": "The Self-Preservation Society",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMGIxM2YyYmYtN2MxOC00YTI4LTgxY2YtYTY5MzJkNWEyNjcyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 500,
+          "Height": 375
         },
-        "season": "1",
-        "episodeNumber": 7,
-        "runtimeSeconds": 3360,
-        "plot": "Never trust a washed-up Supe -- the Boys learn this lesson the hard way. Meanwhile, Homelander digs into his past, Starlight discovers that love hurts, and if you're ever in Sandusky, Ohio and a girl asks if she can touch your gills, say NO.",
-        "rating": {
-          "aggregateRating": 8.7,
-          "voteCount": 18602
+        "Season": "1",
+        "EpisodeNumber": 7,
+        "RuntimeSeconds": 3360,
+        "Plot": "Never trust a washed-up Supe -- the Boys learn this lesson the hard way. Meanwhile, Homelander digs into his past, Starlight discovers that love hurts, and if you're ever in Sandusky, Ohio and a girl asks if she can touch your gills, say NO.",
+        "Rating": {
+          "AggregateRating": 8.7,
+          "VoteCount": 18602
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt8100958",
-        "title": "You Found Me",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMzE2ZWEzYzUtN2EyNy00Mjk2LTk5MmYtNjJiN2VhYjAyOWFkXkEyXkFqcGc@._V1_.jpg",
-          "width": 1200,
-          "height": 675
+        "ID": "tt8100958",
+        "Title": "You Found Me",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMzE2ZWEzYzUtN2EyNy00Mjk2LTk5MmYtNjJiN2VhYjAyOWFkXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1200,
+          "Height": 675
         },
-        "season": "1",
-        "episodeNumber": 8,
-        "runtimeSeconds": 3960,
-        "plot": "Season Finale Time! Questions answered! Secrets revealed! Conflicts... conflicted! Characters exploded! And so much more!",
-        "rating": {
-          "aggregateRating": 9.1,
-          "voteCount": 22092
+        "Season": "1",
+        "EpisodeNumber": 8,
+        "RuntimeSeconds": 3960,
+        "Plot": "Season Finale Time! Questions answered! Secrets revealed! Conflicts... conflicted! Characters exploded! And so much more!",
+        "Rating": {
+          "AggregateRating": 9.1,
+          "VoteCount": 22092
         },
-        "releaseDate": {
-          "year": 2019,
-          "month": 7,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2019,
+          "Month": 7,
+          "Day": 26
         }
       },
       {
-        "id": "tt10666364",
-        "title": "The Big Ride",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BM2Y1YzczMTctYjdhNy00N2Q4LWIzZjItOTg2ZWFlMzMyNDkzXkEyXkFqcGc@._V1_.jpg",
-          "width": 1688,
-          "height": 1125
+        "ID": "tt10666364",
+        "Title": "The Big Ride",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BM2Y1YzczMTctYjdhNy00N2Q4LWIzZjItOTg2ZWFlMzMyNDkzXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1688,
+          "Height": 1125
         },
-        "season": "2",
-        "episodeNumber": 1,
-        "runtimeSeconds": 3780,
-        "plot": "With Butcher still missing, Hughie, Mother's Milk, Frenchie, and Kimiko are now fugitives, and Homelander and Vought are more powerful than ever. But just as the Boys are about to leave the country, they are pulled back into the fray.",
-        "rating": {
-          "aggregateRating": 8.1,
-          "voteCount": 18106
+        "Season": "2",
+        "EpisodeNumber": 1,
+        "RuntimeSeconds": 3780,
+        "Plot": "With Butcher still missing, Hughie, Mother's Milk, Frenchie, and Kimiko are now fugitives, and Homelander and Vought are more powerful than ever. But just as the Boys are about to leave the country, they are pulled back into the fray.",
+        "Rating": {
+          "AggregateRating": 8.1,
+          "VoteCount": 18106
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 9,
-          "day": 4
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 9,
+          "Day": 4
         }
       },
       {
-        "id": "tt11783338",
-        "title": "Proper Preparation and Planning",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjI5ZmUxYjktYzhlZS00NjJkLTkzMjYtMzIwN2FiM2U0YWE4XkEyXkFqcGc@._V1_.jpg",
-          "width": 1688,
-          "height": 1157
+        "ID": "tt11783338",
+        "Title": "Proper Preparation and Planning",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjI5ZmUxYjktYzhlZS00NjJkLTkzMjYtMzIwN2FiM2U0YWE4XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1688,
+          "Height": 1157
         },
-        "season": "2",
-        "episodeNumber": 2,
-        "runtimeSeconds": 3540,
-        "plot": "Butcher is back with the Boys, but tensions flare with Hughie. Homelander spends quality time with his new \"family.\" Starlight and Stormfront bond at a press junket and the Boys hunt down a super terrorist with a startling identity.",
-        "rating": {
-          "aggregateRating": 7.6,
-          "voteCount": 17371
+        "Season": "2",
+        "EpisodeNumber": 2,
+        "RuntimeSeconds": 3540,
+        "Plot": "Butcher is back with the Boys, but tensions flare with Hughie. Homelander spends quality time with his new \"family.\" Starlight and Stormfront bond at a press junket and the Boys hunt down a super terrorist with a startling identity.",
+        "Rating": {
+          "AggregateRating": 7.6,
+          "VoteCount": 17371
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 9,
-          "day": 4
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 9,
+          "Day": 4
         }
       },
       {
-        "id": "tt11748808",
-        "title": "Over the Hill with the Swords of a Thousand Men",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNmFlZjI0YzYtNWY0Ni00NzM3LWFiNjMtOTY3NGMyNzVmYTExXkEyXkFqcGc@._V1_.jpg",
-          "width": 700,
-          "height": 700
+        "ID": "tt11748808",
+        "Title": "Over the Hill with the Swords of a Thousand Men",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNmFlZjI0YzYtNWY0Ni00NzM3LWFiNjMtOTY3NGMyNzVmYTExXkEyXkFqcGc@._V1_.jpg",
+          "Width": 700,
+          "Height": 700
         },
-        "season": "2",
-        "episodeNumber": 3,
-        "runtimeSeconds": 3480,
-        "plot": "The Boys take to the high seas to safeguard their prisoner. Homelander plays house, then pushes Ryan over the edge. Starlight is forced to make an impossible choice. Stormfront reveals her true character.",
-        "rating": {
-          "aggregateRating": 9,
-          "voteCount": 20054
+        "Season": "2",
+        "EpisodeNumber": 3,
+        "RuntimeSeconds": 3480,
+        "Plot": "The Boys take to the high seas to safeguard their prisoner. Homelander plays house, then pushes Ryan over the edge. Starlight is forced to make an impossible choice. Stormfront reveals her true character.",
+        "Rating": {
+          "AggregateRating": 9,
+          "VoteCount": 20054
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 9,
-          "day": 4
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 9,
+          "Day": 4
         }
       },
       {
-        "id": "tt11563692",
-        "title": "Nothing Like It in the World",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BOGI3OGE4ZWUtNGU3NC00MmJkLTlmYmQtMTQ0MmQ4MWJhZWVhXkEyXkFqcGc@._V1_.jpg",
-          "width": 5953,
-          "height": 3969
+        "ID": "tt11563692",
+        "Title": "Nothing Like It in the World",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BOGI3OGE4ZWUtNGU3NC00MmJkLTlmYmQtMTQ0MmQ4MWJhZWVhXkEyXkFqcGc@._V1_.jpg",
+          "Width": 5953,
+          "Height": 3969
         },
-        "season": "2",
-        "episodeNumber": 4,
-        "runtimeSeconds": 4080,
-        "plot": "Milk, Hughie, and Annie go on a road trip to find Liberty. Frenchie has relationship problems, and Homelander continues to unravel.",
-        "rating": {
-          "aggregateRating": 8,
-          "voteCount": 16802
+        "Season": "2",
+        "EpisodeNumber": 4,
+        "RuntimeSeconds": 4080,
+        "Plot": "Milk, Hughie, and Annie go on a road trip to find Liberty. Frenchie has relationship problems, and Homelander continues to unravel.",
+        "Rating": {
+          "AggregateRating": 8,
+          "VoteCount": 16802
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 9,
-          "day": 11
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 9,
+          "Day": 11
         }
       },
       {
-        "id": "tt11290880",
-        "title": "We Gotta Go Now",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BOTQxYmE1MDgtZDU2OC00NzUyLThhZDMtYmNkMDc1OGNhZTNkXkEyXkFqcGc@._V1_.jpg",
-          "width": 1024,
-          "height": 521
+        "ID": "tt11290880",
+        "Title": "We Gotta Go Now",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BOTQxYmE1MDgtZDU2OC00NzUyLThhZDMtYmNkMDc1OGNhZTNkXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1024,
+          "Height": 521
         },
-        "season": "2",
-        "episodeNumber": 5,
-        "runtimeSeconds": 3600,
-        "plot": "Butcher has no more intentions to fight with Supes but Black Noir traced his location and found him: what will he do now? Supes are shooting a film named - #Dawn Of The Seven. Homelander is doing what Stormfront told him to do.",
-        "rating": {
-          "aggregateRating": 8.3,
-          "voteCount": 16851
+        "Season": "2",
+        "EpisodeNumber": 5,
+        "RuntimeSeconds": 3600,
+        "Plot": "Butcher has no more intentions to fight with Supes but Black Noir traced his location and found him: what will he do now? Supes are shooting a film named - #Dawn Of The Seven. Homelander is doing what Stormfront told him to do.",
+        "Rating": {
+          "AggregateRating": 8.3,
+          "VoteCount": 16851
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 9,
-          "day": 18
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 9,
+          "Day": 18
         }
       },
       {
-        "id": "tt11997262",
-        "title": "The Bloody Doors Off",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZWQ5M2FlOGYtYzk3Yi00MGZmLWIxNWEtZDU0OGVhODNmYzQ0XkEyXkFqcGc@._V1_.jpg",
-          "width": 1688,
-          "height": 1124
+        "ID": "tt11997262",
+        "Title": "The Bloody Doors Off",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZWQ5M2FlOGYtYzk3Yi00MGZmLWIxNWEtZDU0OGVhODNmYzQ0XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1688,
+          "Height": 1124
         },
-        "season": "2",
-        "episodeNumber": 6,
-        "runtimeSeconds": 3900,
-        "plot": "When The Boys and Starlight follow a lead to Vought's mysterious Sage Grove Center, they find one of Vought's darkest secrets - and someone even darker from their past. Meanwhile Homelander and Stormfront's relationship deepens.",
-        "rating": {
-          "aggregateRating": 8.9,
-          "voteCount": 18600
+        "Season": "2",
+        "EpisodeNumber": 6,
+        "RuntimeSeconds": 3900,
+        "Plot": "When The Boys and Starlight follow a lead to Vought's mysterious Sage Grove Center, they find one of Vought's darkest secrets - and someone even darker from their past. Meanwhile Homelander and Stormfront's relationship deepens.",
+        "Rating": {
+          "AggregateRating": 8.9,
+          "VoteCount": 18600
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 9,
-          "day": 25
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 9,
+          "Day": 25
         }
       },
       {
-        "id": "tt11997264",
-        "title": "Butcher, Baker, Candlestick Maker",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTkyNDM1YjItNmU2MS00ZGMzLWIxMDAtMTM2ZjQ2OTE3ZDY0XkEyXkFqcGc@._V1_.jpg",
-          "width": 1440,
-          "height": 1440
+        "ID": "tt11997264",
+        "Title": "Butcher, Baker, Candlestick Maker",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTkyNDM1YjItNmU2MS00ZGMzLWIxMDAtMTM2ZjQ2OTE3ZDY0XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1440,
+          "Height": 1440
         },
-        "season": "2",
-        "episodeNumber": 7,
-        "runtimeSeconds": 3240,
-        "plot": "To help Victoria Neuman make a case against Vought, Mallory and The Boys look to an unlikely source for answers. Hughie gets terrifying news about Starlight. Meanwhile, Homelander and Stormfront further their master plan for Compound V.",
-        "rating": {
-          "aggregateRating": 9,
-          "voteCount": 19177
+        "Season": "2",
+        "EpisodeNumber": 7,
+        "RuntimeSeconds": 3240,
+        "Plot": "To help Victoria Neuman make a case against Vought, Mallory and The Boys look to an unlikely source for answers. Hughie gets terrifying news about Starlight. Meanwhile, Homelander and Stormfront further their master plan for Compound V.",
+        "Rating": {
+          "AggregateRating": 9,
+          "VoteCount": 19177
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 10,
-          "day": 2
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 10,
+          "Day": 2
         }
       },
       {
-        "id": "tt12187284",
-        "title": "What I Know",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZDMyZDU2ZWQtY2RiYy00ZjFlLThlNWEtOGQ3ODBlYjI2OTdjXkEyXkFqcGc@._V1_.jpg",
-          "width": 1399,
-          "height": 796
+        "ID": "tt12187284",
+        "Title": "What I Know",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZDMyZDU2ZWQtY2RiYy00ZjFlLThlNWEtOGQ3ODBlYjI2OTdjXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1399,
+          "Height": 796
         },
-        "season": "2",
-        "episodeNumber": 8,
-        "runtimeSeconds": 4020,
-        "plot": "Becca shows up on Butcher's doorstep and begs for his help. The Boys agree to back Butcher, and together with Starlight, they finally face off against Homelander and Stormfront. But things go very bad, very fast.",
-        "rating": {
-          "aggregateRating": 9.4,
-          "voteCount": 26558
+        "Season": "2",
+        "EpisodeNumber": 8,
+        "RuntimeSeconds": 4020,
+        "Plot": "Becca shows up on Butcher's doorstep and begs for his help. The Boys agree to back Butcher, and together with Starlight, they finally face off against Homelander and Stormfront. But things go very bad, very fast.",
+        "Rating": {
+          "AggregateRating": 9.4,
+          "VoteCount": 26558
         },
-        "releaseDate": {
-          "year": 2020,
-          "month": 10,
-          "day": 9
+        "ReleaseDate": {
+          "Year": 2020,
+          "Month": 10,
+          "Day": 9
         }
       },
       {
-        "id": "tt12312450",
-        "title": "Payback",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTZhODEyZmMtMGJhNi00ODAzLTg4MTEtYjEzMmI5MGQ1MDc1XkEyXkFqcGc@._V1_.jpg",
-          "width": 1920,
-          "height": 1080
+        "ID": "tt12312450",
+        "Title": "Payback",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTZhODEyZmMtMGJhNi00ODAzLTg4MTEtYjEzMmI5MGQ1MDc1XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1920,
+          "Height": 1080
         },
-        "season": "3",
-        "episodeNumber": 1,
-        "runtimeSeconds": 3660,
-        "plot": "One year following Stormfront's public controversy, Butcher and the Boys now work as contractors for Neuman's Bureau of Superhero Affairs in order to apprehend problematic Supes, with Hughie acting as their liaison.",
-        "rating": {
-          "aggregateRating": 8.3,
-          "voteCount": 18949
+        "Season": "3",
+        "EpisodeNumber": 1,
+        "RuntimeSeconds": 3660,
+        "Plot": "One year following Stormfront's public controversy, Butcher and the Boys now work as contractors for Neuman's Bureau of Superhero Affairs in order to apprehend problematic Supes, with Hughie acting as their liaison.",
+        "Rating": {
+          "AggregateRating": 8.3,
+          "VoteCount": 18949
         },
-        "releaseDate": {
-          "year": 2022,
-          "month": 6,
-          "day": 3
+        "ReleaseDate": {
+          "Year": 2022,
+          "Month": 6,
+          "Day": 3
         }
       },
       {
-        "id": "tt13609680",
-        "title": "The Only Man in the Sky",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjI1YzRlMGQtNGE2MC00ZjUxLWI1YjItY2U2MmExNGZiNTI2XkEyXkFqcGc@._V1_.jpg",
-          "width": 3000,
-          "height": 2000
+        "ID": "tt13609680",
+        "Title": "The Only Man in the Sky",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjI1YzRlMGQtNGE2MC00ZjUxLWI1YjItY2U2MmExNGZiNTI2XkEyXkFqcGc@._V1_.jpg",
+          "Width": 3000,
+          "Height": 2000
         },
-        "season": "3",
-        "episodeNumber": 2,
-        "runtimeSeconds": 3600,
-        "plot": "Homelander, America's greatest Supe. Defending our shores from sea to shining sea. Today, America honors him on his birthday. Vought Shopping Network is celebrating by offering an exclusive Homelander Limited Birthday Edition Gold Coin.",
-        "rating": {
-          "aggregateRating": 8.6,
-          "voteCount": 18788
+        "Season": "3",
+        "EpisodeNumber": 2,
+        "RuntimeSeconds": 3600,
+        "Plot": "Homelander, America's greatest Supe. Defending our shores from sea to shining sea. Today, America honors him on his birthday. Vought Shopping Network is celebrating by offering an exclusive Homelander Limited Birthday Edition Gold Coin.",
+        "Rating": {
+          "AggregateRating": 8.6,
+          "VoteCount": 18788
         },
-        "releaseDate": {
-          "year": 2022,
-          "month": 6,
-          "day": 3
+        "ReleaseDate": {
+          "Year": 2022,
+          "Month": 6,
+          "Day": 3
         }
       },
       {
-        "id": "tt13707622",
-        "title": "Barbary Coast",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BY2M4MzA2N2EtNTYwMC00N2Y1LWEzNzktYjQyYjE5YTM5MjA3XkEyXkFqcGc@._V1_.jpg",
-          "width": 2398,
-          "height": 1196
+        "ID": "tt13707622",
+        "Title": "Barbary Coast",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BY2M4MzA2N2EtNTYwMC00N2Y1LWEzNzktYjQyYjE5YTM5MjA3XkEyXkFqcGc@._V1_.jpg",
+          "Width": 2398,
+          "Height": 1196
         },
-        "season": "3",
-        "episodeNumber": 3,
-        "runtimeSeconds": 3660,
-        "plot": "Tonight at 9/8C on Vought Plus, it's the season finale of #AmericanHero. Three contestants remain, but only TWO will join #TheSeven. Will Starlight choose her old flame Supersonic? Or will someone else be moving into the Seven Tower?",
-        "rating": {
-          "aggregateRating": 8.2,
-          "voteCount": 17505
+        "Season": "3",
+        "EpisodeNumber": 3,
+        "RuntimeSeconds": 3660,
+        "Plot": "Tonight at 9/8C on Vought Plus, it's the season finale of #AmericanHero. Three contestants remain, but only TWO will join #TheSeven. Will Starlight choose her old flame Supersonic? Or will someone else be moving into the Seven Tower?",
+        "Rating": {
+          "AggregateRating": 8.2,
+          "VoteCount": 17505
         },
-        "releaseDate": {
-          "year": 2022,
-          "month": 6,
-          "day": 3
+        "ReleaseDate": {
+          "Year": 2022,
+          "Month": 6,
+          "Day": 3
         }
       },
       {
-        "id": "tt14048850",
-        "title": "Glorious Five Year Plan",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BN2U1MTM2MDUtZjEwYy00M2IzLTgyNzYtZjQzODFiYzFiZWU3XkEyXkFqcGc@._V1_.jpg",
-          "width": 1007,
-          "height": 658
+        "ID": "tt14048850",
+        "Title": "Glorious Five Year Plan",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BN2U1MTM2MDUtZjEwYy00M2IzLTgyNzYtZjQzODFiYzFiZWU3XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1007,
+          "Height": 658
         },
-        "season": "3",
-        "episodeNumber": 4,
-        "runtimeSeconds": 3660,
-        "plot": "The Boys search for a mysterious weapon in Russia while things are brewing behind the scenes at Vought. Plenty of trouble, gore and twists to foresee.",
-        "rating": {
-          "aggregateRating": 8.9,
-          "voteCount": 19697
+        "Season": "3",
+        "EpisodeNumber": 4,
+        "RuntimeSeconds": 3660,
+        "Plot": "The Boys search for a mysterious weapon in Russia while things are brewing behind the scenes at Vought. Plenty of trouble, gore and twists to foresee.",
+        "Rating": {
+          "AggregateRating": 8.9,
+          "VoteCount": 19697
         },
-        "releaseDate": {
-          "year": 2022,
-          "month": 6,
-          "day": 10
+        "ReleaseDate": {
+          "Year": 2022,
+          "Month": 6,
+          "Day": 10
         }
       }
-    ]
+    ],
+    "AddedAt": null,
+    "UpdatedAt": null
   },
   {
-    "id": "tt0903747",
-    "type": "tvSeries",
-    "primaryTitle": "Breaking Bad",
-    "primaryImage": {
-      "url": "https://m.media-amazon.com/images/M/MV5BMzU5ZGYzNmQtMTdhYy00OGRiLTg0NmQtYjVjNzliZTg1ZGE4XkEyXkFqcGc@._V1_.jpg",
-      "width": 2000,
-      "height": 3000
+    "ID": "tt0903747",
+    "Type": "tvSeries",
+    "PrimaryTitle": "Breaking Bad",
+    "PrimaryImage": {
+      "URL": "https://m.media-amazon.com/images/M/MV5BMzU5ZGYzNmQtMTdhYy00OGRiLTg0NmQtYjVjNzliZTg1ZGE4XkEyXkFqcGc@._V1_.jpg",
+      "Width": 2000,
+      "Height": 3000
     },
-    "startYear": 2008,
-    "runtimeSeconds": 2880,
-    "genres": [
+    "StartYear": 2008,
+    "RuntimeSeconds": 2880,
+    "Genres": [
       "Crime",
       "Drama",
       "Thriller"
     ],
-    "rating": {
-      "aggregateRating": 9.5,
-      "voteCount": 2465378
+    "Rating": {
+      "AggregateRating": 9.5,
+      "VoteCount": 2465378
     },
-    "plot": "A chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine with a former student to secure his family's future.",
-    "directors": [
+    "Metacritic": null,
+    "Plot": "A chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine with a former student to secure his family's future.",
+    "Directors": [
       {
-        "id": "nm0533713",
-        "displayName": "Michelle MacLaren",
-        "alternativeNames": [
+        "ID": "nm0533713",
+        "DisplayName": "Michelle MacLaren",
+        "AlternativeNames": [
           "Michelle Maxwell MacLaren",
           "Michelle Maclaren",
           "Michelle McLaren"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BY2MwN2JlNDktYmUwNi00YmQ4LWFhNDctODQ2OWU1NTZmMDM1XkEyXkFqcGc@._V1_.jpg",
-          "width": 1000,
-          "height": 562
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BY2MwN2JlNDktYmUwNi00YmQ4LWFhNDctODQ2OWU1NTZmMDM1XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1000,
+          "Height": 562
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "production_manager"
         ]
       },
       {
-        "id": "nm0002835",
-        "displayName": "Adam Bernstein",
-        "alternativeNames": [
+        "ID": "nm0002835",
+        "DisplayName": "Adam Bernstein",
+        "AlternativeNames": [
           "Adam Berstein",
           "Don Pietra"
         ],
-        "primaryProfessions": [
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0319213",
-        "displayName": "Vince Gilligan",
-        "alternativeNames": [
+        "ID": "nm0319213",
+        "DisplayName": "Vince Gilligan",
+        "AlternativeNames": [
           "Vince Gilligan and the BB Gang"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNTUyNzUxOTAxMV5BMl5BanBnXkFtZTcwNzk0MDM0Nw@@._V1_.jpg",
-          "width": 1351,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNTUyNzUxOTAxMV5BMl5BanBnXkFtZTcwNzk0MDM0Nw@@._V1_.jpg",
+          "Width": 1351,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       }
     ],
-    "writers": [
+    "Writers": [
       {
-        "id": "nm0319213",
-        "displayName": "Vince Gilligan",
-        "alternativeNames": [
+        "ID": "nm0319213",
+        "DisplayName": "Vince Gilligan",
+        "AlternativeNames": [
           "Vince Gilligan and the BB Gang"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNTUyNzUxOTAxMV5BMl5BanBnXkFtZTcwNzk0MDM0Nw@@._V1_.jpg",
-          "width": 1351,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNTUyNzUxOTAxMV5BMl5BanBnXkFtZTcwNzk0MDM0Nw@@._V1_.jpg",
+          "Width": 1351,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0332467",
-        "displayName": "Peter Gould",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNDgyNzQwMjgyMl5BMl5BanBnXkFtZTcwNTkxMzA1OA@@._V1_.jpg",
-          "width": 1369,
-          "height": 2048
+        "ID": "nm0332467",
+        "DisplayName": "Peter Gould",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNDgyNzQwMjgyMl5BMl5BanBnXkFtZTcwNTkxMzA1OA@@._V1_.jpg",
+          "Width": 1369,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "producer",
           "script_department",
           "writer"
         ]
       },
       {
-        "id": "nm2297407",
-        "displayName": "George Mastras",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMGRjMTIyMjUtYTNlNi00ZjQwLWFmNDYtZjQ3ZThjMWJjOGVkXkEyXkFqcGc@._V1_.jpg",
-          "width": 4290,
-          "height": 2850
+        "ID": "nm2297407",
+        "DisplayName": "George Mastras",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMGRjMTIyMjUtYTNlNi00ZjQwLWFmNDYtZjQ3ZThjMWJjOGVkXkEyXkFqcGc@._V1_.jpg",
+          "Width": 4290,
+          "Height": 2850
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       }
     ],
-    "stars": [
+    "Stars": [
       {
-        "id": "nm0186505",
-        "displayName": "Bryan Cranston",
-        "alternativeNames": [
+        "ID": "nm0186505",
+        "DisplayName": "Bryan Cranston",
+        "AlternativeNames": [
           "Brian Cranston",
           "Lee Stone",
           "Phil Williams"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTA2NjEyMTY4MTVeQTJeQWpwZ15BbWU3MDQ5NDAzNDc@._V1_.jpg",
-          "width": 1369,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTA2NjEyMTY4MTVeQTJeQWpwZ15BbWU3MDQ5NDAzNDc@._V1_.jpg",
+          "Width": 1369,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0348152",
-        "displayName": "Anna Gunn",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTU0NTk3MDQ3OV5BMl5BanBnXkFtZTcwNDY3NzQ4Mg@@._V1_.jpg",
-          "width": 280,
-          "height": 400
+        "ID": "nm0348152",
+        "DisplayName": "Anna Gunn",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTU0NTk3MDQ3OV5BMl5BanBnXkFtZTcwNDY3NzQ4Mg@@._V1_.jpg",
+          "Width": 280,
+          "Height": 400
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "soundtrack"
         ]
       },
       {
-        "id": "nm0666739",
-        "displayName": "Aaron Paul",
-        "alternativeNames": [
+        "ID": "nm0666739",
+        "DisplayName": "Aaron Paul",
+        "AlternativeNames": [
           "Aaron Poul",
           "Aaron Sturtevant"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTY1OTY5NjI5NV5BMl5BanBnXkFtZTcwODA4MjM0OA@@._V1_.jpg",
-          "width": 681,
-          "height": 1024
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTY1OTY5NjI5NV5BMl5BanBnXkFtZTcwODA4MjM0OA@@._V1_.jpg",
+          "Width": 681,
+          "Height": 1024
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "miscellaneous",
           "producer"
         ]
       },
       {
-        "id": "nm1336827",
-        "displayName": "Betsy Brandt",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTU2OTQ3MzcxMV5BMl5BanBnXkFtZTcwMTk2MTk3Mw@@._V1_.jpg",
-          "width": 1354,
-          "height": 2048
+        "ID": "nm1336827",
+        "DisplayName": "Betsy Brandt",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTU2OTQ3MzcxMV5BMl5BanBnXkFtZTcwMTk2MTk3Mw@@._V1_.jpg",
+          "Width": 1354,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "producer",
           "soundtrack"
         ]
       }
     ],
-    "originCountries": [
+    "OriginCountries": [
       {
-        "code": "US",
-        "name": "United States"
+        "Code": "US",
+        "Name": "United States"
       }
     ],
-    "spokenLanguages": [
+    "SpokenLanguages": [
       {
-        "code": "eng",
-        "name": "English"
+        "Code": "eng",
+        "Name": "English"
       },
       {
-        "code": "spa",
-        "name": "Spanish"
+        "Code": "spa",
+        "Name": "Spanish"
       }
     ],
-    "interests": [
+    "Interests": [
       {
-        "id": "in0000035",
-        "name": "Dark Comedy",
-        "isSubgenre": true
+        "ID": "in0000035",
+        "Name": "Dark Comedy",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000052",
-        "name": "Crime"
+        "ID": "in0000052",
+        "Name": "Crime",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000053",
-        "name": "Drug Crime",
-        "isSubgenre": true
+        "ID": "in0000053",
+        "Name": "Drug Crime",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000076",
-        "name": "Drama"
+        "ID": "in0000076",
+        "Name": "Drama",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000077",
-        "name": "Epic",
-        "isSubgenre": true
+        "ID": "in0000077",
+        "Name": "Epic",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000086",
-        "name": "Psychological Drama",
-        "isSubgenre": true
+        "ID": "in0000086",
+        "Name": "Psychological Drama",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000090",
-        "name": "Tragedy",
-        "isSubgenre": true
+        "ID": "in0000090",
+        "Name": "Tragedy",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000182",
-        "name": "Psychological Thriller",
-        "isSubgenre": true
+        "ID": "in0000182",
+        "Name": "Psychological Thriller",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000186",
-        "name": "Thriller"
+        "ID": "in0000186",
+        "Name": "Thriller",
+        "IsSubgenre": false
       }
     ],
-    "seasons": [
+    "Seasons": [
       {
-        "season": "1",
-        "episodeCount": 7
+        "Season": "1",
+        "EpisodeCount": 7
       },
       {
-        "season": "2",
-        "episodeCount": 13
+        "Season": "2",
+        "EpisodeCount": 13
       },
       {
-        "season": "3",
-        "episodeCount": 13
+        "Season": "3",
+        "EpisodeCount": 13
       },
       {
-        "season": "4",
-        "episodeCount": 13
+        "Season": "4",
+        "EpisodeCount": 13
       },
       {
-        "season": "5",
-        "episodeCount": 16
+        "Season": "5",
+        "EpisodeCount": 16
       }
     ],
-    "episodes": [
+    "Episodes": [
       {
-        "id": "tt0959621",
-        "title": "Pilot",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZjAzMWM4NTQtMjVjNi00YjcyLTk2ZmQtNWQ1ZTQ0ZDRhY2Q1XkEyXkFqcGc@._V1_.jpg",
-          "width": 1280,
-          "height": 720
+        "ID": "tt0959621",
+        "Title": "Pilot",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZjAzMWM4NTQtMjVjNi00YjcyLTk2ZmQtNWQ1ZTQ0ZDRhY2Q1XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1280,
+          "Height": 720
         },
-        "season": "1",
-        "episodeNumber": 1,
-        "runtimeSeconds": 3480,
-        "plot": "Facing a life-altering diagnosis, chemistry teacher Walter White teams with former student Jesse Pinkman to cook meth, hoping to secure his family's future.",
-        "rating": {
-          "aggregateRating": 9.1,
-          "voteCount": 59760
+        "Season": "1",
+        "EpisodeNumber": 1,
+        "RuntimeSeconds": 3480,
+        "Plot": "Facing a life-altering diagnosis, chemistry teacher Walter White teams with former student Jesse Pinkman to cook meth, hoping to secure his family's future.",
+        "Rating": {
+          "AggregateRating": 9.1,
+          "VoteCount": 59760
         },
-        "releaseDate": {
-          "year": 2008,
-          "month": 1,
-          "day": 20
+        "ReleaseDate": {
+          "Year": 2008,
+          "Month": 1,
+          "Day": 20
         }
       },
       {
-        "id": "tt1054724",
-        "title": "Cat's in the Bag...",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNTFlNzk3MTQtYTdjMC00NjIwLWI1ZDItZDQ1MTVjMTljMGRjXkEyXkFqcGc@._V1_.jpg",
-          "width": 940,
-          "height": 705
+        "ID": "tt1054724",
+        "Title": "Cat's in the Bag...",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNTFlNzk3MTQtYTdjMC00NjIwLWI1ZDItZDQ1MTVjMTljMGRjXkEyXkFqcGc@._V1_.jpg",
+          "Width": 940,
+          "Height": 705
         },
-        "season": "1",
-        "episodeNumber": 2,
-        "runtimeSeconds": 2880,
-        "plot": "Walt and Jesse face the messy fallout from their first cook, scrambling to erase evidence and deal with a dangerous loose end as Skyler grows uneasy over Walt's secretive behavior.",
-        "rating": {
-          "aggregateRating": 8.6,
-          "voteCount": 44053
+        "Season": "1",
+        "EpisodeNumber": 2,
+        "RuntimeSeconds": 2880,
+        "Plot": "Walt and Jesse face the messy fallout from their first cook, scrambling to erase evidence and deal with a dangerous loose end as Skyler grows uneasy over Walt's secretive behavior.",
+        "Rating": {
+          "AggregateRating": 8.6,
+          "VoteCount": 44053
         },
-        "releaseDate": {
-          "year": 2008,
-          "month": 1,
-          "day": 27
+        "ReleaseDate": {
+          "Year": 2008,
+          "Month": 1,
+          "Day": 27
         }
       },
       {
-        "id": "tt1054725",
-        "title": "...And the Bag's in the River",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMzUwZGQzZmMtYzgyYS00ZWZjLWI5NzgtZTk4YzNiOGRjOGI3XkEyXkFqcGc@._V1_.jpg",
-          "width": 2000,
-          "height": 1000
+        "ID": "tt1054725",
+        "Title": "...And the Bag's in the River",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMzUwZGQzZmMtYzgyYS00ZWZjLWI5NzgtZTk4YzNiOGRjOGI3XkEyXkFqcGc@._V1_.jpg",
+          "Width": 2000,
+          "Height": 1000
         },
-        "season": "1",
-        "episodeNumber": 3,
-        "runtimeSeconds": 2880,
-        "plot": "With a dangerous captive in Jesse's basement, Walt faces a moral dilemma while scrambling to cover his tracks at home and keep their fledgling operation alive.",
-        "rating": {
-          "aggregateRating": 8.7,
-          "voteCount": 42510
+        "Season": "1",
+        "EpisodeNumber": 3,
+        "RuntimeSeconds": 2880,
+        "Plot": "With a dangerous captive in Jesse's basement, Walt faces a moral dilemma while scrambling to cover his tracks at home and keep their fledgling operation alive.",
+        "Rating": {
+          "AggregateRating": 8.7,
+          "VoteCount": 42510
         },
-        "releaseDate": {
-          "year": 2008,
-          "month": 2,
-          "day": 10
+        "ReleaseDate": {
+          "Year": 2008,
+          "Month": 2,
+          "Day": 10
         }
       },
       {
-        "id": "tt1054726",
-        "title": "Cancer Man",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BYWY0YzlmYmYtZmIxMC00Yjg3LTgzYjgtNWYyMDIxZWVlYzkyXkEyXkFqcGc@._V1_.jpg",
-          "width": 828,
-          "height": 452
+        "ID": "tt1054726",
+        "Title": "Cancer Man",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BYWY0YzlmYmYtZmIxMC00Yjg3LTgzYjgtNWYyMDIxZWVlYzkyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 828,
+          "Height": 452
         },
-        "season": "1",
-        "episodeNumber": 4,
-        "runtimeSeconds": 2880,
-        "plot": "After Walter's cancer diagnosis, a fraught family intervention pushes him to decide about treatment. With money tight, he and Jesse consider their next step in the meth business -- despite the growing risks.",
-        "rating": {
-          "aggregateRating": 8.2,
-          "voteCount": 40666
+        "Season": "1",
+        "EpisodeNumber": 4,
+        "RuntimeSeconds": 2880,
+        "Plot": "After Walter's cancer diagnosis, a fraught family intervention pushes him to decide about treatment. With money tight, he and Jesse consider their next step in the meth business -- despite the growing risks.",
+        "Rating": {
+          "AggregateRating": 8.2,
+          "VoteCount": 40666
         },
-        "releaseDate": {
-          "year": 2008,
-          "month": 2,
-          "day": 17
+        "ReleaseDate": {
+          "Year": 2008,
+          "Month": 2,
+          "Day": 17
         }
       },
       {
-        "id": "tt1054727",
-        "title": "Gray Matter",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZDMxZDE1MjQtMjI0MC00M2Y1LWI5YmMtNDdkZmFmZmVhYWE3XkEyXkFqcGc@._V1_.jpg",
-          "width": 1920,
-          "height": 1080
+        "ID": "tt1054727",
+        "Title": "Gray Matter",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZDMxZDE1MjQtMjI0MC00M2Y1LWI5YmMtNDdkZmFmZmVhYWE3XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1920,
+          "Height": 1080
         },
-        "season": "1",
-        "episodeNumber": 5,
-        "runtimeSeconds": 2880,
-        "plot": "Walt considers how to pay for his cancer treatment after reconnecting with former partners who offer help, while Jesse tries to expand their customer base.",
-        "rating": {
-          "aggregateRating": 8.3,
-          "voteCount": 39911
+        "Season": "1",
+        "EpisodeNumber": 5,
+        "RuntimeSeconds": 2880,
+        "Plot": "Walt considers how to pay for his cancer treatment after reconnecting with former partners who offer help, while Jesse tries to expand their customer base.",
+        "Rating": {
+          "AggregateRating": 8.3,
+          "VoteCount": 39911
         },
-        "releaseDate": {
-          "year": 2008,
-          "month": 2,
-          "day": 24
+        "ReleaseDate": {
+          "Year": 2008,
+          "Month": 2,
+          "Day": 24
         }
       },
       {
-        "id": "tt1054728",
-        "title": "Crazy Handful of Nothin'",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNmVkNjg5ZjEtZGFkYy00MzQzLWE2NGEtNjg5MWQyY2QxMzM2XkEyXkFqcGc@._V1_.jpg",
-          "width": 4368,
-          "height": 2912
+        "ID": "tt1054728",
+        "Title": "Crazy Handful of Nothin'",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNmVkNjg5ZjEtZGFkYy00MzQzLWE2NGEtNjg5MWQyY2QxMzM2XkEyXkFqcGc@._V1_.jpg",
+          "Width": 4368,
+          "Height": 2912
         },
-        "season": "1",
-        "episodeNumber": 6,
-        "runtimeSeconds": 2880,
-        "plot": "Burned by a crooked deal, Walt summons the nerve to confront the underworld and line up a new distributor, while Jesse scrambles to unload their stash and keep their operation under the radar.",
-        "rating": {
-          "aggregateRating": 9.3,
-          "voteCount": 46728
+        "Season": "1",
+        "EpisodeNumber": 6,
+        "RuntimeSeconds": 2880,
+        "Plot": "Burned by a crooked deal, Walt summons the nerve to confront the underworld and line up a new distributor, while Jesse scrambles to unload their stash and keep their operation under the radar.",
+        "Rating": {
+          "AggregateRating": 9.3,
+          "VoteCount": 46728
         },
-        "releaseDate": {
-          "year": 2008,
-          "month": 3,
-          "day": 2
+        "ReleaseDate": {
+          "Year": 2008,
+          "Month": 3,
+          "Day": 2
         }
       },
       {
-        "id": "tt1054729",
-        "title": "A No-Rough-Stuff-Type Deal",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNzM1OTA1NzgxOV5BMl5BanBnXkFtZTgwMjg2MDU5NTM@._V1_.jpg",
-          "width": 2048,
-          "height": 1371
+        "ID": "tt1054729",
+        "Title": "A No-Rough-Stuff-Type Deal",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNzM1OTA1NzgxOV5BMl5BanBnXkFtZTgwMjg2MDU5NTM@._V1_.jpg",
+          "Width": 2048,
+          "Height": 1371
         },
-        "season": "1",
-        "episodeNumber": 7,
-        "runtimeSeconds": 2880,
-        "plot": "Under pressure from a dangerous new customer, Walt and Jesse scramble to expand their meth operation, devising a risky plan to secure supplies as Walt tries to keep his double life from Skyler.",
-        "rating": {
-          "aggregateRating": 8.8,
-          "voteCount": 40877
+        "Season": "1",
+        "EpisodeNumber": 7,
+        "RuntimeSeconds": 2880,
+        "Plot": "Under pressure from a dangerous new customer, Walt and Jesse scramble to expand their meth operation, devising a risky plan to secure supplies as Walt tries to keep his double life from Skyler.",
+        "Rating": {
+          "AggregateRating": 8.8,
+          "VoteCount": 40877
         },
-        "releaseDate": {
-          "year": 2008,
-          "month": 3,
-          "day": 9
+        "ReleaseDate": {
+          "Year": 2008,
+          "Month": 3,
+          "Day": 9
         }
       },
       {
-        "id": "tt1232244",
-        "title": "Seven Thirty-Seven",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BYjFmNTE3ZTItYzdiZi00NTM4LTg2YTctMjkxYzNkNTM5YWEyXkEyXkFqcGc@._V1_.jpg",
-          "width": 750,
-          "height": 417
+        "ID": "tt1232244",
+        "Title": "Seven Thirty-Seven",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BYjFmNTE3ZTItYzdiZi00NTM4LTg2YTctMjkxYzNkNTM5YWEyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 750,
+          "Height": 417
         },
-        "season": "2",
-        "episodeNumber": 1,
-        "runtimeSeconds": 2820,
-        "plot": "Walt and Jesse scramble for a way out after Tuco's unpredictable threats, while Hank tries to mend a family rift and Skyler grows more suspicious of Walt.",
-        "rating": {
-          "aggregateRating": 8.6,
-          "voteCount": 36913
+        "Season": "2",
+        "EpisodeNumber": 1,
+        "RuntimeSeconds": 2820,
+        "Plot": "Walt and Jesse scramble for a way out after Tuco's unpredictable threats, while Hank tries to mend a family rift and Skyler grows more suspicious of Walt.",
+        "Rating": {
+          "AggregateRating": 8.6,
+          "VoteCount": 36913
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 3,
-          "day": 8
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 3,
+          "Day": 8
         }
       },
       {
-        "id": "tt1232249",
-        "title": "Grilled",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMmFiODc0NjgtNmEyYi00YTI5LTk1MDEtZmI3YTQ0MjllZDI0XkEyXkFqcGc@._V1_.jpg",
-          "width": 1920,
-          "height": 1080
+        "ID": "tt1232249",
+        "Title": "Grilled",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMmFiODc0NjgtNmEyYi00YTI5LTk1MDEtZmI3YTQ0MjllZDI0XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1920,
+          "Height": 1080
         },
-        "season": "2",
-        "episodeNumber": 2,
-        "runtimeSeconds": 2880,
-        "plot": "Held captive by a volatile drug dealer in a remote desert hideout, Walt and Jesse plot their escape while Hank investigates Jesse's disappearance and follows a lead that brings him dangerously close.",
-        "rating": {
-          "aggregateRating": 9.3,
-          "voteCount": 42124
+        "Season": "2",
+        "EpisodeNumber": 2,
+        "RuntimeSeconds": 2880,
+        "Plot": "Held captive by a volatile drug dealer in a remote desert hideout, Walt and Jesse plot their escape while Hank investigates Jesse's disappearance and follows a lead that brings him dangerously close.",
+        "Rating": {
+          "AggregateRating": 9.3,
+          "VoteCount": 42124
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 3,
-          "day": 15
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 3,
+          "Day": 15
         }
       },
       {
-        "id": "tt1232250",
-        "title": "Bit by a Dead Bee",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNzZmZjE4ZjgtZTI5Zi00YjU4LWI5Y2EtZTBlN2ViMDg1OTg0XkEyXkFqcGc@._V1_.jpg",
-          "width": 750,
-          "height": 468
+        "ID": "tt1232250",
+        "Title": "Bit by a Dead Bee",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNzZmZjE4ZjgtZTI5Zi00YjU4LWI5Y2EtZTBlN2ViMDg1OTg0XkEyXkFqcGc@._V1_.jpg",
+          "Width": 750,
+          "Height": 468
         },
-        "season": "2",
-        "episodeNumber": 3,
-        "runtimeSeconds": 2820,
-        "plot": "After vanishing for days, Walt comes home with a hastily built cover story. With Skyler demanding answers and Hank investigating, Walt and Jesse scramble to erase evidence and keep their secret business hidden.",
-        "rating": {
-          "aggregateRating": 8.3,
-          "voteCount": 35399
+        "Season": "2",
+        "EpisodeNumber": 3,
+        "RuntimeSeconds": 2820,
+        "Plot": "After vanishing for days, Walt comes home with a hastily built cover story. With Skyler demanding answers and Hank investigating, Walt and Jesse scramble to erase evidence and keep their secret business hidden.",
+        "Rating": {
+          "AggregateRating": 8.3,
+          "VoteCount": 35399
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 3,
-          "day": 22
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 3,
+          "Day": 22
         }
       },
       {
-        "id": "tt1232251",
-        "title": "Down",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMGNhOWNlNWItYzIwZi00YmE1LTkyODEtYTk3YjMzNGI1ODA2XkEyXkFqcGc@._V1_.jpg",
-          "width": 1366,
-          "height": 768
+        "ID": "tt1232251",
+        "Title": "Down",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMGNhOWNlNWItYzIwZi00YmE1LTkyODEtYTk3YjMzNGI1ODA2XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1366,
+          "Height": 768
         },
-        "season": "2",
-        "episodeNumber": 4,
-        "runtimeSeconds": 2820,
-        "plot": "Walt juggles a crumbling home life and a dangerous secret as Skyler withdraws; Jesse loses his footing, and the pair's uneasy alliance is tested.",
-        "rating": {
-          "aggregateRating": 8.2,
-          "voteCount": 35440
+        "Season": "2",
+        "EpisodeNumber": 4,
+        "RuntimeSeconds": 2820,
+        "Plot": "Walt juggles a crumbling home life and a dangerous secret as Skyler withdraws; Jesse loses his footing, and the pair's uneasy alliance is tested.",
+        "Rating": {
+          "AggregateRating": 8.2,
+          "VoteCount": 35440
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 3,
-          "day": 29
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 3,
+          "Day": 29
         }
       },
       {
-        "id": "tt1232252",
-        "title": "Breakage",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjIxNTIzMDAwN15BMl5BanBnXkFtZTgwODc2MDU5NTM@._V1_.jpg",
-          "width": 2048,
-          "height": 1360
+        "ID": "tt1232252",
+        "Title": "Breakage",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjIxNTIzMDAwN15BMl5BanBnXkFtZTgwODc2MDU5NTM@._V1_.jpg",
+          "Width": 2048,
+          "Height": 1360
         },
-        "season": "2",
-        "episodeNumber": 5,
-        "runtimeSeconds": 2820,
-        "plot": "As their operation expands, Walt and Jesse face the cost of \"breakage\" when a stash vanishes. Hank wrestles with the aftermath of a recent case, while Skyler's trust in Walt continues to fray.",
-        "rating": {
-          "aggregateRating": 8.2,
-          "voteCount": 34602
+        "Season": "2",
+        "EpisodeNumber": 5,
+        "RuntimeSeconds": 2820,
+        "Plot": "As their operation expands, Walt and Jesse face the cost of \"breakage\" when a stash vanishes. Hank wrestles with the aftermath of a recent case, while Skyler's trust in Walt continues to fray.",
+        "Rating": {
+          "AggregateRating": 8.2,
+          "VoteCount": 34602
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 4,
-          "day": 5
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 4,
+          "Day": 5
         }
       },
       {
-        "id": "tt1232253",
-        "title": "Peekaboo",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTQ4NjIyODA5MV5BMl5BanBnXkFtZTcwNzE2NTc0Mg@@._V1_.jpg",
-          "width": 2048,
-          "height": 1365
+        "ID": "tt1232253",
+        "Title": "Peekaboo",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTQ4NjIyODA5MV5BMl5BanBnXkFtZTcwNzE2NTc0Mg@@._V1_.jpg",
+          "Width": 2048,
+          "Height": 1365
         },
-        "season": "2",
-        "episodeNumber": 6,
-        "runtimeSeconds": 2820,
-        "plot": "Jesse tracks down the couple who robbed one of his dealers and finds a neglected child in their chaotic home, while Walt strains to keep his double life intact.",
-        "rating": {
-          "aggregateRating": 8.8,
-          "voteCount": 37646
+        "Season": "2",
+        "EpisodeNumber": 6,
+        "RuntimeSeconds": 2820,
+        "Plot": "Jesse tracks down the couple who robbed one of his dealers and finds a neglected child in their chaotic home, while Walt strains to keep his double life intact.",
+        "Rating": {
+          "AggregateRating": 8.8,
+          "VoteCount": 37646
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 4,
-          "day": 12
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 4,
+          "Day": 12
         }
       },
       {
-        "id": "tt1232254",
-        "title": "Negro y Azul",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTI3YTExMDQtMjg1Ni00YTE1LWJhODQtNTkwMDY0NTQ2N2QyXkEyXkFqcGc@._V1_.jpg",
-          "width": 1920,
-          "height": 1080
+        "ID": "tt1232254",
+        "Title": "Negro y Azul",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTI3YTExMDQtMjg1Ni00YTE1LWJhODQtNTkwMDY0NTQ2N2QyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1920,
+          "Height": 1080
         },
-        "season": "2",
-        "episodeNumber": 7,
-        "runtimeSeconds": 2820,
-        "plot": "As Heisenberg's legend grows, Walt pushes expansion while Jesse steps into leadership. Meanwhile, Hank's El Paso assignment tests his nerve at the border.",
-        "rating": {
-          "aggregateRating": 8.6,
-          "voteCount": 34822
+        "Season": "2",
+        "EpisodeNumber": 7,
+        "RuntimeSeconds": 2820,
+        "Plot": "As Heisenberg's legend grows, Walt pushes expansion while Jesse steps into leadership. Meanwhile, Hank's El Paso assignment tests his nerve at the border.",
+        "Rating": {
+          "AggregateRating": 8.6,
+          "VoteCount": 34822
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 4,
-          "day": 19
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 4,
+          "Day": 19
         }
       },
       {
-        "id": "tt1232255",
-        "title": "Better Call Saul",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZmI4M2IyMjQtNjE3OC00NzY2LTkxMzItZjIxYmM0NTY0ZDQyXkEyXkFqcGc@._V1_.jpg",
-          "width": 760,
-          "height": 535
+        "ID": "tt1232255",
+        "Title": "Better Call Saul",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZmI4M2IyMjQtNjE3OC00NzY2LTkxMzItZjIxYmM0NTY0ZDQyXkEyXkFqcGc@._V1_.jpg",
+          "Width": 760,
+          "Height": 535
         },
-        "season": "2",
-        "episodeNumber": 8,
-        "runtimeSeconds": 2820,
-        "plot": "A street bust puts their operation at risk, sending Walt and Jesse to a flashy criminal lawyer with unorthodox methods.",
-        "rating": {
-          "aggregateRating": 9.3,
-          "voteCount": 41131
+        "Season": "2",
+        "EpisodeNumber": 8,
+        "RuntimeSeconds": 2820,
+        "Plot": "A street bust puts their operation at risk, sending Walt and Jesse to a flashy criminal lawyer with unorthodox methods.",
+        "Rating": {
+          "AggregateRating": 9.3,
+          "VoteCount": 41131
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 4,
-          "day": 26
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 4,
+          "Day": 26
         }
       },
       {
-        "id": "tt1232256",
-        "title": "4 Days Out",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTk1MTI3NjY1Ml5BMl5BanBnXkFtZTgwMTk2MDU5NTM@._V1_.jpg",
-          "width": 2048,
-          "height": 1362
+        "ID": "tt1232256",
+        "Title": "4 Days Out",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTk1MTI3NjY1Ml5BMl5BanBnXkFtZTgwMTk2MDU5NTM@._V1_.jpg",
+          "Width": 2048,
+          "Height": 1362
         },
-        "season": "2",
-        "episodeNumber": 9,
-        "runtimeSeconds": 2820,
-        "plot": "Walter and Jesse head into the desert for a marathon cook, but mishaps turn the trip into a test of ingenuity -- and their partnership -- as time and supplies run short.",
-        "rating": {
-          "aggregateRating": 9.2,
-          "voteCount": 39242
+        "Season": "2",
+        "EpisodeNumber": 9,
+        "RuntimeSeconds": 2820,
+        "Plot": "Walter and Jesse head into the desert for a marathon cook, but mishaps turn the trip into a test of ingenuity -- and their partnership -- as time and supplies run short.",
+        "Rating": {
+          "AggregateRating": 9.2,
+          "VoteCount": 39242
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 5,
-          "day": 3
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 5,
+          "Day": 3
         }
       },
       {
-        "id": "tt1232245",
-        "title": "Over",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BYjc1ZWRjODMtYmY4OC00ZmVhLWExMDctNTVjZjc0NDk4ODk0XkEyXkFqcGc@._V1_.jpg",
-          "width": 1136,
-          "height": 640
+        "ID": "tt1232245",
+        "Title": "Over",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BYjc1ZWRjODMtYmY4OC00ZmVhLWExMDctNTVjZjc0NDk4ODk0XkEyXkFqcGc@._V1_.jpg",
+          "Width": 1136,
+          "Height": 640
         },
-        "season": "2",
-        "episodeNumber": 10,
-        "runtimeSeconds": 2820,
-        "plot": "After a personal wake-up call, Walt throws himself into home repairs and family life, but old habits and a brush with competition pull him back; Jesse's budding relationship faces boundaries and secrets.",
-        "rating": {
-          "aggregateRating": 8.4,
-          "voteCount": 33902
+        "Season": "2",
+        "EpisodeNumber": 10,
+        "RuntimeSeconds": 2820,
+        "Plot": "After a personal wake-up call, Walt throws himself into home repairs and family life, but old habits and a brush with competition pull him back; Jesse's budding relationship faces boundaries and secrets.",
+        "Rating": {
+          "AggregateRating": 8.4,
+          "VoteCount": 33902
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 5,
-          "day": 10
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 5,
+          "Day": 10
         }
       },
       {
-        "id": "tt1232246",
-        "title": "Mandala",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTMwNTQ4MTc1NF5BMl5BanBnXkFtZTcwNDg1NDY1Mg@@._V1_.jpg",
-          "width": 600,
-          "height": 399
+        "ID": "tt1232246",
+        "Title": "Mandala",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTMwNTQ4MTc1NF5BMl5BanBnXkFtZTcwNDg1NDY1Mg@@._V1_.jpg",
+          "Width": 600,
+          "Height": 399
         },
-        "season": "2",
-        "episodeNumber": 11,
-        "runtimeSeconds": 2820,
-        "plot": "A shake-up pushes Walt and Jesse to seek a secretive new buyer; a lucrative, time-sensitive offer pits Walt's family responsibilities against the demands of their expanding operation.",
-        "rating": {
-          "aggregateRating": 8.9,
-          "voteCount": 34998
+        "Season": "2",
+        "EpisodeNumber": 11,
+        "RuntimeSeconds": 2820,
+        "Plot": "A shake-up pushes Walt and Jesse to seek a secretive new buyer; a lucrative, time-sensitive offer pits Walt's family responsibilities against the demands of their expanding operation.",
+        "Rating": {
+          "AggregateRating": 8.9,
+          "VoteCount": 34998
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 5,
-          "day": 17
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 5,
+          "Day": 17
         }
       },
       {
-        "id": "tt1232247",
-        "title": "Phoenix",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNTcxNjIxNTM4NV5BMl5BanBnXkFtZTgwODk2MDU5NTM@._V1_.jpg",
-          "width": 2048,
-          "height": 1362
+        "ID": "tt1232247",
+        "Title": "Phoenix",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNTcxNjIxNTM4NV5BMl5BanBnXkFtZTgwODk2MDU5NTM@._V1_.jpg",
+          "Width": 2048,
+          "Height": 1362
         },
-        "season": "2",
-        "episodeNumber": 12,
-        "runtimeSeconds": 2820,
-        "plot": "With a newborn at home, Walt scrambles to hide his cash and keep up appearances, while Jesse's relationship complicates the business, and Saul floats an inventive laundering plan.",
-        "rating": {
-          "aggregateRating": 9.3,
-          "voteCount": 39387
+        "Season": "2",
+        "EpisodeNumber": 12,
+        "RuntimeSeconds": 2820,
+        "Plot": "With a newborn at home, Walt scrambles to hide his cash and keep up appearances, while Jesse's relationship complicates the business, and Saul floats an inventive laundering plan.",
+        "Rating": {
+          "AggregateRating": 9.3,
+          "VoteCount": 39387
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 5,
-          "day": 24
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 5,
+          "Day": 24
         }
       },
       {
-        "id": "tt1232248",
-        "title": "ABQ",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZTlhZjZiY2QtN2NjZi00ODQ4LWIxZmItMTVlMDExZDYwNjVhXkEyXkFqcGc@._V1_.jpg",
-          "width": 1916,
-          "height": 1076
+        "ID": "tt1232248",
+        "Title": "ABQ",
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZTlhZjZiY2QtN2NjZi00ODQ4LWIxZmItMTVlMDExZDYwNjVhXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1916,
+          "Height": 1076
         },
-        "season": "2",
-        "episodeNumber": 13,
-        "runtimeSeconds": 2880,
-        "plot": "As fallout mounts, Walt scrambles to keep his secret and family intact, Jesse spirals, and Skyler pushes for answers -- setting unexpected consequences in motion.",
-        "rating": {
-          "aggregateRating": 9.3,
-          "voteCount": 38671
+        "Season": "2",
+        "EpisodeNumber": 13,
+        "RuntimeSeconds": 2880,
+        "Plot": "As fallout mounts, Walt scrambles to keep his secret and family intact, Jesse spirals, and Skyler pushes for answers -- setting unexpected consequences in motion.",
+        "Rating": {
+          "AggregateRating": 9.3,
+          "VoteCount": 38671
         },
-        "releaseDate": {
-          "year": 2009,
-          "month": 5,
-          "day": 31
+        "ReleaseDate": {
+          "Year": 2009,
+          "Month": 5,
+          "Day": 31
         }
       }
-    ]
+    ],
+    "AddedAt": null,
+    "UpdatedAt": null
   }
 ]

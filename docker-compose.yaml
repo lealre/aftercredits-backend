@@ -1,27 +1,7 @@
 
 services:
-  # Mongo: legacy — only needed to restore old mongo backups for the
-  # one-time migration (removed in the cleanup PR).
-  mongo:
-    image: mongo:7
-    container_name: aftercredits-mongo
-    restart: unless-stopped
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-root}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-example}
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD-SHELL", "mongosh -u \"${MONGO_INITDB_ROOT_USERNAME:-root}\" -p \"${MONGO_INITDB_ROOT_PASSWORD:-example}\" --authenticationDatabase admin --eval 'db.adminCommand(\"ping\")'"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Postgres: the application database (replaces Mongo after the v0.1.0
-  # cutover; matches the postgres:16 the tests use). Apply schema migrations
-  # after `docker compose up -d postgres`:
+  # Postgres: the application database. Matches the postgres:16 the tests use.
+  # Apply schema migrations after `docker compose up -d postgres`:
   #   go run ./cmd/database -migrate
   postgres:
     image: postgres:16
@@ -42,8 +22,5 @@ services:
       retries: 5
 
 volumes:
-  mongo_data:
-    name: aftercredits-mongo-data
-    external: true
   postgres_data:
     name: aftercredits-postgres-data

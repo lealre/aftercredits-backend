@@ -34,7 +34,7 @@ func insertCommentSeasons(ctx context.Context, qtx *database.Queries, commentId 
 
 // assembleCommentRows builds a models.Comment for each row, fetching all of
 // their comment_seasons in a single batched query and grouping the results
-// in Go, matching mongodb's read-many behavior (and its return-empty,
+// in Go, matching the store's read-many behavior (and its return-empty,
 // never-nil-slice convention).
 func (s *Store) assembleCommentRows(ctx context.Context, rows []database.Comment) ([]models.Comment, error) {
 	if len(rows) == 0 {
@@ -64,7 +64,7 @@ func (s *Store) assembleCommentRows(ctx context.Context, rows []database.Comment
 }
 
 // AddComment inserts a new comment row plus its season rows (if any) in a
-// single transaction, mirroring mongodb.AddComment: the id and timestamps
+// single transaction: the id and timestamps
 // are generated here, not taken from the caller-supplied comment.
 func (s *Store) AddComment(ctx context.Context, comment models.Comment) (models.Comment, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -149,7 +149,7 @@ func (s *Store) GetCommentById(ctx context.Context, commentId string, userId str
 }
 
 // UpdateComment replaces the comment row's text plus its whole season set
-// (delete-then-reinsert), mirroring mongodb.UpdateComment's document
+// (delete-then-reinsert)'s document
 // replace semantics for the seasonsComments field.
 func (s *Store) UpdateComment(ctx context.Context, comment models.Comment, userId string) (models.Comment, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -186,7 +186,7 @@ func (s *Store) UpdateComment(ctx context.Context, comment models.Comment, userI
 }
 
 // DeleteComment deletes the comment row owned by userId (comment_seasons
-// rows cascade), mirroring mongodb.DeleteComment: it just reports how many
+// rows cascade): it just reports how many
 // rows were affected, with no not-found error on a 0 count.
 func (s *Store) DeleteComment(ctx context.Context, commentId, userId string) (int64, error) {
 	n, err := s.q.DeleteCommentRow(ctx, database.DeleteCommentRowParams{ID: commentId, UserID: userId})

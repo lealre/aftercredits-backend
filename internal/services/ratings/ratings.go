@@ -107,7 +107,7 @@ func AddRating(db store.Store, ctx context.Context, rating NewRating, userId str
 //	1.5. Creates a new rating OR updates the existing rating in the database
 //
 // Parameters:
-//   - db: MongoDB database connection
+//   - db: the store
 //   - ctx: Context for the operation
 //   - rating: NewRating struct containing titleId, note, and season number
 //   - userId: ID of the user creating the rating
@@ -228,7 +228,7 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 //	1.3. If no rating exists: Creates a new rating with the provided note value
 //
 // Parameters:
-//   - db: MongoDB database connection
+//   - db: the store
 //   - ctx: Context for the operation
 //   - rating: NewRating struct containing titleId and note
 //   - userId: ID of the user creating the rating

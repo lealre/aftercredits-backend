@@ -9,7 +9,7 @@ import (
 )
 
 // Connect builds a pgxpool.Pool from the POSTGRES_* environment variables,
-// mirroring mongodb.Connect's env-driven pattern. Defaults match the
+// following the env-driven pattern. Defaults match the
 // docker-compose postgres service. It pings before returning so a bad URL
 // fails at startup, not on the first query.
 func Connect(ctx context.Context) (*pgxpool.Pool, error) {

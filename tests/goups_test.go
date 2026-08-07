@@ -12,7 +12,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/generics"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
@@ -1919,12 +1919,12 @@ func TestGroupTitlesListOmitsEpisodes(t *testing.T) {
 	})
 
 	rt := 1000
-	seedTitles(t, []mongodb.TitleDb{{
+	seedTitles(t, []models.Title{{
 		ID:           "tt3000010",
 		PrimaryTitle: "Grp Series",
 		Type:         "tvSeries",
-		Seasons:      []mongodb.Seasons{{Season: "1", EpisodeCount: 1}},
-		Episodes:     []mongodb.Episode{{ID: "e1", Title: "P", Season: "1", EpisodeNumber: 1, RuntimeSeconds: &rt}},
+		Seasons:      []models.Seasons{{Season: "1", EpisodeCount: 1}},
+		Episodes:     []models.Episode{{ID: "e1", Title: "P", Season: "1", EpisodeNumber: 1, RuntimeSeconds: &rt}},
 	}})
 
 	group := createGroup(t, groups.CreateGroupRequest{Name: "G"}, token)
