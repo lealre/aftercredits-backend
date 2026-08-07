@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
 const MOVIE_TILES_FIXTURES_PATH = "fixtures/movieTitles.json"
@@ -17,18 +17,11 @@ const TV_SERIES_TILES_FIXTURES_PATH = "fixtures/tvSeriesTitles.json"
 
 func seedTitles(t *testing.T, titles []mongodb.TitleDb) {
 	t.Helper()
-
 	ctx := context.Background()
-	coll := testClient.Database(TEST_DB_NAME).Collection(mongodb.TitlesCollection)
-
-	docs := make([]interface{}, len(titles))
-	for i := range titles {
-		docs[i] = titles[i]
-	}
-
-	_, err := coll.InsertMany(ctx, docs)
-	if err != nil {
-		t.Fatalf("failed to insert seed titles: %v", err)
+	for _, tt := range titles {
+		if err := testStore.AddTitle(ctx, mongodb.TitleDbToModel(tt)); err != nil {
+			t.Fatalf("failed to insert seed title %s: %v", tt.ID, err)
+		}
 	}
 }
 
@@ -74,18 +67,8 @@ func loadTVSeriesTitlesFixture(t *testing.T) []mongodb.TitleDb {
 	return docs
 }
 
-func getTitles(t *testing.T) []mongodb.TitleDb {
-	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.TitlesCollection)
-
-	cursor, err := coll.Find(ctx, bson.M{})
+func getTitles(t *testing.T) []models.Title {
+	titles, _, err := testStore.GetTitlesPage(context.Background(), nil, "", nil, 1000, 1)
 	require.NoError(t, err, "error querying titles from db")
-	defer cursor.Close(ctx)
-
-	var titles []mongodb.TitleDb
-	err = cursor.All(ctx, &titles)
-	require.NoError(t, err, "error decoding titles from db")
-
 	return titles
 }

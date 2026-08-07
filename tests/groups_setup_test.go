@@ -6,24 +6,74 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/lealre/movies-backend/internal/api"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
-func getGroup(t *testing.T, groupId string) mongodb.GroupDb {
+func getGroup(t *testing.T, groupId string) models.Group {
 	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.GroupsCollection)
-	var group mongodb.GroupDb
-	err := coll.FindOne(ctx, bson.M{"_id": groupId}).Decode(&group)
-	require.NoError(t, err, "error queryind a group from db")
 
-	return group
+	row, err := testQueries.GetGroupRowAnyById(ctx, groupId)
+	require.NoError(t, err, "error querying a group from db")
 
+	memberIds, err := testQueries.GetGroupMemberIds(ctx, groupId)
+	require.NoError(t, err)
+
+	titleRows, err := testQueries.GetGroupTitleRows(ctx, groupId)
+	require.NoError(t, err)
+	seasonRows, err := testQueries.GetGroupTitleSeasonRows(ctx, groupId)
+	require.NoError(t, err)
+
+	seasonsByTitle := map[string]models.SeasonsWatched{}
+	for _, s := range seasonRows {
+		if seasonsByTitle[s.TitleID] == nil {
+			seasonsByTitle[s.TitleID] = models.SeasonsWatched{}
+		}
+		seasonsByTitle[s.TitleID][s.Season] = models.SeasonWatchedItem{
+			Watched:   s.Watched,
+			WatchedAt: timestamptzPtr(s.WatchedAt),
+			AddedAt:   s.AddedAt.Time,
+			UpdatedAt: s.UpdatedAt.Time,
+		}
+	}
+
+	titles := models.GroupTitles{}
+	for _, tr := range titleRows {
+		var sw *models.SeasonsWatched
+		if m, ok := seasonsByTitle[tr.TitleID]; ok {
+			sw = &m
+		}
+		titles[tr.TitleID] = models.GroupTitleItem{
+			TitleId:        tr.TitleID,
+			TitleType:      tr.TitleType,
+			SeasonsWatched: sw,
+			Watched:        tr.Watched,
+			AddedAt:        tr.AddedAt.Time,
+			UpdatedAt:      tr.UpdatedAt.Time,
+			WatchedAt:      timestamptzPtr(tr.WatchedAt),
+		}
+	}
+
+	return models.Group{
+		Id: row.ID, Name: row.Name, Description: row.Description, OwnerId: row.OwnerID,
+		Users: memberIds, Titles: titles,
+		CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time,
+		Deleted: row.Deleted, DeletedAt: timestamptzPtr(row.DeletedAt),
+	}
+}
+
+// timestamptzPtr converts a nullable pgtype.Timestamptz to *time.Time.
+func timestamptzPtr(t pgtype.Timestamptz) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	v := t.Time
+	return &v
 }
 
 func createGroup(t *testing.T, newGroup groups.CreateGroupRequest, userToken string) groups.GroupResponse {

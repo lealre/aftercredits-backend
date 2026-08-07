@@ -187,3 +187,45 @@ func (s *Store) GetTitlesPage(
 
 	return titles, total, nil
 }
+
+// ListTitleIds returns every title id, ordered. Not part of store.Store —
+// used by internal tools (cmd/routines).
+func (s *Store) ListTitleIds(ctx context.Context) ([]string, error) {
+	ids, err := s.q.ListTitleIds(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	return ids, nil
+}
+
+// UpdateTitle rewrites a title row — denormalized query columns and the full
+// JSONB metadata — from the given model, preserving the id. Not part of
+// store.Store — used by internal tools (cmd/routines). Returns
+// store.ErrRecordNotFound if the id does not exist.
+func (s *Store) UpdateTitle(ctx context.Context, title models.Title) error {
+	params, err := titleToRow(title)
+	if err != nil {
+		return err
+	}
+	n, err := s.q.UpdateTitle(ctx, database.UpdateTitleParams{
+		ID:              params.ID,
+		PrimaryTitle:    params.PrimaryTitle,
+		Type:            params.Type,
+		StartYear:       params.StartYear,
+		RatingAggregate: params.RatingAggregate,
+		VoteCount:       params.VoteCount,
+		AddedAt:         params.AddedAt,
+		UpdatedAt:       params.UpdatedAt,
+		Metadata:        params.Metadata,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return store.ErrRecordNotFound
+	}
+	return nil
+}

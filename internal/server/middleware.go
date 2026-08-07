@@ -13,7 +13,6 @@ import (
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
-	"github.com/lealre/movies-backend/internal/mongodb"
 	"github.com/lealre/movies-backend/internal/store"
 )
 
@@ -83,7 +82,7 @@ func RequestIdMiddleware(next http.Handler) http.Handler {
 //  AUTHENTICATION MIDDLEWARE
 ////////////////////////////////////////////////////////////////////////////
 
-func AuthMiddleware(tokenSecret string, db *mongodb.DB) func(http.Handler) http.Handler {
+func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 

@@ -109,6 +109,30 @@ func (q *Queries) InsertTitle(ctx context.Context, arg InsertTitleParams) error 
 	return err
 }
 
+const listTitleIds = `-- name: ListTitleIds :many
+SELECT id FROM titles ORDER BY id
+`
+
+func (q *Queries) ListTitleIds(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listTitleIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const titleExists = `-- name: TitleExists :one
 SELECT EXISTS(SELECT 1 FROM titles WHERE id = $1)
 `
@@ -118,4 +142,41 @@ func (q *Queries) TitleExists(ctx context.Context, id string) (bool, error) {
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const updateTitle = `-- name: UpdateTitle :execrows
+UPDATE titles
+SET primary_title = $2, type = $3, start_year = $4, rating_aggregate = $5,
+    vote_count = $6, added_at = $7, updated_at = $8, metadata = $9
+WHERE id = $1
+`
+
+type UpdateTitleParams struct {
+	ID              string
+	PrimaryTitle    string
+	Type            string
+	StartYear       int32
+	RatingAggregate float64
+	VoteCount       int32
+	AddedAt         pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	Metadata        []byte
+}
+
+func (q *Queries) UpdateTitle(ctx context.Context, arg UpdateTitleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateTitle,
+		arg.ID,
+		arg.PrimaryTitle,
+		arg.Type,
+		arg.StartYear,
+		arg.RatingAggregate,
+		arg.VoteCount,
+		arg.AddedAt,
+		arg.UpdatedAt,
+		arg.Metadata,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

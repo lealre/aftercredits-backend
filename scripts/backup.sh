@@ -11,24 +11,24 @@ export $(grep -v '^#' .env | xargs)
 
 BACKUP_DIR="./backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-BACKUP_NAME="mongo_dump_${TIMESTAMP}"
+BACKUP_NAME="pg_dump_${TIMESTAMP}"
 
 mkdir -p "${BACKUP_DIR}"
 
-echo "📦 Starting MongoDB logical backup..."
+echo "📦 Starting Postgres logical backup..."
 
-docker exec aftercredits-mongo mongodump \
-  -u "${MONGO_USER}" \
-  -p "${MONGO_PASSWORD}" \
-  --authenticationDatabase admin \
-  --out "/tmp/${BACKUP_NAME}"
+docker exec aftercredits-postgres pg_dump \
+  -U "${POSTGRES_USER:-aftercredits}" \
+  -d "${POSTGRES_DB:-aftercredits}" \
+  --format=custom \
+  --file "/tmp/${BACKUP_NAME}.dump"
 
-docker cp "aftercredits-mongo:/tmp/${BACKUP_NAME}" "${BACKUP_DIR}/"
+docker cp "aftercredits-postgres:/tmp/${BACKUP_NAME}.dump" "${BACKUP_DIR}/"
 
-docker exec aftercredits-mongo rm -rf "/tmp/${BACKUP_NAME}"
+docker exec aftercredits-postgres rm -f "/tmp/${BACKUP_NAME}.dump"
 
-tar -czf "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" -C "${BACKUP_DIR}" "${BACKUP_NAME}"
-rm -rf "${BACKUP_DIR}/${BACKUP_NAME}"
+tar -czf "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" -C "${BACKUP_DIR}" "${BACKUP_NAME}.dump"
+rm -f "${BACKUP_DIR}/${BACKUP_NAME}.dump"
 
 echo "✅ Backup completed:"
 echo "   ${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"

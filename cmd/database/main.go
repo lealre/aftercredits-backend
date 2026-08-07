@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,60 +11,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
+	"github.com/pressly/goose/v3"
+
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/models"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/postgres"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/lealre/movies-backend/internal/store"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	sqlassets "github.com/lealre/movies-backend/sql"
 )
 
 func main() {
 	_ = godotenv.Load()
 
-	ctx := context.Background()
-	dbClient, err := mongodb.Connect(ctx)
-	if err != nil {
-		log.Fatalf("Failed to connect to MongoDB: %v", err)
-	}
-	defer dbClient.Disconnect(ctx)
-
-	db := mongodb.NewDB(dbClient)
-	database := dbClient.Database(db.GetDatabaseName())
-
-	indexes := flag.Bool("indexes", false, "create indexes in the database if they do not exist")
-	resetIndexes := flag.Bool("reset", false, "Delete the indexes and recreate it")
-	deleteIndexes := flag.Bool("delete", false, "Delete the indexes")
+	migrate := flag.Bool("migrate", false, "apply the embedded goose schema migrations")
 	superuser := flag.Bool("superuser", false, "create a superuser if it does not exist")
-	backfillGroups := flag.Bool("backfill-groups", false, "set deleted=false on groups missing the field (run before -indexes -reset)")
-
 	flag.Parse()
 
+	ctx := context.Background()
+
 	switch {
-	case *backfillGroups:
-		deletedN, descN, err := db.BackfillGroupFields(ctx)
-		if err != nil {
-			log.Fatalf("Failed to backfill groups: %v", err)
+	case *migrate:
+		if err := runMigrations(); err != nil {
+			log.Fatalf("Failed to run migrations: %v", err)
 		}
-		fmt.Printf("✅ Backfilled deleted=false on %d group(s), description=\"\" on %d group(s)\n", deletedN, descN)
-
-	case *indexes:
-		if *deleteIndexes {
-			if err := mongodb.DeleteAllIndexes(ctx, database); err != nil {
-				log.Fatalf("Failed to delete indexes: %v", err)
-			}
-			fmt.Println("✅ All indexes deleted successfully!")
-			return
-		}
-
-		if err := mongodb.CreateAllIndexes(ctx, database, *resetIndexes); err != nil {
-			log.Fatalf("Failed to create indexes: %v", err)
-		}
-		fmt.Println("✅ Indexes command ran successfully!")
+		fmt.Println("✅ Migrations applied successfully!")
 
 	case *superuser:
-		if err := createSuperuser(ctx, db); err != nil {
+		pool, err := postgres.Connect(ctx)
+		if err != nil {
+			log.Fatalf("Failed to connect to Postgres: %v", err)
+		}
+		defer pool.Close()
+		if err := createSuperuser(ctx, postgres.New(pool)); err != nil {
 			log.Fatalf("Failed to create superuser: %v", err)
 		}
 		fmt.Println("✅ Superuser command ran successfully!")
@@ -72,10 +55,25 @@ func main() {
 		fmt.Println("No valid command specified.")
 		flag.Usage()
 	}
-
 }
 
-func createSuperuser(ctx context.Context, db *mongodb.DB) error {
+// runMigrations applies the embedded goose migrations over a pgx-stdlib
+// *sql.DB built from the same POSTGRES_* env postgres.Connect uses.
+func runMigrations() error {
+	db, err := sql.Open("pgx", postgres.URI())
+	if err != nil {
+		return fmt.Errorf("open sql.DB: %w", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(sqlassets.SchemaFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		return fmt.Errorf("set goose dialect: %w", err)
+	}
+	return goose.Up(db, "schema")
+}
+
+func createSuperuser(ctx context.Context, db store.Store) error {
 	username := strings.TrimSpace(os.Getenv("SUPERUSER_USERNAME"))
 	email := strings.TrimSpace(os.Getenv("SUPERUSER_EMAIL"))
 	password := os.Getenv("SUPERUSER_PASSWORD")
@@ -125,7 +123,7 @@ func createSuperuser(ctx context.Context, db *mongodb.DB) error {
 	// Create user with Admin role
 	now := time.Now()
 	userDb := models.User{
-		Id:           primitive.NewObjectID().Hex(),
+		Id:           uuid.NewString(),
 		Username:     username,
 		Email:        email,
 		PasswordHash: passwordHash,

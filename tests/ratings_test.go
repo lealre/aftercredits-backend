@@ -15,7 +15,6 @@ import (
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestGetRatingById(t *testing.T) {
@@ -757,12 +756,10 @@ func TestDeleteRating(t *testing.T) {
 		require.Equal(t, fmt.Sprintf("Rating with id %s deleted successfully", ratingToDelete.Id), respBody.Message)
 
 		// DB assertion: rating should not exist
-		ctx := context.Background()
-		db := testClient.Database(TEST_DB_NAME)
-		coll := db.Collection(mongodb.RatingsCollection)
-		var ratingDb mongodb.RatingDb
-		err := coll.FindOne(ctx, bson.M{"_id": ratingToDelete.Id}).Decode(&ratingDb)
-		require.Error(t, err, "Expected rating to be deleted from database")
+		var n int
+		require.NoError(t, testPool.QueryRow(context.Background(),
+			"SELECT count(*) FROM ratings WHERE id = $1", ratingToDelete.Id).Scan(&n))
+		require.Zero(t, n, "Expected rating to be deleted from database")
 	})
 
 	t.Run("Deleting a rating that does not exist should return 404", func(t *testing.T) {
@@ -811,12 +808,10 @@ func TestDeleteRating(t *testing.T) {
 		require.Equal(t, fmt.Sprintf("Rating with id %s deleted successfully", ratingToDelete.Id), respBody.Message)
 
 		// DB assertion: rating should not exist
-		ctx := context.Background()
-		db := testClient.Database(TEST_DB_NAME)
-		coll := db.Collection(mongodb.RatingsCollection)
-		var ratingDb mongodb.RatingDb
-		err := coll.FindOne(ctx, bson.M{"_id": ratingToDelete.Id}).Decode(&ratingDb)
-		require.Error(t, err, "Expected rating to be deleted from database")
+		var n int
+		require.NoError(t, testPool.QueryRow(context.Background(),
+			"SELECT count(*) FROM ratings WHERE id = $1", ratingToDelete.Id).Scan(&n))
+		require.Zero(t, n, "Expected rating to be deleted from database")
 	})
 }
 
@@ -907,12 +902,10 @@ func TestDeleteRatingSeason(t *testing.T) {
 		require.Equal(t, fmt.Sprintf("Season %d from rating %s deleted successfully", onlySeason, ratingOnlySeason.Id), respBody.Message)
 
 		// DB assertion: rating should not exist
-		ctx := context.Background()
-		db := testClient.Database(TEST_DB_NAME)
-		coll := db.Collection(mongodb.RatingsCollection)
-		var ratingDb mongodb.RatingDb
-		err := coll.FindOne(ctx, bson.M{"_id": ratingOnlySeason.Id}).Decode(&ratingDb)
-		require.Error(t, err, "Expected rating to be deleted from database")
+		var n int
+		require.NoError(t, testPool.QueryRow(context.Background(),
+			"SELECT count(*) FROM ratings WHERE id = $1", ratingOnlySeason.Id).Scan(&n))
+		require.Zero(t, n, "Expected rating to be deleted from database")
 	})
 
 	t.Run("Deleting a season rating with invalid season should return 400", func(t *testing.T) {

@@ -8,12 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lealre/movies-backend/internal/auth"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func addUser(t *testing.T, user users.NewUserRequest) (users.UserResponse, string) {
@@ -63,57 +62,35 @@ func getUserToken(t *testing.T, authUser auth.LoginRequest) string {
 
 // Check if a user exists directly in the database
 func checkUserExists(userId string) (bool, error) {
-	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.UsersCollection)
-	count, err := coll.CountDocuments(ctx, bson.M{"_id": userId})
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return testStore.UserExists(context.Background(), userId)
 }
 
-func addUserAdminInDb(t *testing.T, user users.NewUserRequest) (mongodb.UserDb, string) {
+func addUserAdminInDb(t *testing.T, user users.NewUserRequest) (models.User, string) {
 	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.UsersCollection)
 
-	passordHash, err := auth.HashPassword(user.Password)
+	passwordHash, err := auth.HashPassword(user.Password)
 	require.NoError(t, err)
 
 	now := time.Now()
-	userDb := mongodb.UserDb{
-		Id:           primitive.NewObjectID().Hex(),
+	userDb := models.User{
+		Id:           uuid.NewString(),
 		Name:         user.Name,
 		Username:     user.Username,
 		Email:        user.Email,
-		PasswordHash: passordHash,
-		Role:         mongodb.RoleAdmin,
+		PasswordHash: passwordHash,
+		Role:         models.RoleAdmin,
 		IsActive:     true,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
+	require.NoError(t, testStore.AddUser(ctx, userDb))
 
-	_, err = coll.InsertOne(ctx, userDb)
-	require.NoError(t, err)
-
-	// Get token
-	authUser := auth.LoginRequest{
-		Username: user.Username,
-		Email:    user.Email,
-		Password: user.Password,
-	}
-	token := getUserToken(t, authUser)
-
+	token := getUserToken(t, auth.LoginRequest{Username: user.Username, Email: user.Email, Password: user.Password})
 	return userDb, token
 }
 
-func getUserFromDb(t *testing.T, userId string) mongodb.UserDb {
-	ctx := context.Background()
-	db := testClient.Database(TEST_DB_NAME)
-	coll := db.Collection(mongodb.UsersCollection)
-	var userDb mongodb.UserDb
-	err := coll.FindOne(ctx, bson.M{"_id": userId}).Decode(&userDb)
+func getUserFromDb(t *testing.T, userId string) models.User {
+	u, err := testStore.GetUserById(context.Background(), userId)
 	require.NoError(t, err, "error querying a user from db")
-	return userDb
+	return u
 }

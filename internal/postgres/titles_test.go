@@ -363,3 +363,53 @@ func TestStore_GetTitlesPage(t *testing.T) {
 		require.Len(t, got, 2)
 	})
 }
+
+func TestListTitleIds(t *testing.T) {
+	resetDB(t)
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	ids, err := st.ListTitleIds(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+
+	require.NoError(t, st.AddTitle(ctx, models.Title{ID: "tt0000002", PrimaryTitle: "B"}))
+	require.NoError(t, st.AddTitle(ctx, models.Title{ID: "tt0000001", PrimaryTitle: "A"}))
+
+	ids, err = st.ListTitleIds(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"tt0000001", "tt0000002"}, ids)
+}
+
+func TestUpdateTitle(t *testing.T) {
+	resetDB(t)
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	orig := models.Title{ID: "tt0000001", Type: "movie", PrimaryTitle: "Before",
+		Rating: models.Rating{AggregateRating: 7.0, VoteCount: 10}}
+	require.NoError(t, st.AddTitle(ctx, orig))
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	updated := orig
+	updated.PrimaryTitle = "After"
+	updated.Rating = models.Rating{AggregateRating: 8.5, VoteCount: 999}
+	updated.UpdatedAt = &now
+
+	require.NoError(t, st.UpdateTitle(ctx, updated))
+
+	got, err := st.GetTitleById(ctx, "tt0000001")
+	require.NoError(t, err)
+	require.Equal(t, "After", got.PrimaryTitle)
+	require.Equal(t, 8.5, got.Rating.AggregateRating)
+	require.NotNil(t, got.UpdatedAt)
+	require.True(t, got.UpdatedAt.Equal(now))
+
+	// The denormalized query column must be updated too (sort path).
+	var col string
+	require.NoError(t, newTestPool(t).QueryRow(ctx,
+		"SELECT primary_title FROM titles WHERE id = $1", "tt0000001").Scan(&col))
+	require.Equal(t, "After", col)
+
+	require.ErrorIs(t, st.UpdateTitle(ctx, models.Title{ID: "tt-none"}), store.ErrRecordNotFound)
+}

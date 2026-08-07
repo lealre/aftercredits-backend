@@ -17,3 +17,12 @@ DELETE FROM titles WHERE id = $1;
 
 -- name: GetTitleTypes :many
 SELECT id, type FROM titles WHERE id = ANY($1::text[]);
+
+-- name: ListTitleIds :many
+SELECT id FROM titles ORDER BY id;
+
+-- name: UpdateTitle :execrows
+UPDATE titles
+SET primary_title = $2, type = $3, start_year = $4, rating_aggregate = $5,
+    vote_count = $6, added_at = $7, updated_at = $8, metadata = $9
+WHERE id = $1;

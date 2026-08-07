@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/store"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func GetAllUsers(db store.Store, ctx context.Context) ([]UserResponse, error) {
@@ -72,7 +72,7 @@ func AddUser(db store.Store, ctx context.Context, newUser NewUserRequest) (UserR
 
 	now := time.Now()
 	userDb := models.User{
-		Id:           primitive.NewObjectID().Hex(),
+		Id:           uuid.NewString(),
 		Name:         newUser.Name,
 		Username:     newUser.Username,
 		Email:        newUser.Email,

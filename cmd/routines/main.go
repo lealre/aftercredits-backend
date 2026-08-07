@@ -2,19 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"reflect"
 	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/postgres"
 	"github.com/lealre/movies-backend/internal/services/titles"
+	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 	"github.com/lealre/movies-backend/internal/titleprovider/factory"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func main() {
@@ -32,50 +32,28 @@ func main() {
 	log.Printf("Using title provider: %s", provider.Name())
 
 	ctx := context.Background()
-	dbClient, err := mongodb.Connect(ctx)
+	pool, err := postgres.Connect(ctx)
 	if err != nil {
-		log.Fatalf("Failed to connect to MongoDB: %v", err)
+		log.Fatalf("Failed to connect to Postgres: %v", err)
 	}
-	defer dbClient.Disconnect(ctx)
+	defer pool.Close()
 
-	db := mongodb.NewDB(dbClient)
-	collection := db.Collection(mongodb.TitlesCollection)
+	st := postgres.New(pool)
 
 	log.Println("Fetching all title IDs from database...")
-	titleIDs, err := getAllTitleIDs(ctx, collection)
+	titleIDs, err := st.ListTitleIds(ctx)
 	if err != nil {
 		log.Fatalf("Failed to fetch title IDs: %v", err)
 	}
 	log.Printf("Found %d titles to sync", len(titleIDs))
 
-	if err := syncTitles(ctx, provider, collection, titleIDs); err != nil {
+	if err := syncTitles(ctx, provider, st, titleIDs); err != nil {
 		log.Fatalf("Failed to sync titles: %v", err)
 	}
 	log.Println("Sync completed successfully")
 }
 
-func getAllTitleIDs(ctx context.Context, collection *mongo.Collection) ([]string, error) {
-	opts := options.Find().SetProjection(bson.M{"_id": 1})
-	cursor, err := collection.Find(ctx, bson.M{}, opts)
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var titleIDs []string
-	for cursor.Next(ctx) {
-		var doc struct {
-			ID string `bson:"_id"`
-		}
-		if err := cursor.Decode(&doc); err != nil {
-			return nil, err
-		}
-		titleIDs = append(titleIDs, doc.ID)
-	}
-	return titleIDs, cursor.Err()
-}
-
-func syncTitles(ctx context.Context, provider titleprovider.Provider, collection *mongo.Collection, titleIDs []string) error {
+func syncTitles(ctx context.Context, provider titleprovider.Provider, st *postgres.Store, titleIDs []string) error {
 	jobs := make(chan string, len(titleIDs))
 	wg := sync.WaitGroup{}
 	workerCount := 5
@@ -85,7 +63,7 @@ func syncTitles(ctx context.Context, provider titleprovider.Provider, collection
 		go func() {
 			defer wg.Done()
 			for titleID := range jobs {
-				if err := processTitle(ctx, provider, collection, titleID); err != nil {
+				if err := processTitle(ctx, provider, st, titleID); err != nil {
 					log.Printf("failed processing %s: %v", titleID, err)
 				}
 			}
@@ -100,25 +78,10 @@ func syncTitles(ctx context.Context, provider titleprovider.Provider, collection
 	return nil
 }
 
-func processTitle(ctx context.Context, provider titleprovider.Provider, collection *mongo.Collection, titleID string) error {
-	var dbTitle struct {
-		ID           string              `bson:"_id"`
-		Type         string              `bson:"type"`
-		PrimaryImage mongodb.Image       `bson:"primaryImage"`
-		Seasons      []mongodb.Seasons   `bson:"seasons"`
-		Episodes     []mongodb.Episode   `bson:"episodes"`
-		Rating       mongodb.Rating      `bson:"rating"`
-		Metacritic   *mongodb.Metacritic `bson:"metacritic,omitempty"`
-	}
-
-	projection := bson.M{
-		"_id": 1, "type": 1, "primaryImage": 1, "seasons": 1,
-		"episodes": 1, "rating": 1, "metacritic": 1,
-	}
-
-	err := collection.FindOne(ctx, bson.M{"_id": titleID}, options.FindOne().SetProjection(projection)).Decode(&dbTitle)
+func processTitle(ctx context.Context, provider titleprovider.Provider, st *postgres.Store, titleID string) error {
+	dbTitle, err := st.GetTitleById(ctx, titleID)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, store.ErrRecordNotFound) {
 			log.Printf("Title %s not found in database, skipping", titleID)
 			return nil
 		}
@@ -130,56 +93,12 @@ func processTitle(ctx context.Context, provider titleprovider.Provider, collecti
 		return err
 	}
 
-	updateDoc := bson.M{}
-	hasChanges := false
-
-	apiPrimaryImage := mongodb.Image{
-		URL:    apiTitle.PrimaryImage.URL,
-		Width:  apiTitle.PrimaryImage.Width,
-		Height: apiTitle.PrimaryImage.Height,
-	}
-	if !imagesEqual(dbTitle.PrimaryImage, apiPrimaryImage) {
-		updateDoc["primaryImage"] = apiPrimaryImage
-		hasChanges = true
-	}
-
-	apiSeasons := titles.MapImdbSeasonsToDbSeasons(apiTitle.Seasons)
-	if !reflect.DeepEqual(dbTitle.Seasons, apiSeasons) {
-		updateDoc["seasons"] = apiSeasons
-		hasChanges = true
-	}
-
-	apiEpisodes := titles.MapImdbEpisodesToDbEpisodes(apiTitle.Episodes)
-	if !reflect.DeepEqual(dbTitle.Episodes, apiEpisodes) {
-		updateDoc["episodes"] = apiEpisodes
-		hasChanges = true
-	}
-
-	apiRating := mongodb.Rating{
-		AggregateRating: apiTitle.Rating.AggregateRating,
-		VoteCount:       apiTitle.Rating.VoteCount,
-	}
-	if dbTitle.Rating != apiRating {
-		updateDoc["rating"] = apiRating
-		hasChanges = true
-	}
-
-	var apiMetacritic *mongodb.Metacritic
-	if apiTitle.Metacritic != nil {
-		apiMetacritic = &mongodb.Metacritic{Score: apiTitle.Metacritic.Score, ReviewCount: apiTitle.Metacritic.ReviewCount}
-	}
-	if !metacriticEqual(dbTitle.Metacritic, apiMetacritic) {
-		updateDoc["metacritic"] = apiMetacritic
-		hasChanges = true
-	}
-
-	updateDoc["updatedAt"] = time.Now()
-
-	if _, err := collection.UpdateOne(ctx, bson.M{"_id": titleID}, bson.M{"$set": updateDoc}); err != nil {
+	updated, changed := refreshTitle(dbTitle, apiTitle, time.Now())
+	if err := st.UpdateTitle(ctx, updated); err != nil {
 		return err
 	}
 
-	if hasChanges {
+	if changed {
 		log.Printf("Updated title %s (fields changed)", titleID)
 	} else {
 		log.Printf("Updated title %s (updatedAt only)", titleID)
@@ -187,11 +106,51 @@ func processTitle(ctx context.Context, provider titleprovider.Provider, collecti
 	return nil
 }
 
-func imagesEqual(a, b mongodb.Image) bool {
-	return a.URL == b.URL && a.Width == b.Width && a.Height == b.Height
+// refreshTitle applies the provider's current values for the synced fields
+// (primaryImage, seasons, episodes, rating, metacritic) onto the stored
+// title, always stamping UpdatedAt with now — the same semantics the Mongo
+// routines had. The bool reports whether any content field changed.
+func refreshTitle(dbTitle models.Title, apiTitle *titleprovider.Title, now time.Time) (models.Title, bool) {
+	changed := false
+
+	apiImage := models.Image{URL: apiTitle.PrimaryImage.URL, Width: apiTitle.PrimaryImage.Width, Height: apiTitle.PrimaryImage.Height}
+	if dbTitle.PrimaryImage != apiImage {
+		dbTitle.PrimaryImage = apiImage
+		changed = true
+	}
+
+	apiSeasons := titles.MapImdbSeasonsToDbSeasons(apiTitle.Seasons)
+	if !slicesEqual(dbTitle.Seasons, apiSeasons) {
+		dbTitle.Seasons = apiSeasons
+		changed = true
+	}
+
+	apiEpisodes := titles.MapImdbEpisodesToDbEpisodes(apiTitle.Episodes)
+	if !slicesEqual(dbTitle.Episodes, apiEpisodes) {
+		dbTitle.Episodes = apiEpisodes
+		changed = true
+	}
+
+	apiRating := models.Rating{AggregateRating: apiTitle.Rating.AggregateRating, VoteCount: apiTitle.Rating.VoteCount}
+	if dbTitle.Rating != apiRating {
+		dbTitle.Rating = apiRating
+		changed = true
+	}
+
+	var apiMetacritic *models.Metacritic
+	if apiTitle.Metacritic != nil {
+		apiMetacritic = &models.Metacritic{Score: apiTitle.Metacritic.Score, ReviewCount: apiTitle.Metacritic.ReviewCount}
+	}
+	if !metacriticEqual(dbTitle.Metacritic, apiMetacritic) {
+		dbTitle.Metacritic = apiMetacritic
+		changed = true
+	}
+
+	dbTitle.UpdatedAt = &now
+	return dbTitle, changed
 }
 
-func metacriticEqual(a, b *mongodb.Metacritic) bool {
+func metacriticEqual(a, b *models.Metacritic) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -199,4 +158,17 @@ func metacriticEqual(a, b *mongodb.Metacritic) bool {
 		return false
 	}
 	return a.Score == b.Score && a.ReviewCount == b.ReviewCount
+}
+
+// slicesEqual is an honest content comparison: unlike the Mongo version's
+// reflect.DeepEqual across mismatched types (mongodb vs models, always
+// false), this compares like-typed models slices for real. It treats nil
+// and empty as equivalent — MapImdbSeasonsToDbSeasons/MapImdbEpisodesToDbEpisodes
+// return a non-nil empty slice via make() when the provider has none, which
+// would otherwise spuriously differ from an unset (nil) stored slice.
+func slicesEqual[T any](a, b []T) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
 }

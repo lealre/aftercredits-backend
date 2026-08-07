@@ -7,15 +7,14 @@ import (
 	"os"
 
 	"github.com/lealre/movies-backend/internal/api"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 	"github.com/lealre/movies-backend/internal/titleprovider/factory"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // NewServer builds the production server, selecting the title provider from env
 // and requiring the JWT signing secret (JWT_SECRET) to be set.
-func NewServer(db *mongo.Client) (http.Handler, error) {
+func NewServer(st store.Store) (http.Handler, error) {
 	provider, err := factory.NewFromEnv()
 	if err != nil {
 		return nil, err
@@ -25,17 +24,16 @@ func NewServer(db *mongo.Client) (http.Handler, error) {
 		return nil, fmt.Errorf("JWT_SECRET must be set")
 	}
 	log.Printf("Using title provider: %s", provider.Name())
-	return NewServerWithProvider(db, provider, secret), nil
+	return NewServerWithProvider(st, provider, secret), nil
 }
 
 // NewServerWithProvider builds the server with an explicit title provider and
 // JWT secret. Tests use this to inject a fixture-backed fake provider (no
 // network) and a test secret.
-func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider, secret string) http.Handler {
+func NewServerWithProvider(st store.Store, provider titleprovider.Provider, secret string) http.Handler {
 	mux := http.NewServeMux()
 
-	dbClient := mongodb.NewDB(db)
-	a := api.NewAPI(dbClient, provider)
+	a := api.NewAPI(st, provider)
 
 	a.Secret = &secret
 
@@ -81,14 +79,14 @@ func NewServerWithProvider(db *mongo.Client, provider titleprovider.Provider, se
 
 	mux.HandleFunc("POST /comments", a.AddComment)
 
-	handler := AuthMiddleware(*a.Secret, dbClient)(mux)
+	handler := AuthMiddleware(*a.Secret, st)(mux)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
 
 	return handler
 }
 
-func ListenAndServe(db *mongo.Client) error {
-	handler, err := NewServer(db)
+func ListenAndServe(st store.Store) error {
+	handler, err := NewServer(st)
 	if err != nil {
 		return fmt.Errorf("failed to build server: %w", err)
 	}

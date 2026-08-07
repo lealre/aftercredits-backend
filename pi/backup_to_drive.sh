@@ -8,37 +8,31 @@ log() {
 
 log ""
 log "=========================================="
-log "📦 Starting MongoDB backup..."
+log "📦 Starting Postgres backup..."
 log "=========================================="
 
 # Set defaults if not provided (environment variables should be passed from .env)
-MONGO_HOST=${MONGO_HOST:-localhost}
-MONGO_PORT=${MONGO_PORT:-27017}
+POSTGRES_HOST=${POSTGRES_HOST:-localhost}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-BACKUP_NAME="mongo_dump_${TIMESTAMP}"
+BACKUP_NAME="pg_dump_${TIMESTAMP}"
 TEMP_DIR="/tmp"
-# This will be a DIRECTORY (same structure as scripts/backup.sh)
-BACKUP_DIR_PATH="${TEMP_DIR}/${BACKUP_NAME}"
 COMPRESSED_PATH="${TEMP_DIR}/${BACKUP_NAME}.tar.gz"
 
-# Build MongoDB URI
-if [ -n "${MONGO_USER}" ] && [ -n "${MONGO_PASSWORD}" ]; then
-  MONGO_URI="mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/?authSource=admin"
-else
-  MONGO_URI="mongodb://${MONGO_HOST}:${MONGO_PORT}"
-fi
-
-# Use mongodump directly (available in container)
-log "📥 Using mongodump directly (filesystem dump)..."
-if ! mongodump --uri "${MONGO_URI}" --out "${BACKUP_DIR_PATH}" 2>&1; then
-  log "❌ mongodump failed"
+# Use pg_dump
+log "📥 Using pg_dump..."
+export PGPASSWORD="${POSTGRES_PASSWORD}"
+if ! pg_dump -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" \
+    -U "${POSTGRES_USER:-aftercredits}" -d "${POSTGRES_DB:-aftercredits}" \
+    --format=custom --file "${TEMP_DIR}/${BACKUP_NAME}.dump" 2>&1; then
+  log "❌ pg_dump failed"
   exit 1
 fi
 
-# Compress the dump directory into a .tar.gz (same format as scripts/backup.sh)
-log "🗜️  Compressing backup directory..."
-if ! tar -czf "${COMPRESSED_PATH}" -C "${TEMP_DIR}" "${BACKUP_NAME}" 2>&1; then
+# Compress the dump file into a .tar.gz (same format as scripts/backup.sh)
+log "🗜️  Compressing backup file..."
+if ! tar -czf "${COMPRESSED_PATH}" -C "${TEMP_DIR}" "${BACKUP_NAME}.dump" 2>&1; then
   log "❌ Compression failed"
   exit 1
 fi
@@ -52,7 +46,7 @@ fi
 
 # Cleanup
 log "🧹 Cleaning up temporary files..."
-rm -rf "${BACKUP_DIR_PATH}"
+rm -f "${TEMP_DIR}/${BACKUP_NAME}.dump"
 rm -f "${COMPRESSED_PATH}"
 
 log "✅ Backup completed and uploaded to Google Drive:"

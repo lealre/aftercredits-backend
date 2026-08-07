@@ -2,7 +2,7 @@ FROM alpine:latest
 
 # Install required tools
 RUN apk add --no-cache \
-    mongodb-tools \
+    postgresql16-client \
     rclone \
     bash \
     tar \

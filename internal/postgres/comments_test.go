@@ -278,3 +278,23 @@ func TestStore_DeleteComment(t *testing.T) {
 		require.Zero(t, count)
 	})
 }
+
+func TestAddComment_DuplicateUserTitle(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	titleId := "tt-" + uuid.NewString()
+	userId := "user-" + uuid.NewString()
+	comment := newTestMovieComment(t, titleId, userId, "first comment")
+
+	// First AddComment should succeed
+	added, err := s.AddComment(ctx, comment)
+	require.NoError(t, err)
+	require.NotEmpty(t, added.Id)
+
+	// Second AddComment with same (user, title) pair should return ErrDuplicatedRecord
+	duplicate := newTestMovieComment(t, titleId, userId, "second comment")
+	_, err = s.AddComment(ctx, duplicate)
+	require.ErrorIs(t, err, store.ErrDuplicatedRecord)
+}
