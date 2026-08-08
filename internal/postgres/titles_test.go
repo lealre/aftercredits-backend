@@ -123,12 +123,9 @@ func TestStore_AddTitle_GetTitleById_RoundTrip(t *testing.T) {
 // whose optional slice fields were never set (a minimal movie, built via
 // newTestMovieTitle, which leaves Directors/Writers/Stars/OriginCountries/
 // SpokenLanguages/Interests/Seasons/Episodes as their nil zero value) still
-// comes back with those 8 fields as non-nil, empty slices — matching
-// mongodb's titleDbToModel, whose personsDbToModel/codeNamesDbToModel/
-// interestsDbToModel/seasonsDbToModel/episodesDbToModel each make() a slice
-// of len(x), never returning nil. This is a read-shape assertion against the
-// mongodb contract, not a round-trip-with-the-input check (the input here IS
-// nil for these fields; the output must not be).
+// comes back with those 8 fields as non-nil, empty slices. This is a read-shape
+// assertion against the store contract, not a round-trip-with-the-input check
+// (the input here IS nil for these fields; the output must not be).
 func TestStore_GetTitleById_NonNilEmptySlices(t *testing.T) {
 	resetDB(t)
 	s := newTestStore(t)

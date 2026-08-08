@@ -10,12 +10,11 @@ import (
 // Store is the storage-neutral persistence contract. Services and the api
 // package depend on this interface (plus internal/models) instead of any
 // concrete database implementation, so the underlying store can be swapped
-// (e.g. Mongo -> Postgres) without touching business logic.
+// (e.g. Postgres) without touching business logic.
 //
-// Every method here is derived from the set of *mongodb.DB methods that
-// services/api actually call — grouped by entity below. Purely internal
-// mongo helpers (e.g. Collection, GetDatabaseName) and DB methods with no
-// remaining caller are intentionally excluded.
+// Every method here is one that services/api actually call — grouped by entity
+// below. Helpers internal to a particular implementation are intentionally
+// excluded.
 type Store interface {
 	// ----- Users -----
 

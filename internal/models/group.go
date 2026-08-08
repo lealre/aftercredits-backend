@@ -2,8 +2,8 @@ package models
 
 import "time"
 
-// Group is the storage-neutral representation of a group (mirroring
-// mongodb.GroupDb, without persistence tags).
+// Group is the storage-neutral representation of a group, carrying no
+// persistence tags.
 type Group struct {
 	Id          string
 	Name        string
@@ -17,12 +17,10 @@ type Group struct {
 	DeletedAt   *time.Time
 }
 
-// GroupTitles is the storage-neutral representation of mongodb.GroupTitleDb,
-// a group's titles keyed by title id.
+// GroupTitles is a group's titles keyed by title id.
 type GroupTitles map[string]GroupTitleItem
 
-// GroupTitleItem is the storage-neutral representation of
-// mongodb.GroupTitleItemDb.
+// GroupTitleItem is one title's entry within a group.
 type GroupTitleItem struct {
 	TitleId        string
 	TitleType      string
@@ -33,13 +31,11 @@ type GroupTitleItem struct {
 	WatchedAt      *time.Time
 }
 
-// SeasonsWatched is the storage-neutral representation of
-// mongodb.SeasonWatchedDb, a title's per-season watched state keyed by
-// season number (as a string).
+// SeasonsWatched is a title's per-season watched state keyed by season number
+// (as a string).
 type SeasonsWatched map[string]SeasonWatchedItem
 
-// SeasonWatchedItem is the storage-neutral representation of
-// mongodb.SeasonWatchedItemDb.
+// SeasonWatchedItem is the watched state of a single season.
 type SeasonWatchedItem struct {
 	Watched   bool
 	WatchedAt *time.Time

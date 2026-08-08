@@ -66,7 +66,7 @@ func newTestStore(t *testing.T) *Store {
 }
 
 // resetDB truncates every table so each test starts from a clean slate,
-// mirroring the Mongo test suite's resetDB (tests/setup_test.go).
+// mirroring the integration suite's resetDB (tests/setup_test.go).
 func resetDB(t *testing.T) {
 	t.Helper()
 

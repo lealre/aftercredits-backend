@@ -9,7 +9,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/generics"
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
@@ -264,12 +264,12 @@ func TestGetTitleEpisodes(t *testing.T) {
 	})
 
 	rt := 1200
-	seedTitles(t, []mongodb.TitleDb{{
+	seedTitles(t, []models.Title{{
 		ID:           "tt3000001",
 		PrimaryTitle: "Test Series",
 		Type:         "tvSeries",
-		Seasons:      []mongodb.Seasons{{Season: "1", EpisodeCount: 2}},
-		Episodes: []mongodb.Episode{
+		Seasons:      []models.Seasons{{Season: "1", EpisodeCount: 2}},
+		Episodes: []models.Episode{
 			{ID: "ep1", Title: "Pilot", Season: "1", EpisodeNumber: 1, RuntimeSeconds: &rt},
 			{ID: "ep2", Title: "Second", Season: "1", EpisodeNumber: 2},
 		},

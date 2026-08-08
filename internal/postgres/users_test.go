@@ -163,10 +163,10 @@ func TestStore_GetUserByUsernameOrEmail(t *testing.T) {
 		require.Equal(t, user.Id, got.Id)
 	})
 
-	// This is the case that distinguishes Mongo's AND semantics (a dynamic
+	// This is the case that distinguishes AND semantics (a dynamic
 	// filter that only requires the non-empty fields to match, on the SAME
 	// document) from a plain OR: username matches user A while email matches
-	// a completely different user B. Mongo's FindOne with both filter keys
+	// a completely different user B. A lookup with both filter keys
 	// set requires a single document satisfying both, so this must be
 	// store.ErrRecordNotFound, not a match on either user.
 	t.Run("both supplied but matching different users is not found", func(t *testing.T) {

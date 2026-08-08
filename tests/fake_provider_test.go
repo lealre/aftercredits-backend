@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/lealre/movies-backend/internal/mongodb"
+	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
@@ -13,17 +13,17 @@ import (
 // backed by the on-disk fixtures. It performs no network calls, so the suite
 // needs neither TMDB_API_KEY nor connectivity.
 type fakeTitleProvider struct {
-	byID map[string]mongodb.TitleDb
+	byID map[string]models.Title
 }
 
 func newFakeTitleProvider() *fakeTitleProvider {
-	f := &fakeTitleProvider{byID: map[string]mongodb.TitleDb{}}
+	f := &fakeTitleProvider{byID: map[string]models.Title{}}
 	for _, path := range []string{MOVIE_TILES_FIXTURES_PATH, TV_SERIES_TILES_FIXTURES_PATH} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue // fixtures optional; GetTitle returns ErrTitleNotFound if absent
 		}
-		var docs []mongodb.TitleDb
+		var docs []models.Title
 		if err := json.Unmarshal(data, &docs); err != nil {
 			continue
 		}

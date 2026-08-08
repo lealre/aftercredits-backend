@@ -77,19 +77,19 @@ type Seasons struct {
 }
 
 type Episode struct {
-	ID             string       `json:"id" bson:"id"`
-	Title          string       `json:"title" bson:"title"`
-	PrimaryImage   Image        `json:"primaryImage" bson:"primaryImage"`
-	Season         string       `json:"season" bson:"season"`
-	EpisodeNumber  int          `json:"episodeNumber" bson:"episodeNumber"`
-	RuntimeSeconds *int         `json:"runtimeSeconds,omitempty" bson:"runtimeSeconds,omitempty"`
-	Plot           *string      `json:"plot,omitempty" bson:"plot,omitempty"`
-	Rating         *Rating      `json:"rating,omitempty" bson:"rating,omitempty"`
-	ReleaseDate    *ReleaseDate `json:"releaseDate,omitempty" bson:"releaseDate,omitempty"`
+	ID             string       `json:"id"`
+	Title          string       `json:"title"`
+	PrimaryImage   Image        `json:"primaryImage"`
+	Season         string       `json:"season"`
+	EpisodeNumber  int          `json:"episodeNumber"`
+	RuntimeSeconds *int         `json:"runtimeSeconds,omitempty"`
+	Plot           *string      `json:"plot,omitempty"`
+	Rating         *Rating      `json:"rating,omitempty"`
+	ReleaseDate    *ReleaseDate `json:"releaseDate,omitempty"`
 }
 
 type ReleaseDate struct {
-	Year  int `json:"year" bson:"year"`
-	Month int `json:"month" bson:"month"`
-	Day   int `json:"day" bson:"day"`
+	Year  int `json:"year"`
+	Month int `json:"month"`
+	Day   int `json:"day"`
 }

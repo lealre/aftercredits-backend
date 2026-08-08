@@ -108,7 +108,7 @@ func processTitle(ctx context.Context, provider titleprovider.Provider, st *post
 
 // refreshTitle applies the provider's current values for the synced fields
 // (primaryImage, seasons, episodes, rating, metacritic) onto the stored
-// title, always stamping UpdatedAt with now — the same semantics the Mongo
+// title, always stamping UpdatedAt with now — the same semantics the previous
 // routines had. The bool reports whether any content field changed.
 func refreshTitle(dbTitle models.Title, apiTitle *titleprovider.Title, now time.Time) (models.Title, bool) {
 	changed := false
@@ -160,8 +160,8 @@ func metacriticEqual(a, b *models.Metacritic) bool {
 	return a.Score == b.Score && a.ReviewCount == b.ReviewCount
 }
 
-// slicesEqual is an honest content comparison: unlike the Mongo version's
-// reflect.DeepEqual across mismatched types (mongodb vs models, always
+// slicesEqual is an honest content comparison: unlike the previous
+// reflect.DeepEqual across mismatched types (storage vs domain types, always
 // false), this compares like-typed models slices for real. It treats nil
 // and empty as equivalent — MapImdbSeasonsToDbSeasons/MapImdbEpisodesToDbEpisodes
 // return a non-nil empty slice via make() when the provider has none, which

@@ -41,8 +41,6 @@ that directory.
    - **Cron schedules**: `BACKUP_SCHEDULE` and `MOVIES_UPDATE_SCHEDULE`
    - **Docker network**: `DOCKER_NETWORK` (default: `aftercredits_default`)
    - **Postgres settings**: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`
-   - **Cutover only**: `MONGO_*` settings, retained temporarily for the one-time Mongo -> Postgres
-     migration (see [Cutover runbook](#cutover-runbook-one-time) below); removed after the cleanup PR
 
    See `.env.example` for a complete example with comments.
 
@@ -135,97 +133,6 @@ cd pi
 6. **Rclone config** is mounted from `~/.config/rclone/rclone.conf`
 7. **Docker network**: Containers join the docker-compose network (default: `aftercredits_default`) to communicate with the postgres container
 8. **Postgres connection**: Uses `POSTGRES_HOST` value from `.env` file (should be set to `aftercredits-postgres` when using docker-compose network)
-
-## Cutover runbook (one-time)
-
-This is the runbook for the one-time Mongo -> Postgres cutover of the production
-Pi deployment. It runs once, on the Pi, against the live stack. Once the cleanup
-PR lands (dropping the `mongo` service and the `mongo-to-postgres` binary from the
-images), this section can be deleted.
-
-Run these steps from the deploy directory on the Pi (where `docker-compose.yaml`
-and `.env` live — a checkout of the frontend repository), in order:
-
-0. **Update the deploy files on the Pi.** Pull the frontend repository's
-   post-cutover `docker-compose.yaml` (it replaces the `mongo` service with
-   `postgres` and changes `db-setup` to `-migrate && -superuser`), and update
-   `.env` so it contains the `POSTGRES_*` block — see `pi/.env.example`. Every
-   step below runs from that directory.
-
-1. **Take a final Mongo backup.** Run the existing backup cron job once more (it
-   is still pointing at the pre-cutover image, which does a `mongodump`) so you
-   have a tarball that reflects the database at the moment of cutover. This is
-   the rollback point if anything below goes wrong.
-
-2. **Stop the old backend.** Take the running `backend` service down so nothing
-   writes to Mongo while the migration runs, without touching the rest of the
-   old stack:
-   ```bash
-   docker compose stop backend
-   ```
-
-3. **Bring up Postgres and apply the schema.** Start the new `postgres` service
-   and wait for it to report healthy — `--wait` blocks until the `pg_isready`
-   healthcheck passes, which matters here because the first boot runs `initdb`
-   on the USB storage and is slow — then apply the schema migrations only. Do
-   **not** run `-superuser` yet: the migration tool refuses to load into a
-   non-empty database, and creating a superuser first would trip that check:
-   ```bash
-   docker compose up -d --wait postgres
-   docker run --rm --network <network> --env-file .env \
-     lealre/aftercredits-backend:latest /app/database -migrate
-   ```
-
-4. **Run the migration.** Extract the `mongodump` tarball from step 1 to a local
-   directory. It unpacks to `mongo_dump_<ts>/<database>/…`, and `mongodump` also
-   writes a sibling `admin/` directory containing its own `.bson` files.
-
-   **Point `-dump` at the database directory itself**, not at its parent. Given
-   the parent, the tool resolves the database directory by looking for a
-   subdirectory named after `MONGO_DB` (defaulting to `aftercreditsdb`). If that
-   name doesn't match the dump's actual database directory — because `.env`
-   omits `MONGO_DB`, or because it carries the `aftercreditsdb` placeholder from
-   `.env.example` while the real database is named something else — the tool
-   falls back to scanning for subdirectories containing `.bson` files, finds
-   both `admin/` and the real database, and stops with `multiple database
-   subdirectories with .bson files`.
-
-   Mount the extracted `mongo_dump_<ts>` directory and point `-dump` one level
-   in:
-   ```bash
-   docker run --rm --network <network> --env-file .env \
-     -v /path/to/mongo_dump_<ts>:/dump \
-     lealre/aftercredits-backend:latest \
-     /app/mongo-to-postgres -dump /dump/<database>
-   ```
-   It must print `✅ Migration complete` and exit `0`. If it doesn't, stop and
-   re-check the dump before proceeding — nothing further should run against a
-   partially loaded database.
-
-5. **Create the superuser.** Now that the data is loaded:
-   ```bash
-   docker run --rm --network <network> --env-file .env \
-     lealre/aftercredits-backend:latest /app/database -superuser
-   ```
-
-6. **Start the full new stack.**
-   ```bash
-   docker compose up -d
-   ```
-   (Compose will also run its own `db-setup` service as part of this; that's
-   fine — `-migrate` is a no-op once the schema is at the latest version, and
-   `-superuser` skips if the user already exists. Note `db-setup` runs the
-   *schema* migrations only; it never re-runs the one-time data migration.)
-
-7. **Smoke-test.** Log in from the frontend and browse a group to confirm the
-   migrated data is reachable end-to-end.
-
-8. **Leave Mongo intact.** Leave the old `mongo` container stopped-but-intact as
-   a rollback option — don't remove its volume or image — until the cleanup PR
-   lands.
-
-9. **Rebuild the scheduled-task images.** Run `pi/setup-cron.sh` so the backup
-   and movies-update images are rebuilt against the new (Postgres) code.
 
 ## Troubleshooting
 

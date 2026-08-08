@@ -15,9 +15,9 @@ import (
 
 // assembleGroupTitles fetches every group_title row for groupId plus all of
 // their group_title_seasons in one batched query and assembles the
-// models.GroupTitles map. The map is always non-nil (possibly empty), matching
-// mongodb's group document convention where the titles field is always
-// present; each item's SeasonsWatched is nil when it has no season rows.
+// models.GroupTitles map. The map is always non-nil (possibly empty) — a group
+// always reports a titles map, even when it holds none; each item's
+// SeasonsWatched is nil when it has no season rows.
 func (s *Store) assembleGroupTitles(ctx context.Context, groupId string) (models.GroupTitles, error) {
 	titleRows, err := s.q.GetGroupTitleRows(ctx, groupId)
 	if err != nil {
@@ -42,9 +42,8 @@ func (s *Store) assembleGroupTitles(ctx context.Context, groupId string) (models
 }
 
 // CreateGroup inserts a new group row plus a group_members row for every user
-// in group.Users (the owner) in a single transaction, mirroring
-// mongodb.CreateGroup: the id and timestamps are generated here, not taken
-// from the caller-supplied group. A violation of the (owner_id, name) partial
+// in group.Users (the owner) in a single transaction. The id and timestamps are
+// generated here, not taken from the caller-supplied group. A violation of the (owner_id, name) partial
 // unique index is reported as store.ErrDuplicatedRecord.
 func (s *Store) CreateGroup(ctx context.Context, group models.Group) (models.Group, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -86,20 +85,19 @@ func (s *Store) CreateGroup(ctx context.Context, group models.Group) (models.Gro
 		return models.Group{}, err
 	}
 
-	// Echo the input Users/Titles (as mongodb returns groupDbToModel of the
-	// inserted document): Titles stays the empty-but-non-nil map the caller
-	// supplied, Users stays the owner-only slice.
+	// Echo the input Users/Titles rather than re-reading them: Titles stays the
+	// empty-but-non-nil map the caller supplied, Users stays the owner-only slice.
 	return groupRowToModel(row, group.Users, group.Titles), nil
 }
 
 // GroupExists reports whether a non-deleted group with the given id exists and
-// has userId as a member, mirroring mongodb.GroupExists.
+// has userId as a member.
 func (s *Store) GroupExists(ctx context.Context, groupId, userId string) (bool, error) {
 	return s.q.GroupExists(ctx, database.GroupExistsParams{ID: groupId, UserID: userId})
 }
 
 // GroupContainsTitle reports whether a non-deleted group with the given id has
-// userId as a member and contains titleId, mirroring mongodb.GroupContainsTitle.
+// userId as a member and contains titleId.
 func (s *Store) GroupContainsTitle(ctx context.Context, groupId, titleId, userId string) (bool, error) {
 	return s.q.GroupContainsTitle(ctx, database.GroupContainsTitleParams{
 		ID:      groupId,
@@ -109,9 +107,9 @@ func (s *Store) GroupContainsTitle(ctx context.Context, groupId, titleId, userId
 }
 
 // GetGroupById fetches a non-deleted group that userId is a member of and
-// assembles its members and titles (with per-title seasons), mirroring
-// mongodb.GetGroupById. A missing/deleted group, or one userId is not a member
-// of, is reported as store.ErrRecordNotFound.
+// assembles its members and titles (with per-title seasons). A missing/deleted
+// group, or one userId is not a member of, is reported as
+// store.ErrRecordNotFound.
 func (s *Store) GetGroupById(ctx context.Context, groupId, userId string) (models.Group, error) {
 	row, err := s.q.GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId})
 	if err != nil {
@@ -132,10 +130,9 @@ func (s *Store) GetGroupById(ctx context.Context, groupId, userId string) (model
 }
 
 // AddUserToGroup adds userToAddId as a member of the group, but only if
-// ownerId is already a member (the guard mongodb.AddUserToGroup applies with
-// its {_id, users: {$in: [ownerId]}} filter). The insert is idempotent
-// (ON CONFLICT DO NOTHING), matching mongodb's $addToSet. A group ownerId is
-// not a member of is reported as store.ErrRecordNotFound.
+// ownerId is already a member of it. The insert is idempotent
+// (ON CONFLICT DO NOTHING), so re-adding an existing member is a no-op. A group
+// ownerId is not a member of is reported as store.ErrRecordNotFound.
 func (s *Store) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddId string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -168,7 +165,7 @@ func (s *Store) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddI
 }
 
 // GetUsersFromGroup returns the full member users of a non-deleted group that
-// userId is a member of, mirroring mongodb.GetUsersFromGroup (which fetches the
+// userId is a member of (which fetches the
 // group then loads each member user with its own groups). A missing/deleted
 // group, or one userId is not a member of, is reported as
 // store.ErrRecordNotFound.
@@ -193,10 +190,9 @@ func (s *Store) GetUsersFromGroup(ctx context.Context, groupId, userId string) (
 	return users, nil
 }
 
-// AddNewGroupTitle adds titleId to the group as a movie with watched=false,
-// mirroring mongodb.AddNewGroupTitle (which $sets a fresh title object,
-// overwriting any existing entry and resetting its addedAt). The upsert
-// reproduces that overwrite semantics.
+// AddNewGroupTitle adds titleId to the group as a movie with watched=false.
+// Adding a title that is already present overwrites the existing entry and
+// resets its addedAt.
 func (s *Store) AddNewGroupTitle(ctx context.Context, groupId string, titleId string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -227,11 +223,11 @@ func (s *Store) AddNewGroupTitle(ctx context.Context, groupId string, titleId st
 }
 
 // UpdateGroupTitleWatchedForMovie sets the top-level watched/watchedAt on a
-// group's title, mirroring mongodb.UpdateGroupTitleWatchedForMovie: watched and
+// group's title: watched and
 // watchedAt are each only touched when their argument is non-nil, and a
 // watchedAt argument whose Time is nil clears the column to NULL. Returns the
 // updated item. A missing title is reported as store.ErrRecordNotFound, and no
-// updatable fields at all as an error, matching mongodb.
+// updatable fields at all as an error.
 func (s *Store) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*models.GroupTitleItem, error) {
 	if watched == nil && watchedAt == nil {
 		return nil, fmt.Errorf("no fields to update")
@@ -293,17 +289,15 @@ func (s *Store) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId str
 
 // UpdateGroupTitleWatchedForTVSeries upserts a single season's watched/watchedAt
 // for a group's title, then recomputes the title's top-level watched/watchedAt
-// from all of its seasons, all in one transaction — mirroring
-// mongodb.UpdateGroupTitleWatchedForTVSeries.
+// from all of its seasons, all in one transaction.
 //
-// Recompute rule (reproduced verbatim from mongodb): top-level watched is true
+// Recompute rule: top-level watched is true
 // if AT LEAST ONE season is watched; top-level watchedAt is the LATEST (max)
 // watchedAt among the watched seasons, or NULL when no watched season carries a
 // date. addedAt is only stamped on a season the first time it is seen.
 //
-// The group must exist, be non-deleted, and have userId as a member (the guard
-// mongodb applies via its GetGroupById call), and the title must be present;
-// otherwise store.ErrRecordNotFound is returned.
+// The group must exist, be non-deleted, and have userId as a member, and the
+// title must be present; otherwise store.ErrRecordNotFound is returned.
 func (s *Store) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season int, userId string) (*models.GroupTitleItem, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -313,7 +307,7 @@ func (s *Store) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId 
 
 	qtx := s.q.WithTx(tx)
 
-	// Membership + not-deleted guard (mongodb's GetGroupById), then confirm
+	// Membership + not-deleted guard (the store's GetGroupById), then confirm
 	// the title is present in the group.
 	if _, err := qtx.GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId}); err != nil {
 		return nil, notFound(err)
@@ -410,8 +404,8 @@ func (s *Store) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId 
 	return &item, nil
 }
 
-// UpdateGroupInfo sets name and description on a non-deleted group, mirroring
-// mongodb.UpdateGroupInfo. A violation of the (owner_id, name) partial unique
+// UpdateGroupInfo sets name and description on a non-deleted group.
+// A violation of the (owner_id, name) partial unique
 // index is reported as store.ErrDuplicatedRecord; a missing/deleted group as
 // store.ErrRecordNotFound.
 func (s *Store) UpdateGroupInfo(ctx context.Context, groupId, name, description string) error {
@@ -432,8 +426,8 @@ func (s *Store) UpdateGroupInfo(ctx context.Context, groupId, name, description 
 	return nil
 }
 
-// SoftDeleteGroup marks a non-deleted group as deleted, mirroring
-// mongodb.SoftDeleteGroup. An already-deleted or missing group is reported as
+// SoftDeleteGroup marks a non-deleted group as deleted.
+// An already-deleted or missing group is reported as
 // store.ErrRecordNotFound.
 func (s *Store) SoftDeleteGroup(ctx context.Context, groupId string) error {
 	n, err := s.q.SoftDeleteGroupRow(ctx, groupId)
@@ -447,7 +441,7 @@ func (s *Store) SoftDeleteGroup(ctx context.Context, groupId string) error {
 }
 
 // RemoveUserFromGroup removes userId from a non-deleted group's members,
-// mirroring mongodb.RemoveUserFromGroup: the not-found error keys off the group
+// as follows: the not-found error keys off the group
 // (missing/deleted), not off whether userId was actually a member.
 func (s *Store) RemoveUserFromGroup(ctx context.Context, groupId, userId string) error {
 	tx, err := s.pool.Begin(ctx)
@@ -481,7 +475,7 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, groupId, userId string)
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its
-// seasons cascade), mirroring mongodb.RemoveTitleFromGroup: the not-found error
+// seasons cascade): the not-found error
 // keys off group membership, not off whether the title was actually present.
 func (s *Store) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
 	tx, err := s.pool.Begin(ctx)

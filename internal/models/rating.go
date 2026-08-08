@@ -11,7 +11,7 @@ type SeasonRatingItem struct {
 type SeasonsRatings map[string]SeasonRatingItem
 
 // UserRating is the storage-neutral representation of a user's rating of a
-// title (mirroring mongodb.RatingDb, without persistence tags). Named
+// title, carrying no persistence tags. Named
 // UserRating rather than Rating because models.Rating is already taken by
 // the title's embedded aggregate score (see title.go).
 type UserRating struct {

@@ -1,33 +1,33 @@
 [
   {
-    "id": "tt0068646",
-    "type": "movie",
-    "primaryTitle": "The Godfather",
-    "primaryImage": {
-      "url": "https://m.media-amazon.com/images/M/MV5BNGEwYjgwOGQtYjg5ZS00Njc1LTk2ZGEtM2QwZWQ2NjdhZTE5XkEyXkFqcGc@._V1_.jpg",
-      "width": 1396,
-      "height": 1982
+    "ID": "tt0068646",
+    "Type": "movie",
+    "PrimaryTitle": "The Godfather",
+    "PrimaryImage": {
+      "URL": "https://m.media-amazon.com/images/M/MV5BNGEwYjgwOGQtYjg5ZS00Njc1LTk2ZGEtM2QwZWQ2NjdhZTE5XkEyXkFqcGc@._V1_.jpg",
+      "Width": 1396,
+      "Height": 1982
     },
-    "startYear": 1972,
-    "runtimeSeconds": 10500,
-    "genres": [
+    "StartYear": 1972,
+    "RuntimeSeconds": 10500,
+    "Genres": [
       "Crime",
       "Drama"
     ],
-    "rating": {
-      "aggregateRating": 9.2,
-      "voteCount": 2195722
+    "Rating": {
+      "AggregateRating": 9.2,
+      "VoteCount": 2195722
     },
-    "metacritic": {
-      "score": 100,
-      "reviewCount": 16
+    "Metacritic": {
+      "Score": 100,
+      "ReviewCount": 16
     },
-    "plot": "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.",
-    "directors": [
+    "Plot": "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.",
+    "Directors": [
       {
-        "id": "nm0000338",
-        "displayName": "Francis Ford Coppola",
-        "alternativeNames": [
+        "ID": "nm0000338",
+        "DisplayName": "Francis Ford Coppola",
+        "AlternativeNames": [
           "Thomas Colchart",
           "Francis Coppola",
           "Mom \u0026 Dad",
@@ -35,35 +35,36 @@
           "Dad",
           "Francis"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTM5NDU3OTgyNV5BMl5BanBnXkFtZTcwMzQxODA0NA@@._V1_.jpg",
-          "width": 1363,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTM5NDU3OTgyNV5BMl5BanBnXkFtZTcwMzQxODA0NA@@._V1_.jpg",
+          "Width": 1363,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       }
     ],
-    "writers": [
+    "Writers": [
       {
-        "id": "nm0701374",
-        "displayName": "Mario Puzo",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjE1NjkxMDE3NV5BMl5BanBnXkFtZTcwNjI0MDMyOA@@._V1_.jpg",
-          "width": 1326,
-          "height": 1979
+        "ID": "nm0701374",
+        "DisplayName": "Mario Puzo",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjE1NjkxMDE3NV5BMl5BanBnXkFtZTcwNjI0MDMyOA@@._V1_.jpg",
+          "Width": 1326,
+          "Height": 1979
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "writer"
         ]
       },
       {
-        "id": "nm0000338",
-        "displayName": "Francis Ford Coppola",
-        "alternativeNames": [
+        "ID": "nm0000338",
+        "DisplayName": "Francis Ford Coppola",
+        "AlternativeNames": [
           "Thomas Colchart",
           "Francis Coppola",
           "Mom \u0026 Dad",
@@ -71,921 +72,970 @@
           "Dad",
           "Francis"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTM5NDU3OTgyNV5BMl5BanBnXkFtZTcwMzQxODA0NA@@._V1_.jpg",
-          "width": 1363,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTM5NDU3OTgyNV5BMl5BanBnXkFtZTcwMzQxODA0NA@@._V1_.jpg",
+          "Width": 1363,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       }
     ],
-    "stars": [
+    "Stars": [
       {
-        "id": "nm0000008",
-        "displayName": "Marlon Brando",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTg3MDYyMDE5OF5BMl5BanBnXkFtZTcwNjgyNTEzNA@@._V1_.jpg",
-          "width": 1023,
-          "height": 792
+        "ID": "nm0000008",
+        "DisplayName": "Marlon Brando",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTg3MDYyMDE5OF5BMl5BanBnXkFtZTcwNjgyNTEzNA@@._V1_.jpg",
+          "Width": 1023,
+          "Height": 792
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "director",
           "writer"
         ]
       },
       {
-        "id": "nm0000473",
-        "displayName": "Diane Keaton",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTY5NDI5OTEyOF5BMl5BanBnXkFtZTgwMzU4NDI1NzM@._V1_.jpg",
-          "width": 602,
-          "height": 854
+        "ID": "nm0000473",
+        "DisplayName": "Diane Keaton",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTY5NDI5OTEyOF5BMl5BanBnXkFtZTgwMzU4NDI1NzM@._V1_.jpg",
+          "Width": 602,
+          "Height": 854
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "director",
           "producer"
         ]
       },
       {
-        "id": "nm0000199",
-        "displayName": "Al Pacino",
-        "alternativeNames": [
+        "ID": "nm0000199",
+        "DisplayName": "Al Pacino",
+        "AlternativeNames": [
           "Al Paccino"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTQzMzg1ODAyNl5BMl5BanBnXkFtZTYwMjAxODQ1._V1_.jpg",
-          "width": 266,
-          "height": 400
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTQzMzg1ODAyNl5BMl5BanBnXkFtZTYwMjAxODQ1._V1_.jpg",
+          "Width": 266,
+          "Height": 400
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "director",
           "producer"
         ]
       },
       {
-        "id": "nm0001001",
-        "displayName": "James Caan",
-        "alternativeNames": [
+        "ID": "nm0001001",
+        "DisplayName": "James Caan",
+        "AlternativeNames": [
           "Jimmy Caan"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTI5NjkyNDQ3NV5BMl5BanBnXkFtZTcwNjY5NTQ0Mw@@._V1_.jpg",
-          "width": 267,
-          "height": 400
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTI5NjkyNDQ3NV5BMl5BanBnXkFtZTcwNjY5NTQ0Mw@@._V1_.jpg",
+          "Width": 267,
+          "Height": 400
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "director",
           "stunts"
         ]
       }
     ],
-    "originCountries": [
+    "OriginCountries": [
       {
-        "code": "US",
-        "name": "United States"
+        "Code": "US",
+        "Name": "United States"
       }
     ],
-    "spokenLanguages": [
+    "SpokenLanguages": [
       {
-        "code": "eng",
-        "name": "English"
+        "Code": "eng",
+        "Name": "English"
       },
       {
-        "code": "ita",
-        "name": "Italian"
+        "Code": "ita",
+        "Name": "Italian"
       },
       {
-        "code": "lat",
-        "name": "Latin"
+        "Code": "lat",
+        "Name": "Latin"
       }
     ],
-    "interests": [
+    "Interests": [
       {
-        "id": "in0000052",
-        "name": "Crime"
+        "ID": "in0000052",
+        "Name": "Crime",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000055",
-        "name": "Gangster",
-        "isSubgenre": true
+        "ID": "in0000055",
+        "Name": "Gangster",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000076",
-        "name": "Drama"
+        "ID": "in0000076",
+        "Name": "Drama",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000077",
-        "name": "Epic",
-        "isSubgenre": true
+        "ID": "in0000077",
+        "Name": "Epic",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000086",
-        "name": "Psychological Drama",
-        "isSubgenre": true
+        "ID": "in0000086",
+        "Name": "Psychological Drama",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000090",
-        "name": "Tragedy",
-        "isSubgenre": true
+        "ID": "in0000090",
+        "Name": "Tragedy",
+        "IsSubgenre": true
       }
-    ]
+    ],
+    "Seasons": [],
+    "Episodes": [],
+    "AddedAt": null,
+    "UpdatedAt": null
   },
   {
-    "id": "tt0075148",
-    "type": "movie",
-    "primaryTitle": "Rocky",
-    "primaryImage": {
-      "url": "https://m.media-amazon.com/images/M/MV5BZDEyY2M2MGMtYjg5OC00ZWFjLWFkZDQtNmQzZTdiYmYzZTBkXkEyXkFqcGc@._V1_.jpg",
-      "width": 658,
-      "height": 1000
+    "ID": "tt0075148",
+    "Type": "movie",
+    "PrimaryTitle": "Rocky",
+    "PrimaryImage": {
+      "URL": "https://m.media-amazon.com/images/M/MV5BZDEyY2M2MGMtYjg5OC00ZWFjLWFkZDQtNmQzZTdiYmYzZTBkXkEyXkFqcGc@._V1_.jpg",
+      "Width": 658,
+      "Height": 1000
     },
-    "startYear": 1976,
-    "runtimeSeconds": 7200,
-    "genres": [
+    "StartYear": 1976,
+    "RuntimeSeconds": 7200,
+    "Genres": [
       "Drama",
       "Sport"
     ],
-    "rating": {
-      "aggregateRating": 8.1,
-      "voteCount": 680153
+    "Rating": {
+      "AggregateRating": 8.1,
+      "VoteCount": 680153
     },
-    "metacritic": {
-      "score": 70,
-      "reviewCount": 14
+    "Metacritic": {
+      "Score": 70,
+      "ReviewCount": 14
     },
-    "plot": "A small-time Philadelphia boxer gets a supremely rare chance to fight the world heavyweight champion in a bout in which he strives to go the distance for his self-respect.",
-    "directors": [
+    "Plot": "A small-time Philadelphia boxer gets a supremely rare chance to fight the world heavyweight champion in a bout in which he strives to go the distance for his self-respect.",
+    "Directors": [
       {
-        "id": "nm0000814",
-        "displayName": "John G. Avildsen",
-        "alternativeNames": [
+        "ID": "nm0000814",
+        "DisplayName": "John G. Avildsen",
+        "AlternativeNames": [
           "John G Avildsen",
           "John Avildsen",
           "Danny Mulroon"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTc0MTY2MzM2MV5BMl5BanBnXkFtZTYwNDI3MDky._V1_.jpg",
-          "width": 447,
-          "height": 545
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTc0MTY2MzM2MV5BMl5BanBnXkFtZTYwNDI3MDky._V1_.jpg",
+          "Width": 447,
+          "Height": 545
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "editor",
           "producer"
         ]
       }
     ],
-    "writers": [
+    "Writers": [
       {
-        "id": "nm0000230",
-        "displayName": "Sylvester Stallone",
-        "alternativeNames": [
+        "ID": "nm0000230",
+        "DisplayName": "Sylvester Stallone",
+        "AlternativeNames": [
           "Q Moonblood",
           "Sylvester E. Stallone"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTA3MDY2ODk4ODVeQTJeQWpwZ15BbWU4MDY1ODc3MTgx._V1_.jpg",
-          "width": 1593,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTA3MDY2ODk4ODVeQTJeQWpwZ15BbWU4MDY1ODc3MTgx._V1_.jpg",
+          "Width": 1593,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       }
     ],
-    "stars": [
+    "Stars": [
       {
-        "id": "nm0000230",
-        "displayName": "Sylvester Stallone",
-        "alternativeNames": [
+        "ID": "nm0000230",
+        "DisplayName": "Sylvester Stallone",
+        "AlternativeNames": [
           "Q Moonblood",
           "Sylvester E. Stallone"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTA3MDY2ODk4ODVeQTJeQWpwZ15BbWU4MDY1ODc3MTgx._V1_.jpg",
-          "width": 1593,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTA3MDY2ODk4ODVeQTJeQWpwZ15BbWU4MDY1ODc3MTgx._V1_.jpg",
+          "Width": 1593,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0001735",
-        "displayName": "Talia Shire",
-        "alternativeNames": [
+        "ID": "nm0001735",
+        "DisplayName": "Talia Shire",
+        "AlternativeNames": [
           "Talia Coppola",
           "Tally Coppola",
           "Talia Shire Schwartzman",
           "Tallia Shire"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTkwMzc0NjQzNV5BMl5BanBnXkFtZTYwNzM0NTk3._V1_.jpg",
-          "width": 283,
-          "height": 400
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTkwMzc0NjQzNV5BMl5BanBnXkFtZTYwNzM0NTk3._V1_.jpg",
+          "Width": 283,
+          "Height": 400
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "director",
           "producer"
         ]
       },
       {
-        "id": "nm0949350",
-        "displayName": "Burt Young",
-        "alternativeNames": [
+        "ID": "nm0949350",
+        "DisplayName": "Burt Young",
+        "AlternativeNames": [
           "John Harris"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTczMDYzMzQ0M15BMl5BanBnXkFtZTgwMzg2NjM4MzE@._V1_.jpg",
-          "width": 3184,
-          "height": 2120
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTczMDYzMzQ0M15BMl5BanBnXkFtZTgwMzg2NjM4MzE@._V1_.jpg",
+          "Width": 3184,
+          "Height": 2120
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "soundtrack",
           "writer"
         ]
       },
       {
-        "id": "nm0001835",
-        "displayName": "Carl Weathers",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNTE5ODkzODgtZGE0My00Nzg0LWJlYTAtYjNkNmQ1Mzk1ZGM5XkEyXkFqcGc@._V1_.jpg",
-          "width": 3521,
-          "height": 5000
+        "ID": "nm0001835",
+        "DisplayName": "Carl Weathers",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNTE5ODkzODgtZGE0My00Nzg0LWJlYTAtYjNkNmQ1Mzk1ZGM5XkEyXkFqcGc@._V1_.jpg",
+          "Width": 3521,
+          "Height": 5000
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "director",
           "producer"
         ]
       }
     ],
-    "originCountries": [
+    "OriginCountries": [
       {
-        "code": "US",
-        "name": "United States"
+        "Code": "US",
+        "Name": "United States"
       }
     ],
-    "spokenLanguages": [
+    "SpokenLanguages": [
       {
-        "code": "eng",
-        "name": "English"
+        "Code": "eng",
+        "Name": "English"
       },
       {
-        "code": "spa",
-        "name": "Spanish"
+        "Code": "spa",
+        "Name": "Spanish"
       },
       {
-        "code": "ita",
-        "name": "Italian"
+        "Code": "ita",
+        "Name": "Italian"
       }
     ],
-    "interests": [
+    "Interests": [
       {
-        "id": "in0000076",
-        "name": "Drama"
+        "ID": "in0000076",
+        "Name": "Drama",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000169",
-        "name": "Boxing",
-        "isSubgenre": true
+        "ID": "in0000169",
+        "Name": "Boxing",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000174",
-        "name": "Sport"
+        "ID": "in0000174",
+        "Name": "Sport",
+        "IsSubgenre": false
       }
-    ]
+    ],
+    "Seasons": [],
+    "Episodes": [],
+    "AddedAt": null,
+    "UpdatedAt": null
   },
   {
-    "id": "tt1092016",
-    "type": "movie",
-    "primaryTitle": "Meu Nome Não é Johnny",
-    "primaryImage": {
-      "url": "https://m.media-amazon.com/images/M/MV5BMjMzNTAxNjk4NF5BMl5BanBnXkFtZTcwNjQ3NDQ2OA@@._V1_.jpg",
-      "width": 575,
-      "height": 841
+    "ID": "tt1092016",
+    "Type": "movie",
+    "PrimaryTitle": "Meu Nome Não é Johnny",
+    "PrimaryImage": {
+      "URL": "https://m.media-amazon.com/images/M/MV5BMjMzNTAxNjk4NF5BMl5BanBnXkFtZTcwNjQ3NDQ2OA@@._V1_.jpg",
+      "Width": 575,
+      "Height": 841
     },
-    "startYear": 2008,
-    "runtimeSeconds": 7440,
-    "genres": [
+    "StartYear": 2008,
+    "RuntimeSeconds": 7440,
+    "Genres": [
       "Biography",
       "Crime",
       "Drama"
     ],
-    "rating": {
-      "aggregateRating": 7.2,
-      "voteCount": 8663
+    "Rating": {
+      "AggregateRating": 7.2,
+      "VoteCount": 8663
     },
-    "plot": "The true story of João Guilherme Estrella (\"Johnny\"), a young middle-class bon vivant who became a big-time cocaine dealer in Rio de Janeiro in the early 1990s.",
-    "directors": [
+    "Metacritic": null,
+    "Plot": "The true story of João Guilherme Estrella (\"Johnny\"), a young middle-class bon vivant who became a big-time cocaine dealer in Rio de Janeiro in the early 1990s.",
+    "Directors": [
       {
-        "id": "nm0510681",
-        "displayName": "Mauro Lima",
-        "primaryProfessions": [
+        "ID": "nm0510681",
+        "DisplayName": "Mauro Lima",
+        "AlternativeNames": null,
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "composer",
           "director",
           "writer"
         ]
       }
     ],
-    "writers": [
+    "Writers": [
       {
-        "id": "nm16188639",
-        "displayName": "Guilherme Fiúza",
-        "alternativeNames": [
+        "ID": "nm16188639",
+        "DisplayName": "Guilherme Fiúza",
+        "AlternativeNames": [
           "Guilherme Fiuza"
         ],
-        "primaryProfessions": [
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "writer"
         ]
       },
       {
-        "id": "nm0508190",
-        "displayName": "Mariza Leão",
-        "alternativeNames": [
+        "ID": "nm0508190",
+        "DisplayName": "Mariza Leão",
+        "AlternativeNames": [
           "Marisa Leao"
         ],
-        "primaryProfessions": [
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "editor",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0510681",
-        "displayName": "Mauro Lima",
-        "primaryProfessions": [
+        "ID": "nm0510681",
+        "DisplayName": "Mauro Lima",
+        "AlternativeNames": null,
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "composer",
           "director",
           "writer"
         ]
       }
     ],
-    "stars": [
+    "Stars": [
       {
-        "id": "nm0501412",
-        "displayName": "Júlia Lemmertz",
-        "alternativeNames": [
+        "ID": "nm0501412",
+        "DisplayName": "Júlia Lemmertz",
+        "AlternativeNames": [
           "Julia Lemmertz"
         ],
-        "primaryProfessions": [
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "actress",
           "producer",
           "soundtrack"
         ]
       },
       {
-        "id": "nm0578080",
-        "displayName": "Selton Mello",
-        "alternativeNames": [
+        "ID": "nm0578080",
+        "DisplayName": "Selton Mello",
+        "AlternativeNames": [
           "Selton Melo"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNjEyZWU5NDMtZjAwNC00ZTk1LTgwYjAtYzA2M2NmNGU2ZWM3XkEyXkFqcGc@._V1_.jpg",
-          "width": 3928,
-          "height": 5173
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNjEyZWU5NDMtZjAwNC00ZTk1LTgwYjAtYzA2M2NmNGU2ZWM3XkEyXkFqcGc@._V1_.jpg",
+          "Width": 3928,
+          "Height": 5173
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "director",
           "writer"
         ]
       },
       {
-        "id": "nm0519890",
-        "displayName": "Giulio Lopes",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BZDBjZWExZGEtZTU1Ny00MjM3LWE5NDktMzE4MTFkMzM1ZDMxXkEyXkFqcGc@._V1_.jpg",
-          "width": 1347,
-          "height": 767
+        "ID": "nm0519890",
+        "DisplayName": "Giulio Lopes",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BZDBjZWExZGEtZTU1Ny00MjM3LWE5NDktMzE4MTFkMzM1ZDMxXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1347,
+          "Height": 767
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor"
         ]
       },
       {
-        "id": "nm2274399",
-        "displayName": "Felipe Severo",
-        "primaryProfessions": [
+        "ID": "nm2274399",
+        "DisplayName": "Felipe Severo",
+        "AlternativeNames": null,
+        "PrimaryImage": null,
+        "PrimaryProfessions": [
           "actor"
         ]
       }
     ],
-    "originCountries": [
+    "OriginCountries": [
       {
-        "code": "BR",
-        "name": "Brazil"
+        "Code": "BR",
+        "Name": "Brazil"
       }
     ],
-    "spokenLanguages": [
+    "SpokenLanguages": [
       {
-        "code": "spa",
-        "name": "Spanish"
+        "Code": "spa",
+        "Name": "Spanish"
       },
       {
-        "code": "ita",
-        "name": "Italian"
+        "Code": "ita",
+        "Name": "Italian"
       },
       {
-        "code": "eng",
-        "name": "English"
+        "Code": "eng",
+        "Name": "English"
       },
       {
-        "code": "por",
-        "name": "Portuguese"
+        "Code": "por",
+        "Name": "Portuguese"
       }
     ],
-    "interests": [
+    "Interests": [
       {
-        "id": "in0000052",
-        "name": "Crime"
+        "ID": "in0000052",
+        "Name": "Crime",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000072",
-        "name": "Biography"
+        "ID": "in0000072",
+        "Name": "Biography",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000076",
-        "name": "Drama"
+        "ID": "in0000076",
+        "Name": "Drama",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000233",
-        "name": "Spanish"
+        "ID": "in0000233",
+        "Name": "Spanish",
+        "IsSubgenre": false
       }
-    ]
+    ],
+    "Seasons": [],
+    "Episodes": [],
+    "AddedAt": null,
+    "UpdatedAt": null
   },
   {
-    "id": "tt0381707",
-    "type": "movie",
-    "primaryTitle": "White Chicks",
-    "primaryImage": {
-      "url": "https://m.media-amazon.com/images/M/MV5BMTY3OTg2OTM3OV5BMl5BanBnXkFtZTYwNzY5OTA3._V1_.jpg",
-      "width": 485,
-      "height": 718
+    "ID": "tt0381707",
+    "Type": "movie",
+    "PrimaryTitle": "White Chicks",
+    "PrimaryImage": {
+      "URL": "https://m.media-amazon.com/images/M/MV5BMTY3OTg2OTM3OV5BMl5BanBnXkFtZTYwNzY5OTA3._V1_.jpg",
+      "Width": 485,
+      "Height": 718
     },
-    "startYear": 2004,
-    "runtimeSeconds": 6540,
-    "genres": [
+    "StartYear": 2004,
+    "RuntimeSeconds": 6540,
+    "Genres": [
       "Comedy",
       "Crime"
     ],
-    "rating": {
-      "aggregateRating": 5.9,
-      "voteCount": 188804
+    "Rating": {
+      "AggregateRating": 5.9,
+      "VoteCount": 188804
     },
-    "metacritic": {
-      "score": 41,
-      "reviewCount": 31
+    "Metacritic": {
+      "Score": 41,
+      "ReviewCount": 31
     },
-    "plot": "Two disgraced FBI agents go way undercover in an effort to protect hotel heiresses the Wilson sisters from a kidnapping plot.",
-    "directors": [
+    "Plot": "Two disgraced FBI agents go way undercover in an effort to protect hotel heiresses the Wilson sisters from a kidnapping plot.",
+    "Directors": [
       {
-        "id": "nm0005540",
-        "displayName": "Keenen Ivory Wayans",
-        "alternativeNames": [
+        "ID": "nm0005540",
+        "DisplayName": "Keenen Ivory Wayans",
+        "AlternativeNames": [
           "Greg Mclean",
           "Keenan Ivory Wayans",
           "Keenan Wayans",
           "Keenen Wayans"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BYzMxNTkwMGItNWFmNy00YWY3LTk0ZWEtMGMyMzI4NDBjNWZlXkEyXkFqcGc@._V1_.jpg",
-          "width": 1125,
-          "height": 2088
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BYzMxNTkwMGItNWFmNy00YWY3LTk0ZWEtMGMyMzI4NDBjNWZlXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1125,
+          "Height": 2088
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       }
     ],
-    "writers": [
+    "Writers": [
       {
-        "id": "nm0005540",
-        "displayName": "Keenen Ivory Wayans",
-        "alternativeNames": [
+        "ID": "nm0005540",
+        "DisplayName": "Keenen Ivory Wayans",
+        "AlternativeNames": [
           "Greg Mclean",
           "Keenan Ivory Wayans",
           "Keenan Wayans",
           "Keenen Wayans"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BYzMxNTkwMGItNWFmNy00YWY3LTk0ZWEtMGMyMzI4NDBjNWZlXkEyXkFqcGc@._V1_.jpg",
-          "width": 1125,
-          "height": 2088
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BYzMxNTkwMGItNWFmNy00YWY3LTk0ZWEtMGMyMzI4NDBjNWZlXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1125,
+          "Height": 2088
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0915465",
-        "displayName": "Shawn Wayans",
-        "alternativeNames": [
+        "ID": "nm0915465",
+        "DisplayName": "Shawn Wayans",
+        "AlternativeNames": [
           "DJ SW1",
           "SW1",
           "Sean Wayans",
           "Shaun Wayans"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTU5MTY2MzI0NV5BMl5BanBnXkFtZTcwMDQ0NjM0OA@@._V1_.jpg",
-          "width": 1486,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTU5MTY2MzI0NV5BMl5BanBnXkFtZTcwMDQ0NjM0OA@@._V1_.jpg",
+          "Width": 1486,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "music_department",
           "writer"
         ]
       },
       {
-        "id": "nm0005541",
-        "displayName": "Marlon Wayans",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNDU4OTdjMTAtY2VkNC00ZDg5LWI2N2MtNzQ4NzdkNmM0YmUwXkEyXkFqcGc@._V1_.jpg",
-          "width": 950,
-          "height": 1425
+        "ID": "nm0005541",
+        "DisplayName": "Marlon Wayans",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNDU4OTdjMTAtY2VkNC00ZDg5LWI2N2MtNzQ4NzdkNmM0YmUwXkEyXkFqcGc@._V1_.jpg",
+          "Width": 950,
+          "Height": 1425
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       }
     ],
-    "stars": [
+    "Stars": [
       {
-        "id": "nm0915465",
-        "displayName": "Shawn Wayans",
-        "alternativeNames": [
+        "ID": "nm0915465",
+        "DisplayName": "Shawn Wayans",
+        "AlternativeNames": [
           "DJ SW1",
           "SW1",
           "Sean Wayans",
           "Shaun Wayans"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTU5MTY2MzI0NV5BMl5BanBnXkFtZTcwMDQ0NjM0OA@@._V1_.jpg",
-          "width": 1486,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTU5MTY2MzI0NV5BMl5BanBnXkFtZTcwMDQ0NjM0OA@@._V1_.jpg",
+          "Width": 1486,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "music_department",
           "writer"
         ]
       },
       {
-        "id": "nm0005311",
-        "displayName": "Busy Philipps",
-        "alternativeNames": [
+        "ID": "nm0005311",
+        "DisplayName": "Busy Philipps",
+        "AlternativeNames": [
           "Busy Phillips"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjQ0NTkwMzYyMV5BMl5BanBnXkFtZTcwODY3MjIwNQ@@._V1_.jpg",
-          "width": 1497,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjQ0NTkwMzYyMV5BMl5BanBnXkFtZTcwODY3MjIwNQ@@._V1_.jpg",
+          "Width": 1497,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "director",
           "producer"
         ]
       },
       {
-        "id": "nm0005541",
-        "displayName": "Marlon Wayans",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNDU4OTdjMTAtY2VkNC00ZDg5LWI2N2MtNzQ4NzdkNmM0YmUwXkEyXkFqcGc@._V1_.jpg",
-          "width": 950,
-          "height": 1425
+        "ID": "nm0005541",
+        "DisplayName": "Marlon Wayans",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNDU4OTdjMTAtY2VkNC00ZDg5LWI2N2MtNzQ4NzdkNmM0YmUwXkEyXkFqcGc@._V1_.jpg",
+          "Width": 950,
+          "Height": 1425
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0005533",
-        "displayName": "Maitland Ward",
-        "alternativeNames": [
+        "ID": "nm0005533",
+        "DisplayName": "Maitland Ward",
+        "AlternativeNames": [
           "Maitland Bax",
           "Maitland Baxter",
           "Maitland",
           "Mrs. Maitland Ward"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BYTZiMmJjYmMtMmQzYi00MDk2LWJhMjAtYzA0MzFjOTc3MGFkXkEyXkFqcGc@._V1_CR100,0,598,897_.jpg",
-          "width": 598,
-          "height": 897
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BYTZiMmJjYmMtMmQzYi00MDk2LWJhMjAtYzA0MzFjOTc3MGFkXkEyXkFqcGc@._V1_CR100,0,598,897_.jpg",
+          "Width": 598,
+          "Height": 897
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "director",
           "writer"
         ]
       }
     ],
-    "originCountries": [
+    "OriginCountries": [
       {
-        "code": "US",
-        "name": "United States"
+        "Code": "US",
+        "Name": "United States"
       }
     ],
-    "spokenLanguages": [
+    "SpokenLanguages": [
       {
-        "code": "eng",
-        "name": "English"
+        "Code": "eng",
+        "Name": "English"
       }
     ],
-    "interests": [
+    "Interests": [
       {
-        "id": "in0000032",
-        "name": "Buddy Comedy",
-        "isSubgenre": true
+        "ID": "in0000032",
+        "Name": "Buddy Comedy",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000034",
-        "name": "Comedy"
+        "ID": "in0000034",
+        "Name": "Comedy",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000042",
-        "name": "Satire",
-        "isSubgenre": true
+        "ID": "in0000042",
+        "Name": "Satire",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000052",
-        "name": "Crime"
+        "ID": "in0000052",
+        "Name": "Crime",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000057",
-        "name": "Police Procedural",
-        "isSubgenre": true
+        "ID": "in0000057",
+        "Name": "Police Procedural",
+        "IsSubgenre": true
       }
-    ]
+    ],
+    "Seasons": [],
+    "Episodes": [],
+    "AddedAt": null,
+    "UpdatedAt": null
   },
   {
-    "id": "tt0133093",
-    "type": "movie",
-    "primaryTitle": "The Matrix",
-    "primaryImage": {
-      "url": "https://m.media-amazon.com/images/M/MV5BN2NmN2VhMTQtMDNiOS00NDlhLTliMjgtODE2ZTY0ODQyNDRhXkEyXkFqcGc@._V1_.jpg",
-      "width": 2100,
-      "height": 3156
+    "ID": "tt0133093",
+    "Type": "movie",
+    "PrimaryTitle": "The Matrix",
+    "PrimaryImage": {
+      "URL": "https://m.media-amazon.com/images/M/MV5BN2NmN2VhMTQtMDNiOS00NDlhLTliMjgtODE2ZTY0ODQyNDRhXkEyXkFqcGc@._V1_.jpg",
+      "Width": 2100,
+      "Height": 3156
     },
-    "startYear": 1999,
-    "runtimeSeconds": 8160,
-    "genres": [
+    "StartYear": 1999,
+    "RuntimeSeconds": 8160,
+    "Genres": [
       "Action",
       "Sci-Fi"
     ],
-    "rating": {
-      "aggregateRating": 8.7,
-      "voteCount": 2220300
+    "Rating": {
+      "AggregateRating": 8.7,
+      "VoteCount": 2220300
     },
-    "metacritic": {
-      "score": 73,
-      "reviewCount": 36
+    "Metacritic": {
+      "Score": 73,
+      "ReviewCount": 36
     },
-    "plot": "When a beautiful stranger leads computer hacker Neo to a forbidding underworld, he discovers the shocking truth--the life he knows is the elaborate deception of an evil cyber-intelligence.",
-    "directors": [
+    "Plot": "When a beautiful stranger leads computer hacker Neo to a forbidding underworld, he discovers the shocking truth--the life he knows is the elaborate deception of an evil cyber-intelligence.",
+    "Directors": [
       {
-        "id": "nm0905154",
-        "displayName": "Lana Wachowski",
-        "alternativeNames": [
+        "ID": "nm0905154",
+        "DisplayName": "Lana Wachowski",
+        "AlternativeNames": [
           "Lana \u0026 Andy",
           "The Wachowski Brothers",
           "Larry Wachowski",
           "The Wachowskis",
           "the Wachowskis"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjEzMTc2MDQ5OV5BMl5BanBnXkFtZTcwNjkzNDY0OA@@._V1_.jpg",
-          "width": 1365,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjEzMTc2MDQ5OV5BMl5BanBnXkFtZTcwNjkzNDY0OA@@._V1_.jpg",
+          "Width": 1365,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0905152",
-        "displayName": "Lilly Wachowski",
-        "alternativeNames": [
+        "ID": "nm0905152",
+        "DisplayName": "Lilly Wachowski",
+        "AlternativeNames": [
           "Lana \u0026 Andy",
           "The Wachowski Brothers",
           "Andy Wachowski",
           "The Wachowskis"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNTZmMjM5MDQtNTM5Yy00YmYzLWFmZTctZTJmODllN2Q3OTMwXkEyXkFqcGc@._V1_.jpg",
-          "width": 2500,
-          "height": 3750
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNTZmMjM5MDQtNTM5Yy00YmYzLWFmZTctZTJmODllN2Q3OTMwXkEyXkFqcGc@._V1_.jpg",
+          "Width": 2500,
+          "Height": 3750
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       }
     ],
-    "writers": [
+    "Writers": [
       {
-        "id": "nm0905152",
-        "displayName": "Lilly Wachowski",
-        "alternativeNames": [
+        "ID": "nm0905152",
+        "DisplayName": "Lilly Wachowski",
+        "AlternativeNames": [
           "Lana \u0026 Andy",
           "The Wachowski Brothers",
           "Andy Wachowski",
           "The Wachowskis"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNTZmMjM5MDQtNTM5Yy00YmYzLWFmZTctZTJmODllN2Q3OTMwXkEyXkFqcGc@._V1_.jpg",
-          "width": 2500,
-          "height": 3750
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNTZmMjM5MDQtNTM5Yy00YmYzLWFmZTctZTJmODllN2Q3OTMwXkEyXkFqcGc@._V1_.jpg",
+          "Width": 2500,
+          "Height": 3750
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       },
       {
-        "id": "nm0905154",
-        "displayName": "Lana Wachowski",
-        "alternativeNames": [
+        "ID": "nm0905154",
+        "DisplayName": "Lana Wachowski",
+        "AlternativeNames": [
           "Lana \u0026 Andy",
           "The Wachowski Brothers",
           "Larry Wachowski",
           "The Wachowskis",
           "the Wachowskis"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjEzMTc2MDQ5OV5BMl5BanBnXkFtZTcwNjkzNDY0OA@@._V1_.jpg",
-          "width": 1365,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjEzMTc2MDQ5OV5BMl5BanBnXkFtZTcwNjkzNDY0OA@@._V1_.jpg",
+          "Width": 1365,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "director",
           "producer",
           "writer"
         ]
       }
     ],
-    "stars": [
+    "Stars": [
       {
-        "id": "nm0000206",
-        "displayName": "Keanu Reeves",
-        "alternativeNames": [
+        "ID": "nm0000206",
+        "DisplayName": "Keanu Reeves",
+        "AlternativeNames": [
           "Norman Kreeves",
           "K. C. Reeves",
           "Keannu Reeves",
           "Chuck Spadina"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BNDEzOTdhNDUtY2EyMy00YTNmLWE5MjItZmRjMmQzYTRlMGRkXkEyXkFqcGc@._V1_.jpg",
-          "width": 1800,
-          "height": 2700
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BNDEzOTdhNDUtY2EyMy00YTNmLWE5MjItZmRjMmQzYTRlMGRkXkEyXkFqcGc@._V1_.jpg",
+          "Width": 1800,
+          "Height": 2700
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "miscellaneous",
           "producer"
         ]
       },
       {
-        "id": "nm0005251",
-        "displayName": "Carrie-Anne Moss",
-        "alternativeNames": [
+        "ID": "nm0005251",
+        "DisplayName": "Carrie-Anne Moss",
+        "AlternativeNames": [
           "Carrie Anne Moss",
           "Carrie Ann Moss",
           "Carrie-Ann Moss"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTYxMjgwNzEwOF5BMl5BanBnXkFtZTcwNTQ0NzI5Ng@@._V1_.jpg",
-          "width": 1547,
-          "height": 2048
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTYxMjgwNzEwOF5BMl5BanBnXkFtZTcwNTQ0NzI5Ng@@._V1_.jpg",
+          "Width": 1547,
+          "Height": 2048
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actress",
           "producer"
         ]
       },
       {
-        "id": "nm0000401",
-        "displayName": "Laurence Fishburne",
-        "alternativeNames": [
+        "ID": "nm0000401",
+        "DisplayName": "Laurence Fishburne",
+        "AlternativeNames": [
           "Larry Fishbourne",
           "Larry Fishburme",
           "Laurence Fishburne III",
           "Larry Fishburne",
           "Lawrence Fishburne"
         ],
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMTc0NjczNDc1MV5BMl5BanBnXkFtZTYwMDU0Mjg1._V1_.jpg",
-          "width": 267,
-          "height": 400
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMTc0NjczNDc1MV5BMl5BanBnXkFtZTYwMDU0Mjg1._V1_.jpg",
+          "Width": 267,
+          "Height": 400
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "director",
           "producer"
         ]
       },
       {
-        "id": "nm0915989",
-        "displayName": "Hugo Weaving",
-        "primaryImage": {
-          "url": "https://m.media-amazon.com/images/M/MV5BMjAxMzAyNDQyMF5BMl5BanBnXkFtZTcwOTM4ODcxMw@@._V1_.jpg",
-          "width": 281,
-          "height": 400
+        "ID": "nm0915989",
+        "DisplayName": "Hugo Weaving",
+        "AlternativeNames": null,
+        "PrimaryImage": {
+          "URL": "https://m.media-amazon.com/images/M/MV5BMjAxMzAyNDQyMF5BMl5BanBnXkFtZTcwOTM4ODcxMw@@._V1_.jpg",
+          "Width": 281,
+          "Height": 400
         },
-        "primaryProfessions": [
+        "PrimaryProfessions": [
           "actor",
           "producer",
           "soundtrack"
         ]
       }
     ],
-    "originCountries": [
+    "OriginCountries": [
       {
-        "code": "US",
-        "name": "United States"
+        "Code": "US",
+        "Name": "United States"
       },
       {
-        "code": "AU",
-        "name": "Australia"
+        "Code": "AU",
+        "Name": "Australia"
       }
     ],
-    "spokenLanguages": [
+    "SpokenLanguages": [
       {
-        "code": "eng",
-        "name": "English"
+        "Code": "eng",
+        "Name": "English"
       }
     ],
-    "interests": [
+    "Interests": [
       {
-        "id": "in0000001",
-        "name": "Action"
+        "ID": "in0000001",
+        "Name": "Action",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000002",
-        "name": "Action Epic",
-        "isSubgenre": true
+        "ID": "in0000002",
+        "Name": "Action Epic",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000006",
-        "name": "Martial Arts",
-        "isSubgenre": true
+        "ID": "in0000006",
+        "Name": "Martial Arts",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000158",
-        "name": "Artificial Intelligence",
-        "isSubgenre": true
+        "ID": "in0000158",
+        "Name": "Artificial Intelligence",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000159",
-        "name": "Cyberpunk",
-        "isSubgenre": true
+        "ID": "in0000159",
+        "Name": "Cyberpunk",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000160",
-        "name": "Dystopian Sci-Fi",
-        "isSubgenre": true
+        "ID": "in0000160",
+        "Name": "Dystopian Sci-Fi",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000162",
-        "name": "Sci-Fi"
+        "ID": "in0000162",
+        "Name": "Sci-Fi",
+        "IsSubgenre": false
       },
       {
-        "id": "in0000163",
-        "name": "Sci-Fi Epic",
-        "isSubgenre": true
+        "ID": "in0000163",
+        "Name": "Sci-Fi Epic",
+        "IsSubgenre": true
       },
       {
-        "id": "in0000197",
-        "name": "Gun Fu",
-        "isSubgenre": true
+        "ID": "in0000197",
+        "Name": "Gun Fu",
+        "IsSubgenre": true
       }
-    ]
+    ],
+    "Seasons": [],
+    "Episodes": [],
+    "AddedAt": null,
+    "UpdatedAt": null
   }
 ]
