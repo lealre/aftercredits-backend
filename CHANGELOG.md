@@ -11,6 +11,8 @@ integration suite are untouched in what they do.
 * Remove the migration binary from both Dockerfiles, the legacy `mongo` service from docker-compose, and the `MONGO_*` blocks from both env examples
 * Delete `scripts/backup_to_drive.sh`, which still used `mongodump` and had been superseded by `scripts/backup.sh` and the Pi's `pi/backup_to_drive.sh`
 * Strip the vestigial `bson` struct tags from the titles service types and remove the now-historical cutover runbook from `pi/README.md`
+* Read the scheduled tasks' database credentials from the deploy `.env` instead of duplicating them in `pi/.env`, so rotating the password cannot silently break the backups
+* Rename the compose host-port variable to `POSTGRES_PORT_HOST`, so `POSTGRES_PORT` means the connection port everywhere
 
 <a name="v0.1.0"></a>
 ## [v0.1.0](https://github.com/lealre/aftercredits-backend/compare/v0.0.12...v0.1.0) (2026-08-07)

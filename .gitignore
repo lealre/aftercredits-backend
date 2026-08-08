@@ -37,3 +37,8 @@ backups/
 # Design/planning docs and superpowers artifacts (local only, never committed)
 docs/
 .superpowers/
+
+# Compiled binaries (the Dockerfile builds these names at the repo root)
+/backend
+/database
+/mongo-to-postgres

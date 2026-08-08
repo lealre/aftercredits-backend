@@ -8,6 +8,14 @@ ENV_FILE="${SCRIPT_DIR}/.env"
 PI_DIR="${SCRIPT_DIR}"
 LOG_DIR="${PI_DIR}"
 
+# Optional: absolute path to the deploy .env (the compose stack's env file). When
+# set, the scheduled tasks read the database credentials and app config from it,
+# so those values live in exactly one place and pi/.env only carries the schedules
+# and the docker network. Set it in pi/.env or export it before running this
+# script. When unset, the tasks use pi/.env alone, which is how this worked
+# before.
+DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-}"
+
 # Ensure all paths are absolute
 ENV_FILE="$(cd "$(dirname "${ENV_FILE}")" && pwd)/$(basename "${ENV_FILE}")"
 LOG_DIR="$(cd "${LOG_DIR}" && pwd)"
@@ -78,6 +86,17 @@ RCLONE_CONFIG="${RCLONE_CONFIG_DIR}/rclone.conf"
 ENV_FILE_ABS="${ENV_FILE}"
 LOG_DIR_ABS="${LOG_DIR}"
 
+# Build the --env-file list: deploy env first (credentials/app config), pi/.env
+# second (schedules, network).
+if [ -n "${DEPLOY_ENV_FILE}" ] && [ -f "${DEPLOY_ENV_FILE}" ]; then
+    DEPLOY_ENV_ABS="$(cd "$(dirname "${DEPLOY_ENV_FILE}")" && pwd)/$(basename "${DEPLOY_ENV_FILE}")"
+    ENV_FILE_ARGS="--env-file ${DEPLOY_ENV_ABS} --env-file ${ENV_FILE_ABS}"
+    log "Using deploy env ${DEPLOY_ENV_ABS} for database credentials"
+else
+    ENV_FILE_ARGS="--env-file ${ENV_FILE_ABS}"
+    log "DEPLOY_ENV_FILE not set (or not found); using only ${ENV_FILE_ABS}"
+fi
+
 # Check if rclone config directory exists
 if [ ! -d "${RCLONE_CONFIG_DIR}" ]; then
     error "Rclone config directory not found at ${RCLONE_CONFIG_DIR}"
@@ -115,9 +134,9 @@ log "Docker images built successfully"
 # Use docker-compose network from aftercredits repository compose
 # The backup script in pi/backup_to_drive.sh uses env vars directly
 # The routines binary uses godotenv.Load() which reads from /app/.env (mounted)
-BACKUP_CRON="${BACKUP_SCHEDULE} docker run --rm --env-file ${ENV_FILE_ABS} -v ${RCLONE_CONFIG_DIR}:/root/.config/rclone:rw --network ${DOCKER_NETWORK} aftercredits-backup:latest >> ${LOG_DIR_ABS}/backup.log 2>&1"
+BACKUP_CRON="${BACKUP_SCHEDULE} docker run --rm ${ENV_FILE_ARGS} -v ${RCLONE_CONFIG_DIR}:/root/.config/rclone:rw --network ${DOCKER_NETWORK} aftercredits-backup:latest >> ${LOG_DIR_ABS}/backup.log 2>&1"
 
-MOVIES_CRON="${MOVIES_UPDATE_SCHEDULE} docker run --rm --env-file ${ENV_FILE_ABS} -v ${ENV_FILE_ABS}:/app/.env:ro --network ${DOCKER_NETWORK} aftercredits-routines:latest >> ${LOG_DIR_ABS}/movies-update.log 2>&1"
+MOVIES_CRON="${MOVIES_UPDATE_SCHEDULE} docker run --rm ${ENV_FILE_ARGS} -v ${ENV_FILE_ABS}:/app/.env:ro --network ${DOCKER_NETWORK} aftercredits-routines:latest >> ${LOG_DIR_ABS}/movies-update.log 2>&1"
 
 # Create temporary crontab file
 TEMP_CRONTAB=$(mktemp)
