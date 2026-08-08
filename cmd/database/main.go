@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,14 +13,12 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
-	"github.com/pressly/goose/v3"
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/postgres"
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/lealre/movies-backend/internal/store"
-	sqlassets "github.com/lealre/movies-backend/sql"
 )
 
 func main() {
@@ -35,7 +32,7 @@ func main() {
 
 	switch {
 	case *migrate:
-		if err := runMigrations(); err != nil {
+		if err := postgres.Migrate(); err != nil {
 			log.Fatalf("Failed to run migrations: %v", err)
 		}
 		fmt.Println("✅ Migrations applied successfully!")
@@ -55,22 +52,6 @@ func main() {
 		fmt.Println("No valid command specified.")
 		flag.Usage()
 	}
-}
-
-// runMigrations applies the embedded goose migrations over a pgx-stdlib
-// *sql.DB built from the same POSTGRES_* env postgres.Connect uses.
-func runMigrations() error {
-	db, err := sql.Open("pgx", postgres.URI())
-	if err != nil {
-		return fmt.Errorf("open sql.DB: %w", err)
-	}
-	defer db.Close()
-
-	goose.SetBaseFS(sqlassets.SchemaFS)
-	if err := goose.SetDialect("postgres"); err != nil {
-		return fmt.Errorf("set goose dialect: %w", err)
-	}
-	return goose.Up(db, "schema")
 }
 
 func createSuperuser(ctx context.Context, db store.Store) error {

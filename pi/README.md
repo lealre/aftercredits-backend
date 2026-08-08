@@ -40,7 +40,10 @@ that directory.
    The `.env` file should contain:
    - **Cron schedules**: `BACKUP_SCHEDULE` and `MOVIES_UPDATE_SCHEDULE`
    - **Docker network**: `DOCKER_NETWORK` (default: `aftercredits_default`)
-   - **Postgres settings**: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`
+   - **Postgres settings**: set `DEPLOY_ENV_FILE` to the absolute path of the
+     compose stack's `.env` and `setup-cron.sh` passes it as an additional
+     `--env-file`, so the database credentials and app config live in exactly one
+     place. Leave it unset to define `POSTGRES_*` here instead.
 
    See `.env.example` for a complete example with comments.
 
@@ -132,7 +135,8 @@ cd pi
 5. **`.env` file** is also mounted as a file (read-only) for scripts that read it directly
 6. **Rclone config** is mounted from `~/.config/rclone/rclone.conf`
 7. **Docker network**: Containers join the docker-compose network (default: `aftercredits_default`) to communicate with the postgres container
-8. **Postgres connection**: Uses `POSTGRES_HOST` value from `.env` file (should be set to `aftercredits-postgres` when using docker-compose network)
+8. **Postgres connection**: Uses `POSTGRES_HOST` from the deploy `.env` (set to
+   `aftercredits-postgres`, the container name on the compose network)
 
 ## Troubleshooting
 
