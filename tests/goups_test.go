@@ -2146,3 +2146,181 @@ func TestLeaveGroup(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	})
 }
+
+// TestGroupTitlesQueryParams covers the query-parameter surface of
+// GET /groups/{id}/titles — pagination, ordering and the watched/titleType
+// filters — which had no coverage at all.
+//
+// These are characterization tests: they pin the behavior that exists today so
+// it cannot drift silently. The one deliberate exception is orderBy=watched,
+// which was nondeterministic (the id list is built by ranging a map and nothing
+// re-sorted it for that key, so the same request returned a different order each
+// time). It is asserted against its intended behavior, not its old one.
+func TestGroupTitlesQueryParams(t *testing.T) {
+	_, tokenOwner := addUser(t, users.NewUserRequest{
+		Username: "queryparamsowner",
+		Password: "testPass",
+	})
+
+	group := createGroup(t, groups.CreateGroupRequest{
+		Name: "queryparamsgroup",
+	}, tokenOwner)
+
+	movieTitles := loadTitlesFixture(t)
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	seedTitles(t, append(append([]models.Title{}, movieTitles...), tvSeriesTitles...))
+
+	// Three movies and one series, added in a known order.
+	movieA, movieB, movieC := movieTitles[0], movieTitles[1], movieTitles[2]
+	series := tvSeriesTitles[0]
+
+	for _, title := range []string{movieA.ID, movieB.ID, movieC.ID, series.ID} {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     "https://www.imdb.com/title/" + title + "/",
+			GroupId: group.Id,
+		}, tokenOwner)
+	}
+
+	// movieA and movieC watched with distinct dates; movieB and the series left
+	// unwatched, so watchedAt is nil for them.
+	watchedEarly := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	watchedLate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	setGroupTitleWatched(t, group.Id, movieA.ID, true, &watchedEarly, tokenOwner)
+	setGroupTitleWatched(t, group.Id, movieC.ID, true, &watchedLate, tokenOwner)
+
+	t.Run("returns every title in the group when no query params are given", func(t *testing.T) {
+		page := getGroupTitlesPage(t, group.Id, "", tokenOwner)
+
+		require.Equal(t, 4, page.TotalResults)
+		require.Len(t, page.Content, 4)
+	})
+
+	t.Run("paginates with size and page", func(t *testing.T) {
+		first := getGroupTitlesPage(t, group.Id, "size=2&page=1&orderBy=addedAt&ascending=true", tokenOwner)
+		require.Equal(t, 4, first.TotalResults)
+		require.Equal(t, 2, first.TotalPages)
+		require.Equal(t, 2, first.Size)
+		require.Equal(t, 1, first.Page)
+		require.Len(t, first.Content, 2)
+
+		second := getGroupTitlesPage(t, group.Id, "size=2&page=2&orderBy=addedAt&ascending=true", tokenOwner)
+		require.Equal(t, 4, second.TotalResults)
+		require.Equal(t, 2, second.TotalPages)
+		require.Equal(t, 2, second.Page)
+		require.Len(t, second.Content, 2)
+
+		// The two pages must partition the group, with no overlap.
+		require.NotEqual(t, groupTitleIds(first), groupTitleIds(second))
+		for _, id := range groupTitleIds(first) {
+			require.NotContains(t, groupTitleIds(second), id)
+		}
+	})
+
+	t.Run("keeps the totals when the page is past the last one", func(t *testing.T) {
+		// Regression guard: the totals are computed over the whole filtered set,
+		// not over the returned rows. A rewrite that derives them from the paged
+		// query returns zeros here.
+		page := getGroupTitlesPage(t, group.Id, "size=2&page=99", tokenOwner)
+
+		require.Equal(t, 4, page.TotalResults)
+		require.Equal(t, 2, page.TotalPages)
+		require.Equal(t, 2, page.Size)
+		require.Equal(t, 99, page.Page)
+		require.Empty(t, page.Content)
+	})
+
+	t.Run("serializes Content as null past the last page and as [] for an empty group", func(t *testing.T) {
+		// Both decode to an empty slice, so this asserts on the raw body. The
+		// two shapes differ today; this pins that difference rather than
+		// endorsing it.
+		pastLast := getGroupTitlesRawBody(t, group.Id, "size=2&page=99", tokenOwner)
+		require.Contains(t, pastLast, `"Content":null`)
+
+		emptyGroup := createGroup(t, groups.CreateGroupRequest{
+			Name: "queryparamsemptygroup",
+		}, tokenOwner)
+		empty := getGroupTitlesRawBody(t, emptyGroup.Id, "", tokenOwner)
+		require.Contains(t, empty, `"Content":[]`)
+	})
+
+	t.Run("filters by watched", func(t *testing.T) {
+		watched := getGroupTitlesPage(t, group.Id, "watched=true", tokenOwner)
+		require.Equal(t, 2, watched.TotalResults)
+		require.ElementsMatch(t, []string{movieA.ID, movieC.ID}, groupTitleIds(watched))
+
+		unwatched := getGroupTitlesPage(t, group.Id, "watched=false", tokenOwner)
+		require.Equal(t, 2, unwatched.TotalResults)
+		require.ElementsMatch(t, []string{movieB.ID, series.ID}, groupTitleIds(unwatched))
+	})
+
+	t.Run("filters by titleType", func(t *testing.T) {
+		movies := getGroupTitlesPage(t, group.Id, "titleType=movie", tokenOwner)
+		require.Equal(t, 3, movies.TotalResults)
+		require.ElementsMatch(t, []string{movieA.ID, movieB.ID, movieC.ID}, groupTitleIds(movies))
+
+		series := getGroupTitlesPage(t, group.Id, "titleType=serie", tokenOwner)
+		require.Equal(t, 1, series.TotalResults)
+		require.Len(t, series.Content, 1)
+	})
+
+	t.Run("returns the empty-page shape when a filter matches nothing", func(t *testing.T) {
+		emptyGroup := createGroup(t, groups.CreateGroupRequest{
+			Name: "queryparamsnomatchgroup",
+		}, tokenOwner)
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     "https://www.imdb.com/title/" + movieA.ID + "/",
+			GroupId: emptyGroup.Id,
+		}, tokenOwner)
+
+		page := getGroupTitlesPage(t, emptyGroup.Id, "watched=true", tokenOwner)
+		require.Equal(t, 0, page.TotalResults)
+		require.Equal(t, 0, page.TotalPages)
+		require.Empty(t, page.Content)
+	})
+
+	t.Run("orders by watchedAt with the unwatched titles last in both directions", func(t *testing.T) {
+		// movieB and the series have no watchedAt. The comparator puts nil last
+		// regardless of direction, so they trail in ascending AND descending.
+		ascending := groupTitleIds(getGroupTitlesPage(t, group.Id, "orderBy=watchedAt&ascending=true", tokenOwner))
+		require.Equal(t, []string{movieA.ID, movieC.ID}, ascending[:2], "watched titles sort by date ascending")
+		require.ElementsMatch(t, []string{movieB.ID, series.ID}, ascending[2:], "titles without watchedAt trail")
+
+		descending := groupTitleIds(getGroupTitlesPage(t, group.Id, "orderBy=watchedAt&ascending=false", tokenOwner))
+		require.Equal(t, []string{movieC.ID, movieA.ID}, descending[:2], "watched titles sort by date descending")
+		require.ElementsMatch(t, []string{movieB.ID, series.ID}, descending[2:], "titles without watchedAt still trail")
+	})
+
+	t.Run("orders by addedAt deterministically and reverses with ascending=false", func(t *testing.T) {
+		ascending := groupTitleIds(getGroupTitlesPage(t, group.Id, "orderBy=addedAt&ascending=true", tokenOwner))
+		require.Len(t, ascending, 4)
+
+		// Repeating the same request must return the same order.
+		require.Equal(t, ascending, groupTitleIds(getGroupTitlesPage(t, group.Id, "orderBy=addedAt&ascending=true", tokenOwner)))
+
+		descending := groupTitleIds(getGroupTitlesPage(t, group.Id, "orderBy=addedAt&ascending=false", tokenOwner))
+		require.Len(t, descending, 4)
+		require.Equal(t, ascending[0], descending[3], "the first added title is last when descending")
+		require.Equal(t, ascending[3], descending[0], "the last added title is first when descending")
+	})
+
+	t.Run("orders by watched deterministically with the unwatched titles first", func(t *testing.T) {
+		// This is the fixed behavior. Before, allTitlesIds was left in Go map
+		// order for orderBy=watched, so the same request returned a different
+		// page each time.
+		ascending := getGroupTitlesPage(t, group.Id, "orderBy=watched&ascending=true", tokenOwner)
+		ids := groupTitleIds(ascending)
+		require.Len(t, ids, 4)
+		require.ElementsMatch(t, []string{movieB.ID, series.ID}, ids[:2], "unwatched titles come first")
+		require.ElementsMatch(t, []string{movieA.ID, movieC.ID}, ids[2:], "watched titles come last")
+
+		// Stability is the actual regression guard: repeat it several times.
+		for i := 0; i < 4; i++ {
+			require.Equal(t, ids, groupTitleIds(getGroupTitlesPage(t, group.Id, "orderBy=watched&ascending=true", tokenOwner)),
+				"orderBy=watched must return a stable order across requests")
+		}
+
+		descending := groupTitleIds(getGroupTitlesPage(t, group.Id, "orderBy=watched&ascending=false", tokenOwner))
+		require.ElementsMatch(t, []string{movieA.ID, movieC.ID}, descending[:2], "watched titles come first when descending")
+		require.ElementsMatch(t, []string{movieB.ID, series.ID}, descending[2:], "unwatched titles come last when descending")
+	})
+}

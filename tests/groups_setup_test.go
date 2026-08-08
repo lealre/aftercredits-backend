@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/stretchr/testify/require"
@@ -201,4 +203,76 @@ func removeUserFromGroupApi(t *testing.T, groupId, userId, token string) *http.R
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	return resp
+}
+
+// getGroupTitlesResponse calls GET /groups/{id}/titles with a raw query string
+// (no leading "?") and returns the response for the caller to assert on.
+func getGroupTitlesResponse(t *testing.T, groupId, query, token string) *http.Response {
+	t.Helper()
+
+	url := testServer.URL + "/groups/" + groupId + "/titles"
+	if query != "" {
+		url += "?" + query
+	}
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// getGroupTitlesPage decodes a successful group-titles response.
+func getGroupTitlesPage(t *testing.T, groupId, query, token string) generics.Page[groups.GroupTitleDetail] {
+	t.Helper()
+
+	resp := getGroupTitlesResponse(t, groupId, query, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var page generics.Page[groups.GroupTitleDetail]
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&page))
+	return page
+}
+
+// getGroupTitlesRawBody returns the response body as a string. Needed because a
+// JSON `null` and a `[]` both decode into an empty Go slice, so the difference
+// is only observable before decoding.
+func getGroupTitlesRawBody(t *testing.T, groupId, query, token string) string {
+	t.Helper()
+
+	resp := getGroupTitlesResponse(t, groupId, query, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(body)
+}
+
+// groupTitleIds reduces a page to its title ids, in order. Order is the point
+// of the sorting subtests, so it is asserted explicitly rather than as a set.
+func groupTitleIds(page generics.Page[groups.GroupTitleDetail]) []string {
+	ids := make([]string, 0, len(page.Content))
+	for _, detail := range page.Content {
+		ids = append(ids, detail.Id)
+	}
+	return ids
+}
+
+// setGroupTitleWatched marks a group title watched (or not) with an explicit
+// watchedAt, so ordering tests have deterministic values to sort on.
+func setGroupTitleWatched(t *testing.T, groupId, titleId string, watched bool, watchedAt *time.Time, token string) {
+	t.Helper()
+
+	body, err := json.Marshal(groups.UpdateGroupTitleWatchedRequest{
+		TitleId:   titleId,
+		Watched:   &watched,
+		WatchedAt: &generics.FlexibleDate{Time: watchedAt},
+	})
+	require.NoError(t, err)
+	patchGroupTitleWatched(t, groupId, body, token)
 }
