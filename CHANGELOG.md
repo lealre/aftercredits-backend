@@ -42,21 +42,17 @@ response-shape or auth changes.
 * Run the app, the deploy one-shot, the scheduled title sync and the integration suite on Postgres; `database -migrate` applies the embedded goose migrations
 * Switch backups from `mongodump` to `pg_dump`/`pg_restore`
 
-<a name="v0.0.13-groups"></a>
-## v0.0.13 — Group management (2026-07-31)
+<a name="v0.0.13"></a>
+## v0.0.13 — Episodes on demand and group management (2026-07-31)
 
+* Add GET /titles/{id}/episodes to load episodes on demand
+* Omit the embedded episodes array from the group-titles list response (lighter payloads; seasons summary retained)
 * Add PATCH /groups/{id} to rename a group (owner only)
 * Add DELETE /groups/{id} soft-delete (owner only); excluded from all reads, member group lists cleaned up
 * Add DELETE /groups/{id}/users/{userId} to leave a group (non-owner, self)
 * Exclude soft-deleted groups from the unique (ownerId, name) index so names can be reused
 * Add an optional group description (set on create, editable via PATCH /groups/{id})
 * Backfill deleted=false + description="" on existing groups automatically via db-setup (`database -backfill-groups`), before the index reset
-
-<a name="v0.0.13"></a>
-## [v0.0.13](https://github.com/lealre/aftercredits-backend/compare/v0.0.12...v0.0.13) (2026-07-25)
-
-* Add GET /titles/{id}/episodes to load episodes on demand
-* Omit the embedded episodes array from the group-titles list response (lighter payloads; seasons summary retained)
 
 <a name="v0.0.12"></a>
 ## [v0.0.12](https://github.com/lealre/aftercredits-backend/compare/v0.0.11...v0.0.12) (2026-07-25)
