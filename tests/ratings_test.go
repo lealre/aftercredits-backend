@@ -815,6 +815,309 @@ func TestDeleteRating(t *testing.T) {
 	})
 }
 
+// TestRatingsAreGroupScoped covers the invariant that a rating's identity is
+// (user, title, group), exercised end to end through the API.
+//
+// Its centrepiece is the leak regression subtest. Before ratings carried a
+// group, the group-titles read path ran `WHERE title_id = ANY($1::text[])` with
+// no group filter at all, so one group's title detail shipped every rating any
+// user in the system had left on that title.
+func TestRatingsAreGroupScoped(t *testing.T) {
+	t.Run("The same user rates the same title in two groups and both ratings persist", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		noteGroupA := float32(7)
+		noteGroupB := float32(3)
+
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, noteGroupA, nil, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
+
+		require.NotEqual(t, ratingGroupA.Id, ratingGroupB.Id,
+			"Expected rating the same title in a second group to create a distinct rating, not reuse the first")
+		require.Equal(t, world.groupA.Id, ratingGroupA.GroupId,
+			"Expected the rating created in group A to report group A")
+		require.Equal(t, world.groupB.Id, ratingGroupB.GroupId,
+			"Expected the rating created in group B to report group B")
+
+		// Database assertion: two rows, one per group, each carrying its own note.
+		ratingGroupADb := getRating(t, ratingGroupA.Id)
+		require.Equal(t, world.groupA.Id, ratingGroupADb.GroupId, "Expected group A's stored rating to carry group A's id")
+		require.Equal(t, noteGroupA, ratingGroupADb.Note, "Expected group A's stored rating to keep group A's note")
+		require.Equal(t, world.user.Id, ratingGroupADb.UserId, "Expected group A's stored rating to belong to the rating user")
+
+		ratingGroupBDb := getRating(t, ratingGroupB.Id)
+		require.Equal(t, world.groupB.Id, ratingGroupBDb.GroupId, "Expected group B's stored rating to carry group B's id")
+		require.Equal(t, noteGroupB, ratingGroupBDb.Note, "Expected group B's stored rating to keep group B's note")
+
+		require.Len(t, getRatingsForTitleFromDB(t, world.movie.ID), 2,
+			"Expected exactly one stored rating per group for this user and title")
+	})
+
+	t.Run("Group titles show only the requesting group's ratings", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		noteGroupA := float32(7)
+		noteGroupB := float32(3)
+		noteOtherUserGroupB := float32(10)
+
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, noteGroupA, nil, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
+		ratingOtherUserGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteOtherUserGroupB, nil, world.otherToken)
+
+		// Sanity check first: all three ratings really are stored, so a short
+		// group A list below cannot be mistaken for "nothing was written".
+		require.Len(t, getRatingsForTitleFromDB(t, world.movie.ID), 3,
+			"Expected all three ratings on this title to be stored before asserting what each group sees")
+
+		detailGroupA := getGroupTitleDetail(t, world.groupA.Id, world.movie.ID, world.token)
+		require.Len(t, detailGroupA.GroupRatings, 1,
+			"Expected group A's title detail to carry only the rating left in group A, never group B's ratings")
+		require.Equal(t, ratingGroupA.Id, detailGroupA.GroupRatings[0].Id,
+			"Expected group A's title detail to carry the rating created in group A")
+		require.Equal(t, world.groupA.Id, detailGroupA.GroupRatings[0].GroupId,
+			"Expected every rating listed for group A to be attributed to group A")
+		require.Equal(t, noteGroupA, detailGroupA.GroupRatings[0].Note,
+			"Expected group A's title detail to carry group A's note")
+
+		detailGroupB := getGroupTitleDetail(t, world.groupB.Id, world.movie.ID, world.token)
+		require.Len(t, detailGroupB.GroupRatings, 2,
+			"Expected group B's title detail to carry both of its own members' ratings and nothing from group A")
+
+		listedIds := []string{}
+		listedNotes := []float32{}
+		for _, rating := range detailGroupB.GroupRatings {
+			require.Equal(t, world.groupB.Id, rating.GroupId,
+				"Expected every rating listed for group B to be attributed to group B")
+			listedIds = append(listedIds, rating.Id)
+			listedNotes = append(listedNotes, rating.Note)
+		}
+		require.ElementsMatch(t, []string{ratingGroupB.Id, ratingOtherUserGroupB.Id}, listedIds,
+			"Expected group B's title detail to list exactly the two ratings left in group B")
+		require.ElementsMatch(t, []float32{noteGroupB, noteOtherUserGroupB}, listedNotes,
+			"Expected group B's title detail to carry group B's notes")
+	})
+
+	t.Run("Rating a title in a second group is allowed but rating it twice in the same group still returns 409", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		_ = addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, float32(7), nil, world.token)
+
+		// A rating in another group is a different fact, not a duplicate.
+		respSecondGroup := addRating(t, ratings.NewRating{
+			GroupId: world.groupB.Id,
+			TitleId: world.movie.ID,
+			Note:    float32(3),
+		}, world.token)
+		defer respSecondGroup.Body.Close()
+		require.Equal(t, http.StatusCreated, respSecondGroup.StatusCode,
+			"Expected rating a title already rated in another group to be allowed")
+
+		// A second rating in the same group still is a duplicate.
+		respSameGroup := addRating(t, ratings.NewRating{
+			GroupId: world.groupA.Id,
+			TitleId: world.movie.ID,
+			Note:    float32(9),
+		}, world.token)
+		defer respSameGroup.Body.Close()
+		require.Equal(t, http.StatusConflict, respSameGroup.StatusCode,
+			"Expected a second rating for the same title in the same group to still conflict")
+
+		var respSameGroupBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respSameGroup.Body).Decode(&respSameGroupBody),
+			"error decoding the conflict response body")
+		require.Contains(t, respSameGroupBody.ErrorMessage, ratings.ErrRatingAlreadyExists.Error()[1:],
+			"Expected the same-group duplicate to report the rating-already-exists error")
+
+		require.Len(t, getRatingsForTitleFromDB(t, world.movie.ID), 2,
+			"Expected the rejected duplicate to leave exactly the two group-scoped ratings")
+	})
+
+	t.Run("Updating a rating leaves the other group's rating untouched", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		noteGroupA := float32(7)
+		noteGroupB := float32(3)
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, noteGroupA, nil, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
+
+		updatedNote := float32(1)
+		respUpdated := updateRating(t, ratings.UpdateRatingRequest{Note: updatedNote}, ratingGroupA.Id, world.token)
+		defer respUpdated.Body.Close()
+		require.Equal(t, http.StatusOK, respUpdated.StatusCode, "Expected group A's rating to be updated")
+
+		var respUpdatedBody ratings.Rating
+		require.NoError(t, json.NewDecoder(respUpdated.Body).Decode(&respUpdatedBody), "error decoding the updated rating")
+		require.Equal(t, updatedNote, respUpdatedBody.Note, "Expected the updated rating to carry the new note")
+		require.Equal(t, world.groupA.Id, respUpdatedBody.GroupId, "Expected updating a rating not to move it to another group")
+
+		ratingGroupBDb := getRating(t, ratingGroupB.Id)
+		require.Equal(t, noteGroupB, ratingGroupBDb.Note,
+			"Expected group B's rating to be untouched by a PATCH aimed at group A's rating")
+		require.Equal(t, world.groupB.Id, ratingGroupBDb.GroupId, "Expected group B's rating to stay attributed to group B")
+
+		detailGroupA := getGroupTitleDetail(t, world.groupA.Id, world.movie.ID, world.token)
+		require.Len(t, detailGroupA.GroupRatings, 1, "Expected group A to still show exactly its own rating")
+		require.Equal(t, updatedNote, detailGroupA.GroupRatings[0].Note, "Expected group A to show the updated note")
+
+		detailGroupB := getGroupTitleDetail(t, world.groupB.Id, world.movie.ID, world.token)
+		require.Len(t, detailGroupB.GroupRatings, 1, "Expected group B to still show exactly its own rating")
+		require.Equal(t, noteGroupB, detailGroupB.GroupRatings[0].Note, "Expected group B to still show its original note")
+	})
+
+	t.Run("Deleting a rating leaves the other group's rating untouched", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		noteGroupB := float32(3)
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, float32(7), nil, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
+
+		respDeleted := deleteRating(t, ratingGroupA.Id, world.token)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode, "Expected group A's rating to be deleted")
+
+		require.Zero(t, countRatingsWithId(t, ratingGroupA.Id), "Expected group A's rating to be gone from the database")
+		require.Equal(t, 1, countRatingsWithId(t, ratingGroupB.Id),
+			"Expected group B's rating to survive a DELETE aimed at group A's rating")
+
+		detailGroupA := getGroupTitleDetail(t, world.groupA.Id, world.movie.ID, world.token)
+		require.Empty(t, detailGroupA.GroupRatings, "Expected group A to show no ratings after deleting its only one")
+
+		detailGroupB := getGroupTitleDetail(t, world.groupB.Id, world.movie.ID, world.token)
+		require.Len(t, detailGroupB.GroupRatings, 1, "Expected group B to still show its own rating")
+		require.Equal(t, ratingGroupB.Id, detailGroupB.GroupRatings[0].Id, "Expected group B to still show its own rating row")
+		require.Equal(t, noteGroupB, detailGroupB.GroupRatings[0].Note, "Expected group B's note to be unchanged")
+	})
+}
+
+// TestRatingsForTVSeriesAreGroupScoped exercises the per-season rating flow with
+// two groups in play. The add path resolves an existing rating by
+// (user, title, group); without the group predicate that lookup matches one row
+// per group and silently resolves to an arbitrary one.
+func TestRatingsForTVSeriesAreGroupScoped(t *testing.T) {
+	season1 := 1
+	season2 := 2
+
+	t.Run("Season ratings for the same series stay independent in each group", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		noteGroupASeason1 := float32(4)
+		noteGroupBSeason1 := float32(10)
+		noteGroupBSeason2 := float32(8)
+
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, noteGroupASeason1, &season1, world.token)
+		ratingGroupBFirst := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, noteGroupBSeason1, &season1, world.token)
+		ratingGroupBSecond := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, noteGroupBSeason2, &season2, world.token)
+
+		require.NotEqual(t, ratingGroupA.Id, ratingGroupBFirst.Id,
+			"Expected the series rating in each group to be a distinct row")
+		require.Equal(t, ratingGroupBFirst.Id, ratingGroupBSecond.Id,
+			"Expected both group B seasons to land on the same group B rating")
+
+		ratingGroupADb := getRating(t, ratingGroupA.Id)
+		require.Equal(t, world.groupA.Id, ratingGroupADb.GroupId, "Expected group A's series rating to carry group A's id")
+		require.NotNil(t, ratingGroupADb.SeasonsRatings, "Expected group A's series rating to hold season ratings")
+		require.Len(t, *ratingGroupADb.SeasonsRatings, 1,
+			"Expected group A's series rating to hold only the season rated in group A")
+		require.Equal(t, noteGroupASeason1, ratingGroupADb.Note,
+			"Expected group A's overall note to be the mean of the seasons rated in group A only")
+
+		ratingGroupBDb := getRating(t, ratingGroupBFirst.Id)
+		require.Equal(t, world.groupB.Id, ratingGroupBDb.GroupId, "Expected group B's series rating to carry group B's id")
+		require.NotNil(t, ratingGroupBDb.SeasonsRatings, "Expected group B's series rating to hold season ratings")
+		require.Len(t, *ratingGroupBDb.SeasonsRatings, 2, "Expected group B's series rating to hold both seasons rated in group B")
+		require.Equal(t, (noteGroupBSeason1+noteGroupBSeason2)/2, ratingGroupBDb.Note,
+			"Expected group B's overall note to be the mean of the seasons rated in group B only")
+
+		detailGroupA := getGroupTitleDetail(t, world.groupA.Id, world.tvSeries.ID, world.token)
+		require.Len(t, detailGroupA.GroupRatings, 1, "Expected group A to show only its own series rating")
+		require.Equal(t, world.groupA.Id, detailGroupA.GroupRatings[0].GroupId,
+			"Expected group A's series rating to be attributed to group A")
+		require.Equal(t, noteGroupASeason1, detailGroupA.GroupRatings[0].Note, "Expected group A to show group A's overall note")
+		require.NotNil(t, detailGroupA.GroupRatings[0].SeasonsRatings, "Expected group A's listed rating to carry its seasons")
+		require.Len(t, *detailGroupA.GroupRatings[0].SeasonsRatings, 1,
+			"Expected group A's listed rating to carry only the season rated in group A")
+
+		detailGroupB := getGroupTitleDetail(t, world.groupB.Id, world.tvSeries.ID, world.token)
+		require.Len(t, detailGroupB.GroupRatings, 1, "Expected group B to show only its own series rating")
+		require.Equal(t, world.groupB.Id, detailGroupB.GroupRatings[0].GroupId,
+			"Expected group B's series rating to be attributed to group B")
+		require.Equal(t, (noteGroupBSeason1+noteGroupBSeason2)/2, detailGroupB.GroupRatings[0].Note,
+			"Expected group B to show group B's overall note")
+		require.NotNil(t, detailGroupB.GroupRatings[0].SeasonsRatings, "Expected group B's listed rating to carry its seasons")
+		require.Len(t, *detailGroupB.GroupRatings[0].SeasonsRatings, 2,
+			"Expected group B's listed rating to carry both seasons rated in group B")
+	})
+
+	t.Run("Rating a season already rated in the same group returns 409 and leaves the other group untouched", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		noteGroupASeason1 := float32(4)
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, noteGroupASeason1, &season1, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float32(10), &season1, world.token)
+
+		respDuplicate := addRating(t, ratings.NewRating{
+			GroupId: world.groupB.Id,
+			TitleId: world.tvSeries.ID,
+			Note:    float32(6),
+			Season:  &season1,
+		}, world.token)
+		defer respDuplicate.Body.Close()
+		require.Equal(t, http.StatusConflict, respDuplicate.StatusCode,
+			"Expected rating the same season twice in the same group to still conflict")
+
+		var respDuplicateBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDuplicate.Body).Decode(&respDuplicateBody),
+			"error decoding the season conflict response body")
+		require.Contains(t, respDuplicateBody.ErrorMessage, ratings.ErrSeasonRatingAlreadyExists.Error()[1:],
+			"Expected the same-group season duplicate to report the season-rating-already-exists error")
+
+		ratingGroupADb := getRating(t, ratingGroupA.Id)
+		require.Equal(t, noteGroupASeason1, ratingGroupADb.Note,
+			"Expected group A's series rating to be untouched by a rejected group B insert")
+		require.Len(t, *ratingGroupADb.SeasonsRatings, 1, "Expected group A's seasons to be untouched")
+
+		ratingGroupBDb := getRating(t, ratingGroupB.Id)
+		require.Equal(t, float32(10), ratingGroupBDb.Note, "Expected group B's series rating to keep its original note")
+	})
+
+	t.Run("Deleting a season rating leaves the other group's series rating intact", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, float32(4), &season1, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float32(10), &season1, world.token)
+		_ = addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float32(8), &season2, world.token)
+
+		// Season 1 is group A's only season, so deleting it removes the whole
+		// group A rating and must not reach group B's season 1.
+		respDeleted := deleteRatingSeason(t, ratingGroupA.Id, world.token, season1)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode, "Expected group A's season rating to be deleted")
+
+		require.Zero(t, countRatingsWithId(t, ratingGroupA.Id),
+			"Expected group A's series rating to be removed once its last season was deleted")
+
+		ratingGroupBDb := getRating(t, ratingGroupB.Id)
+		require.Equal(t, world.groupB.Id, ratingGroupBDb.GroupId, "Expected group B's series rating to survive")
+		require.NotNil(t, ratingGroupBDb.SeasonsRatings, "Expected group B's series rating to still hold season ratings")
+		require.Len(t, *ratingGroupBDb.SeasonsRatings, 2,
+			"Expected group B to keep both of its seasons after group A's season was deleted")
+
+		detailGroupA := getGroupTitleDetail(t, world.groupA.Id, world.tvSeries.ID, world.token)
+		require.Empty(t, detailGroupA.GroupRatings, "Expected group A to show no series rating after deleting its last season")
+
+		detailGroupB := getGroupTitleDetail(t, world.groupB.Id, world.tvSeries.ID, world.token)
+		require.Len(t, detailGroupB.GroupRatings, 1, "Expected group B to still show its own series rating")
+	})
+}
+
 func TestDeleteRatingSeason(t *testing.T) {
 	resetDB(t)
 

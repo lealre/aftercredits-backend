@@ -1,9 +1,19 @@
 <a name="v0.1.2"></a>
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
 
-Two bug fixes and fewer database round-trips on `GET /groups/{id}/titles`, plus the
+Ratings and comments become group-scoped — which needs a schema migration and a
+short stop of the backend during the deploy, see below. Plus two bug fixes,
+fewer database round-trips on `GET /groups/{id}/titles`, and the
 query-parameter tests that endpoint never had.
 
+* **Ratings and comments are now per-group facts.** A rating or comment belongs to one group, keyed on (user, title, group), so the same title can be rated and commented differently in each group you share it with. Previously one rating was shared across every group the author belonged to
+* Fix a group's title detail showing other groups' ratings. The group-titles read applied no group filter at all, so every rating on a title by any user in the system was served to every group holding it. Comments were already filtered; ratings never were
+* Rating and comment responses now carry `groupId`
+* Rating or commenting on a title you already rated or commented in another group is no longer rejected as a duplicate; a second one in the *same* group still conflicts
+* The group-scoped comment routes now bind the comment id to the group in the URL: `PATCH`/`DELETE /groups/{groupId}/titles/{titleId}/comments/{commentId}` returns `404` when the id names a comment in a different group, instead of editing or deleting it
+* **Requires migration 003.** It backfills `group_id` on every existing rating and comment from the one live group that holds the title and has the author as a member, and aborts cleanly — changing nothing, recording no version, safe to re-run — if any row maps to no group or to more than one. If it aborts, the message names the offending rows with their user and title
+* **Deploy action: stop the backend container before running `database -migrate`, and start the new image after.** The migration makes `group_id` `NOT NULL` in the same step that adds it, so the previous binary's rating and comment inserts fail for as long as it stays up against the new schema
+* Note that migration 003's `Down` is one-way once used: rolling back re-adds the global (user, title) uniqueness, which fails as soon as anyone holds two ratings or comments for one title in different groups
 * Fix `orderBy=watched` returning a different order on every request. The id list is built by ranging a map, and nothing re-sorted it for that key, so the sort order — and therefore which titles landed on which page — was effectively random. It now sorts unwatched first (matching `ORDER BY watched ASC`) with a title-id tie-break, giving a total order
 * Fix a database error being reported as `404 Not Found`. Six handlers checked `!ok` before `err`, so any store failure surfaced as "not found" instead of a 500
 * Guard `GET /groups/{id}/titles` and `GET /groups/{id}/users` with a single `EXISTS` query instead of loading the whole group and discarding it — the group, its members, every group title and every season row were being materialized twice per request

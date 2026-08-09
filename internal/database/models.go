@@ -15,6 +15,7 @@ type Comment struct {
 	Comment   pgtype.Text
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+	GroupID   string
 }
 
 type CommentSeason struct {
@@ -68,6 +69,7 @@ type Rating struct {
 	Note      float32
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+	GroupID   string
 }
 
 type RatingSeason struct {

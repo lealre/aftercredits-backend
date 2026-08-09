@@ -39,23 +39,29 @@ type Store interface {
 	GetTitleTypes(ctx context.Context, titleIds []string) (map[string]string, error)
 
 	// ----- Ratings -----
+	//
+	// A rating is a group-scoped fact keyed by (userId, titleId, groupId), so
+	// every read that is not addressed by the rating's own id takes a groupId.
+	// AddRating and UpdateRating carry it on the models.UserRating itself.
 
 	AddRating(ctx context.Context, rating models.UserRating) (models.UserRating, error)
-	GetRatingsByTitleId(ctx context.Context, titleId string) ([]models.UserRating, error)
+	GetRatingsByTitleId(ctx context.Context, titleId, groupId string) ([]models.UserRating, error)
 	GetRatingById(ctx context.Context, ratingId, userId string) (models.UserRating, error)
-	GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId string) (models.UserRating, error)
+	GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId, groupId string) (models.UserRating, error)
 	UpdateRating(ctx context.Context, rating models.UserRating, userId string) (models.UserRating, error)
-	GetRatingsByTitleIds(ctx context.Context, titleIds []string) ([]models.UserRating, error)
+	GetRatingsByTitleIds(ctx context.Context, titleIds []string, groupId string) ([]models.UserRating, error)
 	DeleteRating(ctx context.Context, ratingId, userId string) (int64, error)
 
 	// ----- Comments -----
+	//
+	// Group-scoped on the same terms as ratings.
 
-	GetCommentsByTitleId(ctx context.Context, titleId string, usersFromGroup []string) ([]models.Comment, error)
-	GetUserCommentByTitleId(ctx context.Context, titleId string, userId string) (models.Comment, error)
+	GetCommentsByTitleId(ctx context.Context, titleId, groupId string) ([]models.Comment, error)
+	GetUserCommentByTitleId(ctx context.Context, titleId, userId, groupId string) (models.Comment, error)
 	GetCommentById(ctx context.Context, commentId string, userId string) (models.Comment, error)
 	AddComment(ctx context.Context, comment models.Comment) (models.Comment, error)
 	UpdateComment(ctx context.Context, comment models.Comment, userId string) (models.Comment, error)
-	DeleteComment(ctx context.Context, commentId, userId string) (int64, error)
+	DeleteComment(ctx context.Context, commentId, userId, groupId string) (int64, error)
 
 	// ----- Groups -----
 

@@ -12,16 +12,17 @@ import (
 )
 
 const deleteCommentRow = `-- name: DeleteCommentRow :execrows
-DELETE FROM comments WHERE id = $1 AND user_id = $2
+DELETE FROM comments WHERE id = $1 AND user_id = $2 AND group_id = $3
 `
 
 type DeleteCommentRowParams struct {
-	ID     string
-	UserID string
+	ID      string
+	UserID  string
+	GroupID string
 }
 
 func (q *Queries) DeleteCommentRow(ctx context.Context, arg DeleteCommentRowParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteCommentRow, arg.ID, arg.UserID)
+	result, err := q.db.Exec(ctx, deleteCommentRow, arg.ID, arg.UserID, arg.GroupID)
 	if err != nil {
 		return 0, err
 	}
@@ -38,7 +39,7 @@ func (q *Queries) DeleteCommentSeasons(ctx context.Context, commentID string) er
 }
 
 const getCommentRowById = `-- name: GetCommentRowById :one
-SELECT id, title_id, user_id, comment, created_at, updated_at FROM comments WHERE id = $1 AND user_id = $2
+SELECT id, title_id, user_id, comment, created_at, updated_at, group_id FROM comments WHERE id = $1 AND user_id = $2
 `
 
 type GetCommentRowByIdParams struct {
@@ -56,21 +57,22 @@ func (q *Queries) GetCommentRowById(ctx context.Context, arg GetCommentRowByIdPa
 		&i.Comment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }
 
 const getCommentRowsByTitleId = `-- name: GetCommentRowsByTitleId :many
-SELECT id, title_id, user_id, comment, created_at, updated_at FROM comments WHERE title_id = $1 AND user_id = ANY($2::text[])
+SELECT id, title_id, user_id, comment, created_at, updated_at, group_id FROM comments WHERE title_id = $1 AND group_id = $2
 `
 
 type GetCommentRowsByTitleIdParams struct {
 	TitleID string
-	Column2 []string
+	GroupID string
 }
 
 func (q *Queries) GetCommentRowsByTitleId(ctx context.Context, arg GetCommentRowsByTitleIdParams) ([]Comment, error) {
-	rows, err := q.db.Query(ctx, getCommentRowsByTitleId, arg.TitleID, arg.Column2)
+	rows, err := q.db.Query(ctx, getCommentRowsByTitleId, arg.TitleID, arg.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +87,7 @@ func (q *Queries) GetCommentRowsByTitleId(ctx context.Context, arg GetCommentRow
 			&i.Comment,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -157,16 +160,17 @@ func (q *Queries) GetCommentSeasonsByCommentIds(ctx context.Context, dollar_1 []
 }
 
 const getUserCommentRowByTitle = `-- name: GetUserCommentRowByTitle :one
-SELECT id, title_id, user_id, comment, created_at, updated_at FROM comments WHERE title_id = $1 AND user_id = $2
+SELECT id, title_id, user_id, comment, created_at, updated_at, group_id FROM comments WHERE title_id = $1 AND user_id = $2 AND group_id = $3
 `
 
 type GetUserCommentRowByTitleParams struct {
 	TitleID string
 	UserID  string
+	GroupID string
 }
 
 func (q *Queries) GetUserCommentRowByTitle(ctx context.Context, arg GetUserCommentRowByTitleParams) (Comment, error) {
-	row := q.db.QueryRow(ctx, getUserCommentRowByTitle, arg.TitleID, arg.UserID)
+	row := q.db.QueryRow(ctx, getUserCommentRowByTitle, arg.TitleID, arg.UserID, arg.GroupID)
 	var i Comment
 	err := row.Scan(
 		&i.ID,
@@ -175,23 +179,25 @@ func (q *Queries) GetUserCommentRowByTitle(ctx context.Context, arg GetUserComme
 		&i.Comment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }
 
 const insertComment = `-- name: InsertComment :one
 INSERT INTO comments (
-    id, title_id, user_id, comment, created_at, updated_at
+    id, title_id, user_id, group_id, comment, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, title_id, user_id, comment, created_at, updated_at
+RETURNING id, title_id, user_id, comment, created_at, updated_at, group_id
 `
 
 type InsertCommentParams struct {
 	ID        string
 	TitleID   string
 	UserID    string
+	GroupID   string
 	Comment   pgtype.Text
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
@@ -202,6 +208,7 @@ func (q *Queries) InsertComment(ctx context.Context, arg InsertCommentParams) (C
 		arg.ID,
 		arg.TitleID,
 		arg.UserID,
+		arg.GroupID,
 		arg.Comment,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -214,6 +221,7 @@ func (q *Queries) InsertComment(ctx context.Context, arg InsertCommentParams) (C
 		&i.Comment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }
@@ -249,7 +257,7 @@ const updateCommentRow = `-- name: UpdateCommentRow :one
 UPDATE comments
 SET comment = $3, updated_at = $4
 WHERE id = $1 AND user_id = $2
-RETURNING id, title_id, user_id, comment, created_at, updated_at
+RETURNING id, title_id, user_id, comment, created_at, updated_at, group_id
 `
 
 type UpdateCommentRowParams struct {
@@ -274,6 +282,7 @@ func (q *Queries) UpdateCommentRow(ctx context.Context, arg UpdateCommentRowPara
 		&i.Comment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }

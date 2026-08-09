@@ -6,6 +6,7 @@ type Comment struct {
 	Id              string           `json:"id"`
 	TitleId         string           `json:"titleId"`
 	UserId          string           `json:"userId"`
+	GroupId         string           `json:"groupId"`
 	Comment         *string          `json:"comment,omitempty"`
 	SeasonsComments *SeasonsComments `json:"seasonsComments,omitempty"`
 	CreatedAt       time.Time        `json:"createdAt"`

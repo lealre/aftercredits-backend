@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/groups"
+	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
 )
 
@@ -251,6 +253,90 @@ func getGroupTitlesRawBody(t *testing.T, groupId, query, token string) string {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return string(body)
+}
+
+// getGroupTitleDetail returns the GroupTitleDetail for a single title from
+// GET /groups/{id}/titles. The group-titles list is the read path that carries
+// GroupRatings, so it is where a cross-group rating leak becomes observable.
+func getGroupTitleDetail(t *testing.T, groupId, titleId, token string) groups.GroupTitleDetail {
+	t.Helper()
+
+	page := getGroupTitlesPage(t, groupId, "", token)
+	for _, detail := range page.Content {
+		if detail.Id == titleId {
+			return detail
+		}
+	}
+
+	require.FailNowf(t, "title missing from group titles page",
+		"expected title %s to be listed for group %s, got %v", titleId, groupId, groupTitleIds(page))
+	return groups.GroupTitleDetail{}
+}
+
+// twoGroupFixture is the world the group-scoping tests share: one user who
+// belongs to two groups that both carry the same movie and the same TV series,
+// plus a second user who belongs to group B only. Ratings and comments are
+// group-scoped facts, so this is the smallest world in which a cross-group leak
+// is observable at all.
+type twoGroupFixture struct {
+	user       users.UserResponse
+	token      string
+	otherUser  users.UserResponse
+	otherToken string
+	groupA     groups.GroupResponse
+	groupB     groups.GroupResponse
+	movie      models.Title
+	tvSeries   models.Title
+}
+
+// setupTwoGroups builds the twoGroupFixture world. Callers are expected to have
+// called resetDB(t) first.
+func setupTwoGroups(t *testing.T) twoGroupFixture {
+	t.Helper()
+
+	user, token := addUser(t, users.NewUserRequest{
+		Username: "twogroupsowner",
+		Password: "testpass",
+	})
+	otherUser, otherToken := addUser(t, users.NewUserRequest{
+		Username: "twogroupsmember",
+		Password: "testpass",
+	})
+
+	groupA := createGroup(t, groups.CreateGroupRequest{Name: "group A"}, token)
+	groupB := createGroup(t, groups.CreateGroupRequest{Name: "group B"}, token)
+
+	// otherUser is a member of group B only, so everything they write is a
+	// group B fact and must never surface in group A.
+	addUserToGroup(t, groups.AddUserToGroupRequest{UserId: otherUser.Id}, groupB.Id, token)
+
+	movieTitles := loadTitlesFixture(t)
+	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
+	seedTitles(t, append(movieTitles, tvSeriesTitles...))
+	movie := movieTitles[0]
+	tvSeries := tvSeriesTitles[0]
+
+	// Both groups carry both titles: the same title in two groups is exactly the
+	// situation the (user, title, group) key exists to keep apart.
+	for _, group := range []groups.GroupResponse{groupA, groupB} {
+		for _, title := range []models.Title{movie, tvSeries} {
+			addTitleToGroup(t, groups.AddTitleToGroupRequest{
+				URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
+				GroupId: group.Id,
+			}, token)
+		}
+	}
+
+	return twoGroupFixture{
+		user:       user,
+		token:      token,
+		otherUser:  otherUser,
+		otherToken: otherToken,
+		groupA:     groupA,
+		groupB:     groupB,
+		movie:      movie,
+		tvSeries:   tvSeries,
+	}
 }
 
 // groupTitleIds reduces a page to its title ids, in order. Order is the point

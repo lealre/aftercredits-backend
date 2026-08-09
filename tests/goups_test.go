@@ -1881,11 +1881,12 @@ func TestGroupTitlesSeriesRatingAndWatchedAggregation(t *testing.T) {
 		// NOTE: seriesDetail.Rating.AggregateRating is the title's IMDb-sourced rating (fixture
 		// data) and is never recalculated from group ratings. The group's own rating for the
 		// series (the mean of all rated seasons, as verified in TestAddRating) is surfaced
-		// instead via GroupRatings, one entry per user who rated the title.
+		// instead via GroupRatings, one entry per member who rated the title *in this group*.
 		require.Len(t, seriesDetail.GroupRatings, 1, "Expected a single group rating entry for the single user who rated the series")
 		userRating := seriesDetail.GroupRatings[0]
 		require.Equal(t, user.Id, userRating.UserId)
 		require.Equal(t, expectedTVSeriesTitle.ID, userRating.TitleId)
+		require.Equal(t, group.Id, userRating.GroupId, "Expected the listed rating to be attributed to the group it was left in")
 		require.Equal(t, expectedAverageRating, userRating.Note, "Expected the TV series' overall rating to be the mean of all rated seasons")
 		require.NotNil(t, userRating.SeasonsRatings)
 		require.Equal(t, 3, len(*userRating.SeasonsRatings))

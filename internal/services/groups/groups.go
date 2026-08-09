@@ -275,7 +275,10 @@ func GetTitlesFromGroup(
 		pageTitleIds = append(pageTitleIds, title.Id)
 	}
 
-	ratings, err := ratings.GetRatingsBatch(db, ctx, pageTitleIds)
+	// Scoped to this group: GroupRatings must carry only the ratings this group's
+	// own members left in this group, never another group's ratings on the same
+	// title.
+	ratings, err := ratings.GetRatingsBatch(db, ctx, pageTitleIds, groupId)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
