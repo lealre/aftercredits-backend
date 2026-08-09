@@ -20,6 +20,7 @@ func MapDbCommentToApiComment(comment models.Comment) Comment {
 		Id:              comment.Id,
 		TitleId:         comment.TitleId,
 		UserId:          comment.UserId,
+		GroupId:         comment.GroupId,
 		Comment:         comment.Comment,
 		SeasonsComments: seasonsComments,
 		CreatedAt:       comment.CreatedAt,

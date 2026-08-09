@@ -18,8 +18,8 @@ func getRating(t *testing.T, ratingId string) models.UserRating {
 
 	var r models.UserRating
 	err := testPool.QueryRow(ctx,
-		"SELECT id, title_id, user_id, note, created_at, updated_at FROM ratings WHERE id = $1", ratingId).
-		Scan(&r.Id, &r.TitleId, &r.UserId, &r.Note, &r.CreatedAt, &r.UpdatedAt)
+		"SELECT id, title_id, user_id, group_id, note, created_at, updated_at FROM ratings WHERE id = $1", ratingId).
+		Scan(&r.Id, &r.TitleId, &r.UserId, &r.GroupId, &r.Note, &r.CreatedAt, &r.UpdatedAt)
 	require.NoError(t, err, "error querying a rating from db")
 
 	rows, err := testQueries.GetRatingSeasons(ctx, ratingId)
@@ -32,6 +32,44 @@ func getRating(t *testing.T, ratingId string) models.UserRating {
 		r.SeasonsRatings = &m
 	}
 	return r
+}
+
+// getRatingsForTitleFromDB returns every stored rating for a title regardless of
+// group, ordered by group then user. The group-scoping tests need to see the
+// rows the API deliberately withholds from a given group, which a group-filtered
+// read path can no longer show them.
+func getRatingsForTitleFromDB(t *testing.T, titleId string) []models.UserRating {
+	t.Helper()
+	ctx := context.Background()
+
+	rows, err := testPool.Query(ctx,
+		`SELECT id, title_id, user_id, group_id, note, created_at, updated_at
+		 FROM ratings WHERE title_id = $1 ORDER BY group_id, user_id, id`, titleId)
+	require.NoError(t, err, "error querying ratings from db")
+	defer rows.Close()
+
+	ratingsDb := []models.UserRating{}
+	for rows.Next() {
+		var r models.UserRating
+		require.NoError(t, rows.Scan(&r.Id, &r.TitleId, &r.UserId, &r.GroupId, &r.Note, &r.CreatedAt, &r.UpdatedAt),
+			"error scanning a rating row from db")
+		ratingsDb = append(ratingsDb, r)
+	}
+	require.NoError(t, rows.Err(), "error iterating rating rows from db")
+
+	return ratingsDb
+}
+
+// countRatingsWithId reports how many rating rows carry the given id, so a
+// delete assertion does not have to inline a query.
+func countRatingsWithId(t *testing.T, ratingId string) int {
+	t.Helper()
+
+	var n int
+	require.NoError(t, testPool.QueryRow(context.Background(),
+		"SELECT count(*) FROM ratings WHERE id = $1", ratingId).Scan(&n),
+		"error counting ratings by id in db")
+	return n
 }
 
 func addRating(t *testing.T, newRating ratings.NewRating, innerToken string) *http.Response {

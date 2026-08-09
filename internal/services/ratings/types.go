@@ -7,6 +7,7 @@ type Rating struct {
 	TitleId        string          `json:"titleId"`
 	SeasonsRatings *SeasonsRatings `json:"seasonsRatings,omitempty"`
 	UserId         string          `json:"userId"`
+	GroupId        string          `json:"groupId"`
 	Note           float32         `json:"note"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`

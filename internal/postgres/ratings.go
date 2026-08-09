@@ -82,6 +82,7 @@ func (s *Store) AddRating(ctx context.Context, rating models.UserRating) (models
 		ID:        id,
 		TitleID:   rating.TitleId,
 		UserID:    rating.UserId,
+		GroupID:   rating.GroupId,
 		Note:      rating.Note,
 		CreatedAt: timeToTimestamptz(now),
 		UpdatedAt: timeToTimestamptz(now),
@@ -104,9 +105,14 @@ func (s *Store) AddRating(ctx context.Context, rating models.UserRating) (models
 	return ratingRowToModel(row, rating.SeasonsRatings), nil
 }
 
-// GetRatingsByTitleId fetches every rating for titleId, seasons assembled.
-func (s *Store) GetRatingsByTitleId(ctx context.Context, titleId string) ([]models.UserRating, error) {
-	rows, err := s.q.GetRatingRowsByTitleId(ctx, titleId)
+// GetRatingsByTitleId fetches every rating left on titleId within groupId,
+// seasons assembled. Ratings are group-scoped, so a title's ratings are only
+// ever read through the group they belong to.
+func (s *Store) GetRatingsByTitleId(ctx context.Context, titleId, groupId string) ([]models.UserRating, error) {
+	rows, err := s.q.GetRatingRowsByTitleId(ctx, database.GetRatingRowsByTitleIdParams{
+		TitleID: titleId,
+		GroupID: groupId,
+	})
 	if err != nil {
 		return []models.UserRating{}, err
 	}
@@ -128,10 +134,15 @@ func (s *Store) GetRatingById(ctx context.Context, ratingId, userId string) (mod
 	return ratingRowToModel(row, assembleSeasonsRatings(seasonRows)), nil
 }
 
-// GetRatingByUserIdAndTitleId fetches the (at most one) rating userId left
-// on titleId, seasons assembled.
-func (s *Store) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId string) (models.UserRating, error) {
-	row, err := s.q.GetRatingRowByUserTitle(ctx, database.GetRatingRowByUserTitleParams{UserID: userId, TitleID: titleId})
+// GetRatingByUserIdAndTitleId fetches the (at most one) rating userId left on
+// titleId within groupId, seasons assembled. groupId completes the key: the
+// same user may hold a separate rating of the same title in another group.
+func (s *Store) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId, groupId string) (models.UserRating, error) {
+	row, err := s.q.GetRatingRowByUserTitle(ctx, database.GetRatingRowByUserTitleParams{
+		UserID:  userId,
+		TitleID: titleId,
+		GroupID: groupId,
+	})
 	if err != nil {
 		return models.UserRating{}, notFound(err)
 	}
@@ -181,10 +192,15 @@ func (s *Store) UpdateRating(ctx context.Context, rating models.UserRating, user
 	return ratingRowToModel(row, rating.SeasonsRatings), nil
 }
 
-// GetRatingsByTitleIds fetches every rating for the given titleIds in one
-// batch, seasons assembled via a single grouped query.
-func (s *Store) GetRatingsByTitleIds(ctx context.Context, titleIds []string) ([]models.UserRating, error) {
-	rows, err := s.q.GetRatingRowsByTitleIds(ctx, titleIds)
+// GetRatingsByTitleIds fetches every rating left on the given titleIds within
+// groupId in one batch, seasons assembled via a single grouped query. The
+// groupId filter is load-bearing: without it this read serves one group's
+// title detail every other group's ratings.
+func (s *Store) GetRatingsByTitleIds(ctx context.Context, titleIds []string, groupId string) ([]models.UserRating, error) {
+	rows, err := s.q.GetRatingRowsByTitleIds(ctx, database.GetRatingRowsByTitleIdsParams{
+		Column1: titleIds,
+		GroupID: groupId,
+	})
 	if err != nil {
 		return []models.UserRating{}, err
 	}

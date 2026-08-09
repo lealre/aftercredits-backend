@@ -31,6 +31,39 @@ func addComment(t *testing.T, newComment comments.NewComment, innerToken string)
 	return resp
 }
 
+// addCommentAndGetResult posts a comment, asserts it was created and returns the
+// decoded body. A comment is always group-scoped, so groupId is not optional.
+func addCommentAndGetResult(t *testing.T, groupId, titleId, comment string, season *int, token string) comments.Comment {
+	t.Helper()
+
+	resp := addComment(t, comments.NewComment{
+		GroupId: groupId,
+		TitleId: titleId,
+		Comment: comment,
+		Season:  season,
+	}, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "expected the comment to be created")
+
+	var created comments.Comment
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created), "error decoding the created comment")
+	return created
+}
+
+// getCommentsForGroupTitle decodes a successful GET
+// /groups/{groupId}/titles/{titleId}/comments response.
+func getCommentsForGroupTitle(t *testing.T, groupId, titleId, token string) []comments.Comment {
+	t.Helper()
+
+	resp := getCommentsFromApi(t, groupId, titleId, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "expected the group-scoped comments read to succeed")
+
+	var body comments.AllCommentsFromTitle
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body), "error decoding the comments response")
+	return body.Comments
+}
+
 func getCommentsFromApi(t *testing.T, groupId, titleId, innerToken string) *http.Response {
 	req, err := http.NewRequest(http.MethodGet,
 		testServer.URL+"/groups/"+groupId+"/titles/"+titleId+"/comments",
@@ -102,8 +135,8 @@ func getCommentFromDB(t *testing.T, commentId string) models.Comment {
 
 	var c models.Comment
 	err := testPool.QueryRow(ctx,
-		"SELECT id, title_id, user_id, comment, created_at, updated_at FROM comments WHERE id = $1", commentId).
-		Scan(&c.Id, &c.TitleId, &c.UserId, &c.Comment, &c.CreatedAt, &c.UpdatedAt)
+		"SELECT id, title_id, user_id, group_id, comment, created_at, updated_at FROM comments WHERE id = $1", commentId).
+		Scan(&c.Id, &c.TitleId, &c.UserId, &c.GroupId, &c.Comment, &c.CreatedAt, &c.UpdatedAt)
 	require.NoError(t, err, "error querying a comment from db")
 
 	rows, err := testQueries.GetCommentSeasons(ctx, commentId)
@@ -122,7 +155,7 @@ func getCommentsFromDB(t *testing.T, titleId string) []models.Comment {
 	ctx := context.Background()
 
 	rows, err := testPool.Query(ctx,
-		"SELECT id, title_id, user_id, comment, created_at, updated_at FROM comments WHERE title_id = $1 ORDER BY id", titleId)
+		"SELECT id, title_id, user_id, group_id, comment, created_at, updated_at FROM comments WHERE title_id = $1 ORDER BY group_id, user_id, id", titleId)
 	require.NoError(t, err, "error querying comments from db")
 	defer rows.Close()
 
@@ -130,7 +163,7 @@ func getCommentsFromDB(t *testing.T, titleId string) []models.Comment {
 	comments := []models.Comment{}
 	for rows.Next() {
 		var c models.Comment
-		require.NoError(t, rows.Scan(&c.Id, &c.TitleId, &c.UserId, &c.Comment, &c.CreatedAt, &c.UpdatedAt))
+		require.NoError(t, rows.Scan(&c.Id, &c.TitleId, &c.UserId, &c.GroupId, &c.Comment, &c.CreatedAt, &c.UpdatedAt))
 		comments = append(comments, c)
 		commentIds = append(commentIds, c.Id)
 	}

@@ -1062,3 +1062,445 @@ func TestGetCommentsForTVSeries(t *testing.T) {
 		}
 	})
 }
+
+// TestCommentsAreGroupScoped covers the invariant that a comment's identity is
+// (user, title, group), exercised end to end through the API.
+//
+// The read path used to filter by the requesting group's member list rather
+// than by the group itself, so a comment left by a shared member in another
+// group surfaced in both. The leak regression subtest below is built around
+// exactly that shared member.
+func TestCommentsAreGroupScoped(t *testing.T) {
+	t.Run("The same user comments on the same title in two groups and both comments persist", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		textGroupA := "comment in group A"
+		textGroupB := "comment in group B"
+
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.movie.ID, textGroupA, nil, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.movie.ID, textGroupB, nil, world.token)
+
+		require.NotEqual(t, commentGroupA.Id, commentGroupB.Id,
+			"Expected commenting on the same title in a second group to create a distinct comment")
+		require.Equal(t, world.groupA.Id, commentGroupA.GroupId, "Expected the comment created in group A to report group A")
+		require.Equal(t, world.groupB.Id, commentGroupB.GroupId, "Expected the comment created in group B to report group B")
+
+		// Database assertion: two rows, one per group, each keeping its own text.
+		commentGroupADb := getCommentFromDB(t, commentGroupA.Id)
+		require.Equal(t, world.groupA.Id, commentGroupADb.GroupId, "Expected group A's stored comment to carry group A's id")
+		require.Equal(t, &textGroupA, commentGroupADb.Comment, "Expected group A's stored comment to keep group A's text")
+		require.Equal(t, world.user.Id, commentGroupADb.UserId, "Expected group A's stored comment to belong to the commenting user")
+
+		commentGroupBDb := getCommentFromDB(t, commentGroupB.Id)
+		require.Equal(t, world.groupB.Id, commentGroupBDb.GroupId, "Expected group B's stored comment to carry group B's id")
+		require.Equal(t, &textGroupB, commentGroupBDb.Comment, "Expected group B's stored comment to keep group B's text")
+
+		require.Len(t, getCommentsFromDB(t, world.movie.ID), 2,
+			"Expected exactly one stored comment per group for this user and title")
+	})
+
+	t.Run("The comments read path returns only the requesting group's comments", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		textGroupA := "comment in group A"
+		textGroupB := "comment in group B"
+		textOtherUserGroupB := "comment from the other member in group B"
+
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.movie.ID, textGroupA, nil, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.movie.ID, textGroupB, nil, world.token)
+		commentOtherUserGroupB := addCommentAndGetResult(t, world.groupB.Id, world.movie.ID, textOtherUserGroupB, nil, world.otherToken)
+
+		// Sanity check first: all three comments really are stored, so a short
+		// group A list below cannot be mistaken for "nothing was written".
+		require.Len(t, getCommentsFromDB(t, world.movie.ID), 3,
+			"Expected all three comments on this title to be stored before asserting what each group sees")
+
+		commentsGroupA := getCommentsForGroupTitle(t, world.groupA.Id, world.movie.ID, world.token)
+		require.Len(t, commentsGroupA, 1,
+			"Expected group A to return only the comment left in group A, not the same user's comment in group B")
+		require.Equal(t, commentGroupA.Id, commentsGroupA[0].Id, "Expected group A to return the comment created in group A")
+		require.Equal(t, world.groupA.Id, commentsGroupA[0].GroupId,
+			"Expected every comment returned for group A to be attributed to group A")
+		require.Equal(t, textGroupA, *commentsGroupA[0].Comment, "Expected group A to return group A's comment text")
+
+		commentsGroupB := getCommentsForGroupTitle(t, world.groupB.Id, world.movie.ID, world.token)
+		require.Len(t, commentsGroupB, 2,
+			"Expected group B to return both of its own members' comments and nothing from group A")
+
+		returnedIds := []string{}
+		returnedTexts := []string{}
+		for _, comment := range commentsGroupB {
+			require.Equal(t, world.groupB.Id, comment.GroupId,
+				"Expected every comment returned for group B to be attributed to group B")
+			require.NotNil(t, comment.Comment, "Expected every movie comment returned for group B to carry text")
+			returnedIds = append(returnedIds, comment.Id)
+			returnedTexts = append(returnedTexts, *comment.Comment)
+		}
+		require.ElementsMatch(t, []string{commentGroupB.Id, commentOtherUserGroupB.Id}, returnedIds,
+			"Expected group B to return exactly the two comments left in group B")
+		require.ElementsMatch(t, []string{textGroupB, textOtherUserGroupB}, returnedTexts,
+			"Expected group B to return group B's comment texts")
+	})
+
+	t.Run("Commenting on a title in a second group is allowed but commenting twice in the same group still returns 409", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		_ = addCommentAndGetResult(t, world.groupA.Id, world.movie.ID, "comment in group A", nil, world.token)
+
+		// A comment in another group is a different fact, not a duplicate.
+		respSecondGroup := addComment(t, comments.NewComment{
+			GroupId: world.groupB.Id,
+			TitleId: world.movie.ID,
+			Comment: "comment in group B",
+		}, world.token)
+		defer respSecondGroup.Body.Close()
+		require.Equal(t, http.StatusCreated, respSecondGroup.StatusCode,
+			"Expected commenting on a title already commented in another group to be allowed")
+
+		// A second comment in the same group still is a duplicate.
+		respSameGroup := addComment(t, comments.NewComment{
+			GroupId: world.groupA.Id,
+			TitleId: world.movie.ID,
+			Comment: "second comment in group A",
+		}, world.token)
+		defer respSameGroup.Body.Close()
+		require.Equal(t, http.StatusConflict, respSameGroup.StatusCode,
+			"Expected a second comment on the same title in the same group to still conflict")
+
+		var respSameGroupBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respSameGroup.Body).Decode(&respSameGroupBody),
+			"error decoding the conflict response body")
+		require.Contains(t, respSameGroupBody.ErrorMessage, comments.ErrCommentAlreadyExists.Error()[1:],
+			"Expected the same-group duplicate to report the comment-already-exists error")
+
+		require.Len(t, getCommentsFromDB(t, world.movie.ID), 2,
+			"Expected the rejected duplicate to leave exactly the two group-scoped comments")
+	})
+
+	t.Run("Updating a comment leaves the other group's comment untouched", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		textGroupB := "comment in group B"
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.movie.ID, "comment in group A", nil, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.movie.ID, textGroupB, nil, world.token)
+
+		updatedText := "comment in group A, edited"
+		respUpdated := updateCommentFromApi(t, world.groupA.Id, world.movie.ID, commentGroupA.Id, updatedText, world.token, nil)
+		defer respUpdated.Body.Close()
+		require.Equal(t, http.StatusOK, respUpdated.StatusCode, "Expected group A's comment to be updated")
+
+		var respUpdatedBody comments.Comment
+		require.NoError(t, json.NewDecoder(respUpdated.Body).Decode(&respUpdatedBody), "error decoding the updated comment")
+		require.Equal(t, updatedText, *respUpdatedBody.Comment, "Expected the updated comment to carry the new text")
+		require.Equal(t, world.groupA.Id, respUpdatedBody.GroupId, "Expected updating a comment not to move it to another group")
+
+		commentGroupBDb := getCommentFromDB(t, commentGroupB.Id)
+		require.Equal(t, &textGroupB, commentGroupBDb.Comment,
+			"Expected group B's comment to be untouched by a PATCH aimed at group A's comment")
+		require.Equal(t, world.groupB.Id, commentGroupBDb.GroupId, "Expected group B's comment to stay attributed to group B")
+
+		commentsGroupB := getCommentsForGroupTitle(t, world.groupB.Id, world.movie.ID, world.token)
+		require.Len(t, commentsGroupB, 1, "Expected group B to still return exactly its own comment")
+		require.Equal(t, textGroupB, *commentsGroupB[0].Comment, "Expected group B to still return its original text")
+	})
+
+	t.Run("Deleting a comment leaves the other group's comment untouched", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		textGroupB := "comment in group B"
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.movie.ID, "comment in group A", nil, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.movie.ID, textGroupB, nil, world.token)
+
+		respDeleted := deleteCommentFromApi(t, world.groupA.Id, world.movie.ID, commentGroupA.Id, world.token)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode, "Expected group A's comment to be deleted")
+
+		commentsDb := getCommentsFromDB(t, world.movie.ID)
+		require.Len(t, commentsDb, 1, "Expected group B's comment to survive a DELETE aimed at group A's comment")
+		require.Equal(t, commentGroupB.Id, commentsDb[0].Id, "Expected the surviving comment to be group B's")
+		require.Equal(t, world.groupB.Id, commentsDb[0].GroupId, "Expected the surviving comment to be attributed to group B")
+
+		require.Empty(t, getCommentsForGroupTitle(t, world.groupA.Id, world.movie.ID, world.token),
+			"Expected group A to return no comments after deleting its only one")
+
+		commentsGroupB := getCommentsForGroupTitle(t, world.groupB.Id, world.movie.ID, world.token)
+		require.Len(t, commentsGroupB, 1, "Expected group B to still return its own comment")
+		require.Equal(t, textGroupB, *commentsGroupB[0].Comment, "Expected group B's text to be unchanged")
+	})
+
+	t.Run("Addressing group A's URL with group B's comment id is rejected and changes nothing", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// The caller is a member of both groups and both hold the movie, so the
+		// route guard passes for either group. Only the (title, user, group) key
+		// distinguishes the two rows: a client resolving comment ids from a stale
+		// list must not be able to edit or delete group B's comment through group
+		// A's URL.
+		textGroupA := "comment in group A"
+		textGroupB := "comment in group B"
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.movie.ID, textGroupA, nil, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.movie.ID, textGroupB, nil, world.token)
+
+		respUpdate := updateCommentFromApi(t, world.groupA.Id, world.movie.ID, commentGroupB.Id, "edited through group A", world.token, nil)
+		defer respUpdate.Body.Close()
+		require.Equal(t, http.StatusNotFound, respUpdate.StatusCode,
+			"Expected a PATCH under group A's URL carrying group B's comment id to return 404")
+
+		respDelete := deleteCommentFromApi(t, world.groupA.Id, world.movie.ID, commentGroupB.Id, world.token)
+		defer respDelete.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDelete.StatusCode,
+			"Expected a DELETE under group A's URL carrying group B's comment id to return 404")
+
+		commentGroupADb := getCommentFromDB(t, commentGroupA.Id)
+		require.Equal(t, &textGroupA, commentGroupADb.Comment,
+			"Expected group A's comment to be untouched by the rejected cross-group requests")
+		commentGroupBDb := getCommentFromDB(t, commentGroupB.Id)
+		require.Equal(t, &textGroupB, commentGroupBDb.Comment,
+			"Expected group B's comment to be untouched by requests addressed to group A")
+		require.Equal(t, world.groupB.Id, commentGroupBDb.GroupId,
+			"Expected group B's comment to stay attributed to group B")
+
+		require.Len(t, getCommentsFromDB(t, world.movie.ID), 2,
+			"Expected both group-scoped comments to survive the rejected cross-group requests")
+	})
+
+	t.Run("A member of another group still gets 404 on the group-scoped comment routes", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// otherUser is a member of group B only. Group A holds the title and a
+		// comment, but none of that is visible or writable from outside group A.
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.movie.ID, "comment in group A", nil, world.token)
+		expectedMessage := fmt.Sprintf("Group %s do not have title %s or do not exist.", world.groupA.Id, world.movie.ID)
+
+		respGet := getCommentsFromApi(t, world.groupA.Id, world.movie.ID, world.otherToken)
+		defer respGet.Body.Close()
+		require.Equal(t, http.StatusNotFound, respGet.StatusCode,
+			"Expected reading group A's comments as a non-member to return 404")
+		var respGetBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respGet.Body).Decode(&respGetBody), "error decoding the read 404 body")
+		require.Equal(t, expectedMessage, respGetBody.ErrorMessage,
+			"Expected the non-member read to keep reporting the group-does-not-have-title message")
+
+		respAdd := addComment(t, comments.NewComment{
+			GroupId: world.groupA.Id,
+			TitleId: world.movie.ID,
+			Comment: "comment from a non-member",
+		}, world.otherToken)
+		defer respAdd.Body.Close()
+		require.Equal(t, http.StatusNotFound, respAdd.StatusCode,
+			"Expected commenting into group A as a non-member to return 404")
+
+		respUpdate := updateCommentFromApi(t, world.groupA.Id, world.movie.ID, commentGroupA.Id, "edited by a non-member", world.otherToken, nil)
+		defer respUpdate.Body.Close()
+		require.Equal(t, http.StatusNotFound, respUpdate.StatusCode,
+			"Expected updating group A's comment as a non-member to return 404")
+
+		respDelete := deleteCommentFromApi(t, world.groupA.Id, world.movie.ID, commentGroupA.Id, world.otherToken)
+		defer respDelete.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDelete.StatusCode,
+			"Expected deleting group A's comment as a non-member to return 404")
+
+		// Nothing the non-member attempted may have taken effect.
+		commentGroupADb := getCommentFromDB(t, commentGroupA.Id)
+		require.Equal(t, "comment in group A", *commentGroupADb.Comment,
+			"Expected group A's comment to be untouched by the rejected non-member requests")
+		require.Len(t, getCommentsFromDB(t, world.movie.ID), 1,
+			"Expected the rejected non-member insert to leave exactly group A's comment")
+	})
+}
+
+// TestCommentsForTVSeriesAreGroupScoped exercises the per-season comment flow
+// with two groups in play. Both the add and the update path resolve an existing
+// comment by (user, title, group); without the group predicate that lookup
+// matches one row per group and silently resolves to an arbitrary one.
+func TestCommentsForTVSeriesAreGroupScoped(t *testing.T) {
+	season1 := 1
+	season2 := 2
+
+	t.Run("Season comments for the same series stay independent in each group", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		textGroupASeason1 := "group A season 1"
+		textGroupBSeason1 := "group B season 1"
+		textGroupBSeason2 := "group B season 2"
+
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.tvSeries.ID, textGroupASeason1, &season1, world.token)
+		commentGroupBFirst := addCommentAndGetResult(t, world.groupB.Id, world.tvSeries.ID, textGroupBSeason1, &season1, world.token)
+		commentGroupBSecond := addCommentAndGetResult(t, world.groupB.Id, world.tvSeries.ID, textGroupBSeason2, &season2, world.token)
+
+		require.NotEqual(t, commentGroupA.Id, commentGroupBFirst.Id,
+			"Expected the series comment in each group to be a distinct row")
+		require.Equal(t, commentGroupBFirst.Id, commentGroupBSecond.Id,
+			"Expected both group B seasons to land on the same group B comment")
+
+		commentGroupADb := getCommentFromDB(t, commentGroupA.Id)
+		require.Equal(t, world.groupA.Id, commentGroupADb.GroupId, "Expected group A's series comment to carry group A's id")
+		require.NotNil(t, commentGroupADb.SeasonsComments, "Expected group A's series comment to hold season comments")
+		require.Len(t, *commentGroupADb.SeasonsComments, 1,
+			"Expected group A's series comment to hold only the season commented in group A")
+		require.Equal(t, textGroupASeason1, (*commentGroupADb.SeasonsComments)[strconv.Itoa(season1)].Comment,
+			"Expected group A's season 1 comment to keep group A's text")
+
+		commentGroupBDb := getCommentFromDB(t, commentGroupBFirst.Id)
+		require.Equal(t, world.groupB.Id, commentGroupBDb.GroupId, "Expected group B's series comment to carry group B's id")
+		require.NotNil(t, commentGroupBDb.SeasonsComments, "Expected group B's series comment to hold season comments")
+		require.Len(t, *commentGroupBDb.SeasonsComments, 2,
+			"Expected group B's series comment to hold both seasons commented in group B")
+		require.Equal(t, textGroupBSeason1, (*commentGroupBDb.SeasonsComments)[strconv.Itoa(season1)].Comment,
+			"Expected group B's season 1 comment to keep group B's text, not group A's")
+
+		commentsGroupA := getCommentsForGroupTitle(t, world.groupA.Id, world.tvSeries.ID, world.token)
+		require.Len(t, commentsGroupA, 1, "Expected group A to return only its own series comment")
+		require.Equal(t, world.groupA.Id, commentsGroupA[0].GroupId, "Expected group A's series comment to be attributed to group A")
+		require.NotNil(t, commentsGroupA[0].SeasonsComments, "Expected group A's returned series comment to carry its seasons")
+		require.Len(t, *commentsGroupA[0].SeasonsComments, 1,
+			"Expected group A's returned series comment to carry only the season commented in group A")
+
+		commentsGroupB := getCommentsForGroupTitle(t, world.groupB.Id, world.tvSeries.ID, world.token)
+		require.Len(t, commentsGroupB, 1, "Expected group B to return only its own series comment")
+		require.Equal(t, world.groupB.Id, commentsGroupB[0].GroupId, "Expected group B's series comment to be attributed to group B")
+		require.NotNil(t, commentsGroupB[0].SeasonsComments, "Expected group B's returned series comment to carry its seasons")
+		require.Len(t, *commentsGroupB[0].SeasonsComments, 2,
+			"Expected group B's returned series comment to carry both seasons commented in group B")
+	})
+
+	t.Run("Updating a season comment resolves the requesting group's comment", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// Deliberately different seasons per group: a lookup that ignored the
+		// group could resolve to the other group's comment, which does not hold
+		// the season being edited at all.
+		textGroupASeason1 := "group A season 1"
+		textGroupBSeason2 := "group B season 2"
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.tvSeries.ID, textGroupASeason1, &season1, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.tvSeries.ID, textGroupBSeason2, &season2, world.token)
+
+		updatedText := "group B season 2, edited"
+		respUpdated := updateCommentFromApi(t, world.groupB.Id, world.tvSeries.ID, commentGroupB.Id, updatedText, world.token, &season2)
+		defer respUpdated.Body.Close()
+		require.Equal(t, http.StatusOK, respUpdated.StatusCode,
+			"Expected group B's season 2 comment to be updated even though group A holds a different season")
+
+		var respUpdatedBody comments.Comment
+		require.NoError(t, json.NewDecoder(respUpdated.Body).Decode(&respUpdatedBody), "error decoding the updated season comment")
+		require.Equal(t, world.groupB.Id, respUpdatedBody.GroupId, "Expected the updated season comment to stay in group B")
+		require.NotNil(t, respUpdatedBody.SeasonsComments, "Expected the updated season comment to carry its seasons")
+		require.Equal(t, updatedText, (*respUpdatedBody.SeasonsComments)[strconv.Itoa(season2)].Comment,
+			"Expected group B's season 2 text to be the edited one")
+
+		commentGroupADb := getCommentFromDB(t, commentGroupA.Id)
+		require.NotNil(t, commentGroupADb.SeasonsComments, "Expected group A's series comment to still hold its season")
+		require.Equal(t, textGroupASeason1, (*commentGroupADb.SeasonsComments)[strconv.Itoa(season1)].Comment,
+			"Expected group A's season 1 comment to be untouched by a PATCH aimed at group B")
+		require.Len(t, *commentGroupADb.SeasonsComments, 1, "Expected group A's seasons to be untouched")
+	})
+
+	t.Run("Addressing group A's URL with group B's series comment id is rejected and changes nothing", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// Both comments hold season 1, so every season check the update path runs
+		// passes against either row. Only binding the path's commentId to the
+		// group-scoped lookup keeps the write off group B's comment.
+		textGroupASeason1 := "group A season 1"
+		textGroupBSeason1 := "group B season 1"
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.tvSeries.ID, textGroupASeason1, &season1, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.tvSeries.ID, textGroupBSeason1, &season1, world.token)
+
+		respUpdate := updateCommentFromApi(t, world.groupA.Id, world.tvSeries.ID, commentGroupB.Id, "written via group A route", world.token, &season1)
+		defer respUpdate.Body.Close()
+		require.Equal(t, http.StatusNotFound, respUpdate.StatusCode,
+			"Expected a season PATCH under group A's URL carrying group B's comment id to return 404")
+
+		respDeleteSeason := deleteCommentSeasonFromApi(t, world.groupA.Id, world.tvSeries.ID, commentGroupB.Id, world.token, season1)
+		defer respDeleteSeason.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDeleteSeason.StatusCode,
+			"Expected a season DELETE under group A's URL carrying group B's comment id to return 404")
+
+		respDelete := deleteCommentFromApi(t, world.groupA.Id, world.tvSeries.ID, commentGroupB.Id, world.token)
+		defer respDelete.Body.Close()
+		require.Equal(t, http.StatusNotFound, respDelete.StatusCode,
+			"Expected a DELETE under group A's URL carrying group B's series comment id to return 404")
+
+		commentGroupADb := getCommentFromDB(t, commentGroupA.Id)
+		require.NotNil(t, commentGroupADb.SeasonsComments, "Expected group A's series comment to still hold its season")
+		require.Equal(t, textGroupASeason1, (*commentGroupADb.SeasonsComments)[strconv.Itoa(season1)].Comment,
+			"Expected group A's season 1 comment to be untouched by the rejected cross-group requests")
+
+		commentGroupBDb := getCommentFromDB(t, commentGroupB.Id)
+		require.NotNil(t, commentGroupBDb.SeasonsComments, "Expected group B's series comment to still hold its season")
+		require.Equal(t, textGroupBSeason1, (*commentGroupBDb.SeasonsComments)[strconv.Itoa(season1)].Comment,
+			"Expected group B's season 1 comment to be untouched by requests addressed to group A")
+
+		require.Len(t, getCommentsFromDB(t, world.tvSeries.ID), 2,
+			"Expected both groups' series comments to survive the rejected cross-group requests")
+	})
+
+	t.Run("Commenting on a season already commented in the same group returns 409 and leaves the other group untouched", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		textGroupASeason1 := "group A season 1"
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.tvSeries.ID, textGroupASeason1, &season1, world.token)
+		_ = addCommentAndGetResult(t, world.groupB.Id, world.tvSeries.ID, "group B season 1", &season1, world.token)
+
+		respDuplicate := addComment(t, comments.NewComment{
+			GroupId: world.groupB.Id,
+			TitleId: world.tvSeries.ID,
+			Comment: "group B season 1 again",
+			Season:  &season1,
+		}, world.token)
+		defer respDuplicate.Body.Close()
+		require.Equal(t, http.StatusConflict, respDuplicate.StatusCode,
+			"Expected commenting on the same season twice in the same group to still conflict")
+
+		var respDuplicateBody api.ErrorResponse
+		require.NoError(t, json.NewDecoder(respDuplicate.Body).Decode(&respDuplicateBody),
+			"error decoding the season conflict response body")
+		require.Contains(t, respDuplicateBody.ErrorMessage, comments.ErrSeasonCommentAlreadyExists.Error()[1:],
+			"Expected the same-group season duplicate to report the season-comment-already-exists error")
+
+		commentGroupADb := getCommentFromDB(t, commentGroupA.Id)
+		require.NotNil(t, commentGroupADb.SeasonsComments, "Expected group A's series comment to still hold its season")
+		require.Equal(t, textGroupASeason1, (*commentGroupADb.SeasonsComments)[strconv.Itoa(season1)].Comment,
+			"Expected group A's season comment to be untouched by a rejected group B insert")
+	})
+
+	t.Run("Deleting a season comment leaves the other group's series comment intact", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		commentGroupA := addCommentAndGetResult(t, world.groupA.Id, world.tvSeries.ID, "group A season 1", &season1, world.token)
+		commentGroupB := addCommentAndGetResult(t, world.groupB.Id, world.tvSeries.ID, "group B season 1", &season1, world.token)
+		_ = addCommentAndGetResult(t, world.groupB.Id, world.tvSeries.ID, "group B season 2", &season2, world.token)
+
+		// Season 1 is group A's only season, so deleting it removes the whole
+		// group A comment and must not reach group B's season 1.
+		respDeleted := deleteCommentSeasonFromApi(t, world.groupA.Id, world.tvSeries.ID, commentGroupA.Id, world.token, season1)
+		defer respDeleted.Body.Close()
+		require.Equal(t, http.StatusOK, respDeleted.StatusCode, "Expected group A's season comment to be deleted")
+
+		commentsDb := getCommentsFromDB(t, world.tvSeries.ID)
+		require.Len(t, commentsDb, 1, "Expected group A's series comment to be removed once its last season was deleted")
+		require.Equal(t, commentGroupB.Id, commentsDb[0].Id, "Expected the surviving series comment to be group B's")
+		require.NotNil(t, commentsDb[0].SeasonsComments, "Expected group B's series comment to still hold season comments")
+		require.Len(t, *commentsDb[0].SeasonsComments, 2,
+			"Expected group B to keep both of its seasons after group A's season was deleted")
+
+		require.Empty(t, getCommentsForGroupTitle(t, world.groupA.Id, world.tvSeries.ID, world.token),
+			"Expected group A to return no series comment after deleting its last season")
+
+		commentsGroupB := getCommentsForGroupTitle(t, world.groupB.Id, world.tvSeries.ID, world.token)
+		require.Len(t, commentsGroupB, 1, "Expected group B to still return its own series comment")
+		require.Len(t, *commentsGroupB[0].SeasonsComments, 2, "Expected group B to still return both of its seasons")
+	})
+}

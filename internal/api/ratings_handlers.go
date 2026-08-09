@@ -47,12 +47,14 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), req.GroupId, req.TitleId, currentuser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", req.GroupId, req.TitleId))
-		return
-	} else if err != nil {
+	// Establishes both that the group is real and that the caller is a member of
+	// it, so req.GroupId is safe to persist on the rating below.
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), req.GroupId, req.TitleId, currentuser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", req.GroupId, req.TitleId))
 		return
 	}
 

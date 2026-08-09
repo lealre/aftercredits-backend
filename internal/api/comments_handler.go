@@ -40,7 +40,7 @@ func (api *API) GetCommentsByTitleIDFromGroup(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), groupId, titleId, currentUser.Id)
+	commentsList, err := comments.GetCommentsByTitleId(api.Db, r.Context(), groupId, titleId)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
@@ -62,12 +62,12 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the title here to be used to know if its a tv or movie
-	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId))
-		return
-	} else if err != nil {
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), newComment.GroupId, newComment.TitleId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", newComment.GroupId, newComment.TitleId))
 		return
 	}
 
@@ -138,7 +138,7 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedComment, err := comments.UpdateComment(api.Db, r.Context(), commentId, currentUser.Id, updateReq, title)
+	updatedComment, err := comments.UpdateComment(api.Db, r.Context(), groupId, commentId, currentUser.Id, updateReq, title)
 	if err != nil {
 		if statusCode, ok := comments.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -186,7 +186,7 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId, currentUser.Id); err != nil {
+	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId, currentUser.Id, groupId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting comment")
 		return
@@ -249,7 +249,7 @@ func (api *API) DeleteCommentSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := comments.DeleteCommentSeason(api.Db, r.Context(), commentId, currentUser.Id, season, title); err != nil {
+	if err := comments.DeleteCommentSeason(api.Db, r.Context(), groupId, commentId, currentUser.Id, season, title); err != nil {
 		if statusCode, ok := comments.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return

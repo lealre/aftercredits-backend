@@ -38,7 +38,7 @@ func (q *Queries) DeleteRatingSeasons(ctx context.Context, ratingID string) erro
 }
 
 const getRatingRowById = `-- name: GetRatingRowById :one
-SELECT id, title_id, user_id, note, created_at, updated_at FROM ratings WHERE id = $1 AND user_id = $2
+SELECT id, title_id, user_id, note, created_at, updated_at, group_id FROM ratings WHERE id = $1 AND user_id = $2
 `
 
 type GetRatingRowByIdParams struct {
@@ -56,21 +56,23 @@ func (q *Queries) GetRatingRowById(ctx context.Context, arg GetRatingRowByIdPara
 		&i.Note,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }
 
 const getRatingRowByUserTitle = `-- name: GetRatingRowByUserTitle :one
-SELECT id, title_id, user_id, note, created_at, updated_at FROM ratings WHERE user_id = $1 AND title_id = $2
+SELECT id, title_id, user_id, note, created_at, updated_at, group_id FROM ratings WHERE user_id = $1 AND title_id = $2 AND group_id = $3
 `
 
 type GetRatingRowByUserTitleParams struct {
 	UserID  string
 	TitleID string
+	GroupID string
 }
 
 func (q *Queries) GetRatingRowByUserTitle(ctx context.Context, arg GetRatingRowByUserTitleParams) (Rating, error) {
-	row := q.db.QueryRow(ctx, getRatingRowByUserTitle, arg.UserID, arg.TitleID)
+	row := q.db.QueryRow(ctx, getRatingRowByUserTitle, arg.UserID, arg.TitleID, arg.GroupID)
 	var i Rating
 	err := row.Scan(
 		&i.ID,
@@ -79,16 +81,22 @@ func (q *Queries) GetRatingRowByUserTitle(ctx context.Context, arg GetRatingRowB
 		&i.Note,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }
 
 const getRatingRowsByTitleId = `-- name: GetRatingRowsByTitleId :many
-SELECT id, title_id, user_id, note, created_at, updated_at FROM ratings WHERE title_id = $1
+SELECT id, title_id, user_id, note, created_at, updated_at, group_id FROM ratings WHERE title_id = $1 AND group_id = $2
 `
 
-func (q *Queries) GetRatingRowsByTitleId(ctx context.Context, titleID string) ([]Rating, error) {
-	rows, err := q.db.Query(ctx, getRatingRowsByTitleId, titleID)
+type GetRatingRowsByTitleIdParams struct {
+	TitleID string
+	GroupID string
+}
+
+func (q *Queries) GetRatingRowsByTitleId(ctx context.Context, arg GetRatingRowsByTitleIdParams) ([]Rating, error) {
+	rows, err := q.db.Query(ctx, getRatingRowsByTitleId, arg.TitleID, arg.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +111,7 @@ func (q *Queries) GetRatingRowsByTitleId(ctx context.Context, titleID string) ([
 			&i.Note,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -115,11 +124,16 @@ func (q *Queries) GetRatingRowsByTitleId(ctx context.Context, titleID string) ([
 }
 
 const getRatingRowsByTitleIds = `-- name: GetRatingRowsByTitleIds :many
-SELECT id, title_id, user_id, note, created_at, updated_at FROM ratings WHERE title_id = ANY($1::text[])
+SELECT id, title_id, user_id, note, created_at, updated_at, group_id FROM ratings WHERE title_id = ANY($1::text[]) AND group_id = $2
 `
 
-func (q *Queries) GetRatingRowsByTitleIds(ctx context.Context, dollar_1 []string) ([]Rating, error) {
-	rows, err := q.db.Query(ctx, getRatingRowsByTitleIds, dollar_1)
+type GetRatingRowsByTitleIdsParams struct {
+	Column1 []string
+	GroupID string
+}
+
+func (q *Queries) GetRatingRowsByTitleIds(ctx context.Context, arg GetRatingRowsByTitleIdsParams) ([]Rating, error) {
+	rows, err := q.db.Query(ctx, getRatingRowsByTitleIds, arg.Column1, arg.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +148,7 @@ func (q *Queries) GetRatingRowsByTitleIds(ctx context.Context, dollar_1 []string
 			&i.Note,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -207,17 +222,18 @@ func (q *Queries) GetRatingSeasonsByRatingIds(ctx context.Context, dollar_1 []st
 
 const insertRating = `-- name: InsertRating :one
 INSERT INTO ratings (
-    id, title_id, user_id, note, created_at, updated_at
+    id, title_id, user_id, group_id, note, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, title_id, user_id, note, created_at, updated_at
+RETURNING id, title_id, user_id, note, created_at, updated_at, group_id
 `
 
 type InsertRatingParams struct {
 	ID        string
 	TitleID   string
 	UserID    string
+	GroupID   string
 	Note      float32
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
@@ -228,6 +244,7 @@ func (q *Queries) InsertRating(ctx context.Context, arg InsertRatingParams) (Rat
 		arg.ID,
 		arg.TitleID,
 		arg.UserID,
+		arg.GroupID,
 		arg.Note,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -240,6 +257,7 @@ func (q *Queries) InsertRating(ctx context.Context, arg InsertRatingParams) (Rat
 		&i.Note,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }
@@ -275,7 +293,7 @@ const updateRatingRow = `-- name: UpdateRatingRow :one
 UPDATE ratings
 SET note = $3, updated_at = $4
 WHERE id = $1 AND user_id = $2
-RETURNING id, title_id, user_id, note, created_at, updated_at
+RETURNING id, title_id, user_id, note, created_at, updated_at, group_id
 `
 
 type UpdateRatingRowParams struct {
@@ -300,6 +318,7 @@ func (q *Queries) UpdateRatingRow(ctx context.Context, arg UpdateRatingRowParams
 		&i.Note,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GroupID,
 	)
 	return i, err
 }

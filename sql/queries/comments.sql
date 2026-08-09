@@ -1,8 +1,8 @@
 -- name: InsertComment :one
 INSERT INTO comments (
-    id, title_id, user_id, comment, created_at, updated_at
+    id, title_id, user_id, group_id, comment, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4, $5, $6, $7
 )
 RETURNING *;
 
@@ -16,13 +16,13 @@ RETURNING *;
 SELECT * FROM comments WHERE id = $1 AND user_id = $2;
 
 -- name: GetUserCommentRowByTitle :one
-SELECT * FROM comments WHERE title_id = $1 AND user_id = $2;
+SELECT * FROM comments WHERE title_id = $1 AND user_id = $2 AND group_id = $3;
 
 -- name: GetCommentRowsByTitleId :many
-SELECT * FROM comments WHERE title_id = $1 AND user_id = ANY($2::text[]);
+SELECT * FROM comments WHERE title_id = $1 AND group_id = $2;
 
 -- name: DeleteCommentRow :execrows
-DELETE FROM comments WHERE id = $1 AND user_id = $2;
+DELETE FROM comments WHERE id = $1 AND user_id = $2 AND group_id = $3;
 
 -- name: GetCommentSeasons :many
 SELECT * FROM comment_seasons WHERE comment_id = $1;

@@ -12,8 +12,11 @@ import (
 	"github.com/lealre/movies-backend/internal/store"
 )
 
-func GetRatingsByTitleId(db store.Store, ctx context.Context, titleId string) ([]Rating, error) {
-	ratingsDb, err := db.GetRatingsByTitleId(ctx, titleId)
+// GetRatingsByTitleId returns the ratings left on a title inside a single
+// group. A rating is a group-scoped fact, so there is no unscoped variant of
+// this read.
+func GetRatingsByTitleId(db store.Store, ctx context.Context, titleId, groupId string) ([]Rating, error) {
+	ratingsDb, err := db.GetRatingsByTitleId(ctx, titleId, groupId)
 	if err != nil {
 		return []Rating{}, err
 	}
@@ -38,8 +41,11 @@ func GetRatingById(db store.Store, ctx context.Context, ratingId, userId string)
 	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func GetRatingsBatch(db store.Store, ctx context.Context, titleIDs []string) (TitlesRatings, error) {
-	allRatingsDb, err := db.GetRatingsByTitleIds(ctx, titleIDs)
+// GetRatingsBatch returns, per title, the ratings left on that title inside a
+// single group. Scoping by groupId is what keeps one group's title detail from
+// shipping another group's ratings.
+func GetRatingsBatch(db store.Store, ctx context.Context, titleIDs []string, groupId string) (TitlesRatings, error) {
+	allRatingsDb, err := db.GetRatingsByTitleIds(ctx, titleIDs, groupId)
 	if err != nil {
 		return TitlesRatings{}, err
 	}
@@ -96,7 +102,7 @@ func AddRating(db store.Store, ctx context.Context, rating NewRating, userId str
 //
 //	1.1. Validates that a season number is provided in the rating request
 //	1.2. Validates that the season exists in the title's seasons list
-//	1.3. Checks if a rating already exists for this user/title combination:
+//	1.3. Checks if a rating already exists for this user/title/group combination:
 //	   - If no rating exists:
 //	     1.3.1. Creates a new rating with the season rating
 //	   - If a rating exists:
@@ -139,8 +145,10 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 		return Rating{}, ErrSeasonDoesNotExist
 	}
 
-	// 1.3: Checks if a rating already exists for this user/title combination
-	existingRating, err := db.GetRatingByUserIdAndTitleId(ctx, userId, newRating.TitleId)
+	// 1.3: Checks if a rating already exists for this user/title/group combination.
+	// The lookup is group-scoped: the same user may hold a separate rating for
+	// this title in another group, and that rating must not be touched here.
+	existingRating, err := db.GetRatingByUserIdAndTitleId(ctx, userId, newRating.TitleId, newRating.GroupId)
 	hasExistingRating := err == nil
 	if err != nil && err != store.ErrRecordNotFound {
 		return Rating{}, err
@@ -198,6 +206,7 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 	ratingDb := models.UserRating{
 		TitleId:        newRating.TitleId,
 		UserId:         userId,
+		GroupId:        newRating.GroupId,
 		Note:           newOverallRating,
 		SeasonsRatings: seasonsRatings,
 	}
@@ -223,9 +232,12 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 
 // addRatingForMovie handles rating creation for movies (non-TV series).
 //
-//	1.1. Checks if a rating already exists for this user/title combination
-//	1.2. If a rating exists: Returns ErrRatingAlreadyExists (only one rating per user/title allowed)
+//	1.1. Checks if a rating already exists for this user/title/group combination
+//	1.2. If a rating exists: Returns ErrRatingAlreadyExists (only one rating per user/title/group allowed)
 //	1.3. If no rating exists: Creates a new rating with the provided note value
+//
+// The duplicate check is group-scoped: having rated this title in another group
+// does not block the user from rating it here.
 //
 // Parameters:
 //   - db: the store
@@ -238,8 +250,8 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 //   - error: Returns various errors based on validation failures:
 //   - ErrRatingAlreadyExists: If rating already exists
 func addRatingForMovie(db store.Store, ctx context.Context, rating NewRating, userId string) (Rating, error) {
-	// 1.1: Checks if a rating already exists for this user/title combination
-	_, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId)
+	// 1.1: Checks if a rating already exists for this user/title/group combination
+	_, err := db.GetRatingByUserIdAndTitleId(ctx, userId, rating.TitleId, rating.GroupId)
 	if err == nil {
 		// 1.2: If a rating exists, returns ErrRatingAlreadyExists
 		return Rating{}, ErrRatingAlreadyExists
@@ -251,6 +263,7 @@ func addRatingForMovie(db store.Store, ctx context.Context, rating NewRating, us
 	ratingDb := models.UserRating{
 		TitleId: rating.TitleId,
 		UserId:  userId,
+		GroupId: rating.GroupId,
 		Note:    rating.Note,
 	}
 

@@ -21,6 +21,7 @@ func MapDbRatingDbToApiRating(dbRating models.UserRating) Rating {
 		TitleId:        dbRating.TitleId,
 		SeasonsRatings: seasonsRatings,
 		UserId:         dbRating.UserId,
+		GroupId:        dbRating.GroupId,
 		Note:           dbRating.Note,
 		CreatedAt:      dbRating.CreatedAt,
 		UpdatedAt:      dbRating.UpdatedAt,

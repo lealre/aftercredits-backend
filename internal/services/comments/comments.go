@@ -14,19 +14,17 @@ import (
 )
 
 /*
-* Gets all comments from a title in a specific group, including all users that are in the group.
-* Assumes that the caller already checked that:
-* - The group exists
-* - The title is in the group
-* - The user is in the group
+* Gets all comments left on a title inside a specific group.
+*
+* A comment is a group-scoped fact, so the store filters on group_id directly;
+* there is no member-list filter to assemble. Authorization stays with the
+* caller: the handler's groups.GroupContainsTitle guard already establishes
+* that the group exists, is not deleted, holds the title and has the caller as
+* a member — strictly more than this read needs, so repeating any part of it
+* here would be a second membership query that can never answer differently.
  */
-func GetCommentsByTitleId(db store.Store, ctx context.Context, groupId, titleId, userId string) ([]Comment, error) {
-	group, err := db.GetGroupById(ctx, groupId, userId)
-	if err != nil {
-		return []Comment{}, err
-	}
-
-	commentsDb, err := db.GetCommentsByTitleId(ctx, titleId, group.Users)
+func GetCommentsByTitleId(db store.Store, ctx context.Context, groupId, titleId string) ([]Comment, error) {
+	commentsDb, err := db.GetCommentsByTitleId(ctx, titleId, groupId)
 	if err != nil {
 		return []Comment{}, err
 	}
@@ -67,6 +65,7 @@ func addCommentForMovie(db store.Store, ctx context.Context, newComment NewComme
 	newCommentModel := models.Comment{
 		TitleId: newComment.TitleId,
 		UserId:  userId,
+		GroupId: newComment.GroupId,
 		Comment: &newComment.Comment,
 	}
 
@@ -106,8 +105,10 @@ func addCommentForTVSeries(db store.Store, ctx context.Context, newComment NewCo
 		return Comment{}, ErrSeasonRequired
 	}
 
-	// 2. Checks if a comment already exists for this user/title combination
-	existingComment, err := db.GetUserCommentByTitleId(ctx, newComment.TitleId, userId)
+	// 2. Checks if a comment already exists for this user/title/group combination.
+	// The lookup is group-scoped: a comment the same user left on this title in
+	// another group is a different fact and must not be picked up here.
+	existingComment, err := db.GetUserCommentByTitleId(ctx, newComment.TitleId, userId, newComment.GroupId)
 	hasComment := err == nil
 	if err != nil && err != store.ErrRecordNotFound {
 		return Comment{}, err
@@ -134,6 +135,7 @@ func addCommentForTVSeries(db store.Store, ctx context.Context, newComment NewCo
 		newCommentModel := models.Comment{
 			TitleId: newComment.TitleId,
 			UserId:  userId,
+			GroupId: newComment.GroupId,
 			Comment: nil,
 			SeasonsComments: &models.SeasonsComments{
 				seasonAsString: models.SeasonCommentItem{
@@ -197,7 +199,7 @@ func addCommentForTVSeries(db store.Store, ctx context.Context, newComment NewCo
 //   - ErrInvalidSeasonValue: if a season is provided and is less than or equal to zero
 //   - ErrCommentNotFound: if the underlying specific handler cannot find the target comment
 //   - Any error propagated from the underlying database operations
-func UpdateComment(db store.Store, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+func UpdateComment(db store.Store, ctx context.Context, groupId, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
 	logger := logx.FromContext(ctx)
 	if strings.TrimSpace(updateReq.Comment) == "" {
 		return Comment{}, ErrCommentIsNull
@@ -209,17 +211,38 @@ func UpdateComment(db store.Store, ctx context.Context, commentId, userId string
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
 		logger.Printf("Updating comment for TV series %s", commentId)
-		return updateCommentForTVSeries(db, ctx, commentId, userId, updateReq, title)
+		return updateCommentForTVSeries(db, ctx, groupId, commentId, userId, updateReq, title)
 	}
 
 	logger.Printf("Updating comment for movie %s", commentId)
-	return updateCommentForMovie(db, ctx, commentId, userId, updateReq)
+	return updateCommentForMovie(db, ctx, groupId, commentId, userId, updateReq, title)
 
 }
 
-func updateCommentForMovie(db store.Store, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest) (Comment, error) {
+// updateCommentForMovie updates the comment the caller left on a movie inside
+// groupId.
+//
+// The row to write is resolved by (title, user, group) and the path's commentId
+// is only accepted when it names that very row. The caller may hold a comment on
+// the same movie in another group, and a client that resolves comment ids from a
+// stale or unfiltered list would otherwise address one group's URL with another
+// group's id — updating by id alone would then edit a group the request never
+// named.
+func updateCommentForMovie(db store.Store, ctx context.Context, groupId, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId, groupId)
+	if err != nil {
+		if err == store.ErrRecordNotFound {
+			return Comment{}, ErrCommentNotFound
+		}
+		return Comment{}, err
+	}
+
+	if existingComment.Id != commentId {
+		return Comment{}, ErrCommentNotFound
+	}
+
 	comment := models.Comment{
-		Id:      commentId,
+		Id:      existingComment.Id,
 		Comment: &updateReq.Comment,
 	}
 	updatedComment, err := db.UpdateComment(ctx, comment, userId)
@@ -236,30 +259,40 @@ func updateCommentForMovie(db store.Store, ctx context.Context, commentId, userI
 //
 // Steps performed by this method:
 //  1. Validates that a season number is provided in the update request.
-//  2. Fetches the existing comment for the given user and title.
+//  2. Fetches the existing comment for the given user, title and group, and
+//     rejects a commentId that names a different row.
 //  3. Ensures that the existing comment has season comments.
 //  4. Verifies that the specified season exists within the stored season comments.
-//  5. Fetches the existing comment from DB to preserve timestamps for all seasons.
-//  6. Updates the comment for the specified season (preserve AddedAt, update UpdatedAt).
-//  7. Persists the updated season comments to the database.
+//  5. Updates the comment for the specified season (preserve AddedAt, update UpdatedAt).
+//  6. Persists the updated season comments to the database.
 //
 // Possible errors:
 //   - ErrSeasonRequired: if no season is provided in the update request.
-//   - ErrCommentNotFound: if the comment or the specified season comment does not exist.
-//   - Any error returned by db.GetCommentById or db.UpdateComment when fetching or persisting the update.
-func updateCommentForTVSeries(db store.Store, ctx context.Context, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
+//   - ErrCommentNotFound: if the comment or the specified season comment does not exist,
+//     or if commentId belongs to a comment outside groupId.
+//   - Any error returned by db.GetUserCommentByTitleId or db.UpdateComment when
+//     fetching or persisting the update.
+func updateCommentForTVSeries(db store.Store, ctx context.Context, groupId, commentId, userId string, updateReq UpdateCommentRequest, title titles.Title) (Comment, error) {
 	// 1. Validate that a season number is provided in the update request
 	if updateReq.Season == nil {
 		return Comment{}, ErrSeasonRequired
 	}
 
-	// 2. Fetch the existing comment for this user and title
-	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId)
+	// 2. Fetch the existing comment for this user, title and group. Without the
+	// group the (user, title) lookup would match one row per group and silently
+	// resolve to an arbitrary one. The row this resolves to is also the row that
+	// gets written: the path's commentId is accepted only when it names it, so a
+	// PATCH under group A's URL can never reach the caller's group B comment.
+	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId, groupId)
 	if err != nil {
 		if err == store.ErrRecordNotFound {
 			return Comment{}, ErrCommentNotFound
 		}
 		return Comment{}, err
+	}
+
+	if existingComment.Id != commentId {
+		return Comment{}, ErrCommentNotFound
 	}
 
 	// 3. Ensure that the existing comment has season comments
@@ -270,37 +303,16 @@ func updateCommentForTVSeries(db store.Store, ctx context.Context, commentId, us
 	}
 
 	// 4. Verify that the specified season exists in the stored season comments
-	if _, exists := (*existingComment.SeasonsComments)[seasonAsString]; !exists {
-		return Comment{}, ErrCommentNotFound
-	}
-
-	// 5. Fetch the existing comment from DB to preserve timestamps for all seasons
-	existingCommentDb, err := db.GetCommentById(ctx, commentId, userId)
-	if err != nil {
-		if err == store.ErrRecordNotFound {
-			return Comment{}, ErrCommentNotFound
-		}
-		return Comment{}, err
-	}
-
-	// 6. Verify that the rating contains season comments in DB structure
-	if existingCommentDb.SeasonsComments == nil {
-		return Comment{}, ErrCommentNotFound
-	}
-
-	// Verify that the specified season exists in the DB structure
-	existingSeasonComment, exists := (*existingCommentDb.SeasonsComments)[seasonAsString]
+	existingSeasonComment, exists := (*existingComment.SeasonsComments)[seasonAsString]
 	if !exists {
 		return Comment{}, ErrCommentNotFound
 	}
 
-	// Update the comment for the specified season (preserve AddedAt, update UpdatedAt)
+	// 5. Update the comment for the specified season (preserve AddedAt, update
+	// UpdatedAt). existingComment is the stored row with every season's
+	// timestamps already assembled, so there is nothing to re-read.
 	now := time.Now()
-	// Start with existing DB structure to preserve all timestamps
-	seasonsComments := existingCommentDb.SeasonsComments
-	if seasonsComments == nil {
-		seasonsComments = &models.SeasonsComments{}
-	}
+	seasonsComments := existingComment.SeasonsComments
 
 	// Update only the season being modified
 	(*seasonsComments)[seasonAsString] = models.SeasonCommentItem{
@@ -309,9 +321,9 @@ func updateCommentForTVSeries(db store.Store, ctx context.Context, commentId, us
 		UpdatedAt: now,
 	}
 
-	// 7. Persist the updated season comments to the database
+	// 6. Persist the updated season comments to the database
 	comment := models.Comment{
-		Id:              commentId,
+		Id:              existingComment.Id,
 		SeasonsComments: seasonsComments,
 	}
 
@@ -323,8 +335,14 @@ func updateCommentForTVSeries(db store.Store, ctx context.Context, commentId, us
 	return MapDbCommentToApiComment(updatedComment), nil
 }
 
-func DeleteComment(db store.Store, ctx context.Context, commentId, userId string) (int64, error) {
-	deletedCount, err := db.DeleteComment(ctx, commentId, userId)
+// DeleteComment deletes the caller's comment inside groupId.
+//
+// The route is group-scoped, so the delete is too: groupId is part of the key
+// the store deletes on, and a commentId naming the caller's comment in another
+// group matches nothing and reports 0 rows deleted rather than destroying a
+// group the request never addressed.
+func DeleteComment(db store.Store, ctx context.Context, commentId, userId, groupId string) (int64, error) {
+	deletedCount, err := db.DeleteComment(ctx, commentId, userId, groupId)
 	if err != nil {
 		return 0, err
 	}
@@ -340,7 +358,12 @@ func DeleteComment(db store.Store, ctx context.Context, commentId, userId string
 //   - the season comment must exist in the stored seasonsComments map
 //
 // If, after deleting the season entry, there are no seasons left, the whole comment document is deleted.
-func DeleteCommentSeason(db store.Store, ctx context.Context, commentId, userId string, season int, title titles.Title) error {
+//
+// Like the other group-scoped comment routes, the row is resolved by
+// (title, user, group) and the path's commentId is accepted only when it names
+// that row, so a DELETE under one group's URL can never reach the caller's
+// comment in another group.
+func DeleteCommentSeason(db store.Store, ctx context.Context, groupId, commentId, userId string, season int, title titles.Title) error {
 	if season <= 0 {
 		return ErrInvalidSeasonValue
 	}
@@ -364,13 +387,18 @@ func DeleteCommentSeason(db store.Store, ctx context.Context, commentId, userId 
 		return ErrSeasonDoesNotExist
 	}
 
-	// Fetch the comment by id (and ensure it belongs to the user)
-	existingComment, err := db.GetCommentById(ctx, commentId, userId)
+	// Fetch the comment by (title, user, group), and accept the path's commentId
+	// only when it names that row
+	existingComment, err := db.GetUserCommentByTitleId(ctx, title.Id, userId, groupId)
 	if err != nil {
 		if err == store.ErrRecordNotFound {
 			return ErrCommentNotFound
 		}
 		return err
+	}
+
+	if existingComment.Id != commentId {
+		return ErrCommentNotFound
 	}
 
 	// Ensure it has season comments and the requested season exists
@@ -386,7 +414,7 @@ func DeleteCommentSeason(db store.Store, ctx context.Context, commentId, userId 
 
 	// If no seasons left, delete the whole comment document
 	if len(*existingComment.SeasonsComments) == 0 {
-		deleted, err := db.DeleteComment(ctx, commentId, userId)
+		deleted, err := db.DeleteComment(ctx, existingComment.Id, userId, groupId)
 		if err != nil {
 			return err
 		}
@@ -401,7 +429,7 @@ func DeleteCommentSeason(db store.Store, ctx context.Context, commentId, userId 
 	seasonsComments := &converted
 
 	comment := models.Comment{
-		Id:              commentId,
+		Id:              existingComment.Id,
 		Comment:         existingComment.Comment,
 		SeasonsComments: seasonsComments,
 	}
