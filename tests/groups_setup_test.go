@@ -349,6 +349,108 @@ func groupTitleIds(page generics.Page[groups.GroupTitleDetail]) []string {
 	return ids
 }
 
+// tiedTitlesFixture is a group whose titles deliberately collide on every
+// column the titles sort whitelist can order by, so paging over it exercises a
+// sort that is only total if it ends in a tie-break.
+type tiedTitlesFixture struct {
+	token    string
+	group    groups.GroupResponse
+	titleIds []string
+}
+
+// tiedSortKeys are the orderBy values a group-titles request routes through the
+// whitelisted-column branch of the store's sort (the LIMIT/OFFSET path whose
+// order must be total). watched/watchedAt/addedAt are deliberately absent: for a
+// group they take the array_position branch instead, which is ordered by the
+// service and covered by the existing ordering subtests.
+var tiedSortKeys = []string{"", "primaryTitle", "imdbRating", "startYear", "type", "voteCount", "updatedAt"}
+
+// setupTiedTitlesGroup seeds count movies and puts all of them in one group.
+// Values repeat on a short cycle per column, so every sort key has large groups
+// of rows that compare equal:
+//
+//   - type:         one value, so all count rows tie
+//   - startYear:    2 values, primaryTitle: 3, rating: 4, voteCount: 5
+//   - updatedAt:    NULL on every other title, one shared timestamp otherwise —
+//     NULL rows tie with each other too
+//
+// The cycle lengths are coprime-ish on purpose: no two columns partition the
+// set the same way, so no column accidentally acts as another's tie-break.
+//
+// Callers are expected to have called resetDB(t) first.
+func setupTiedTitlesGroup(t *testing.T, count int) tiedTitlesFixture {
+	t.Helper()
+
+	_, token := addUser(t, users.NewUserRequest{
+		Username: "tiedtitlesowner",
+		Password: "testpass",
+	})
+	group := createGroup(t, groups.CreateGroupRequest{Name: "tied titles group"}, token)
+
+	updatedAt := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
+
+	titles := make([]models.Title, 0, count)
+	titleIds := make([]string, 0, count)
+	for i := range count {
+		var titleUpdatedAt *time.Time
+		if i%2 == 1 {
+			titleUpdatedAt = &updatedAt
+		}
+		title := newSortableMovieTitle(
+			fmt.Sprintf("tt90%05d", i),
+			fmt.Sprintf("Tied Movie %d", i%3),
+			2000+i%2,
+			float64(5+i%4),
+			100*(i%5),
+			titleUpdatedAt,
+		)
+		titles = append(titles, title)
+		titleIds = append(titleIds, title.ID)
+	}
+	seedTitles(t, titles)
+
+	// Seeded titles already exist, so this only creates the group_titles rows
+	// (the endpoint never reaches the title provider).
+	for _, titleId := range titleIds {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     "https://www.imdb.com/title/" + titleId + "/",
+			GroupId: group.Id,
+		}, token)
+	}
+
+	return tiedTitlesFixture{token: token, group: group, titleIds: titleIds}
+}
+
+// walkGroupTitlePages pages through GET /groups/{id}/titles from page 1 to the
+// reported TotalPages, exactly as a client walking the list does, and returns
+// the title ids of each page. query carries the sort (and any filters) without
+// size or page, which this helper supplies.
+//
+// It returns one slice per page rather than a flat list so a caller can tell a
+// title repeated *within* a page from one that leaked across two pages.
+func walkGroupTitlePages(t *testing.T, groupId string, size int, query, token string) [][]string {
+	t.Helper()
+
+	first := getGroupTitlesPage(t, groupId, fmt.Sprintf("size=%d&page=1&%s", size, query), token)
+	pages := [][]string{groupTitleIds(first)}
+	for page := 2; page <= first.TotalPages; page++ {
+		next := getGroupTitlesPage(t, groupId, fmt.Sprintf("size=%d&page=%d&%s", size, page, query), token)
+		require.Equal(t, first.TotalResults, next.TotalResults,
+			"the total must not move while walking pages of %q", query)
+		pages = append(pages, groupTitleIds(next))
+	}
+	return pages
+}
+
+// flattenPages concatenates the per-page ids returned by walkGroupTitlePages.
+func flattenPages(pages [][]string) []string {
+	var all []string
+	for _, page := range pages {
+		all = append(all, page...)
+	}
+	return all
+}
+
 // setGroupTitleWatched marks a group title watched (or not) with an explicit
 // watchedAt, so ordering tests have deterministic values to sort on.
 func setGroupTitleWatched(t *testing.T, groupId, titleId string, watched bool, watchedAt *time.Time, token string) {

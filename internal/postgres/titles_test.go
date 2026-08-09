@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -339,6 +341,95 @@ func TestStore_GetTitlesPage(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []models.Title{}, got)
 		require.EqualValues(t, 0, total)
+	})
+
+	// Regression: the ORDER BY that feeds LIMIT/OFFSET had no tie-break, so rows
+	// that compared equal on the sort column had no defined relative order and
+	// Postgres could place one of them differently for each page (the bound it
+	// sorts under changes with the OFFSET). Walking the pages then returned one
+	// row twice and another never — observed on real data, 122 titles ordered by
+	// rating descending yielding 119 rows and 118 distinct titles.
+	t.Run("paging a heavily tied sort returns every row exactly once", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		// 200 rows over a handful of distinct values per column: every sort key
+		// has large blocks of rows that compare equal.
+		const total = 200
+		const pageSize = 7
+		want := make([]string, 0, total)
+		for i := range total {
+			title := newTestMovieTitle(t,
+				fmt.Sprintf("tt%05d", i),
+				fmt.Sprintf("Tied %d", i%3),
+				float64(5+i%4),
+			)
+			title.Rating.VoteCount = 100 * (i % 5)
+			title.StartYear = 2000 + i%2
+			// updated_at is the one nullable sort column; NULL rows tie too.
+			if i%2 == 0 {
+				title.UpdatedAt = nil
+			}
+			require.NoError(t, s.AddTitle(ctx, title))
+			want = append(want, title.ID)
+		}
+
+		for _, orderBy := range []string{"", "primaryTitle", "imdbRating", "startYear", "type", "voteCount", "addedAt", "updatedAt"} {
+			for _, ascending := range []bool{true, false} {
+				direction := ascending
+				var got []string
+				for page := 1; ; page++ {
+					titles, count, err := s.GetTitlesPage(ctx, nil, orderBy, &direction, pageSize, page)
+					require.NoError(t, err, "paging by %q failed", orderBy)
+					require.EqualValues(t, total, count, "the total must not move while paging by %q", orderBy)
+					if len(titles) == 0 {
+						break
+					}
+					for _, title := range titles {
+						got = append(got, title.ID)
+					}
+				}
+
+				require.ElementsMatch(t, want, got,
+					"paging by %q (ascending=%v) must return every row exactly once", orderBy, direction)
+			}
+		}
+	})
+
+	t.Run("the array_position order is stable across pages", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		const total = 50
+		ids := make([]string, 0, total)
+		for i := range total {
+			// Identical sort values everywhere, so only array_position (and the
+			// tie-break) can decide the order.
+			title := newTestMovieTitle(t, fmt.Sprintf("tt%05d", i), "Same Title", 8.0)
+			require.NoError(t, s.AddTitle(ctx, title))
+			ids = append(ids, title.ID)
+		}
+
+		// A caller-chosen order that matches neither insertion nor id order.
+		slices.Reverse(ids)
+
+		var got []string
+		for page := 1; ; page++ {
+			titles, count, err := s.GetTitlesPage(ctx, ids, "addedAt", nil, 6, page)
+			require.NoError(t, err)
+			require.EqualValues(t, total, count)
+			if len(titles) == 0 {
+				break
+			}
+			for _, title := range titles {
+				got = append(got, title.ID)
+			}
+		}
+
+		require.Equal(t, ids, got,
+			"paging the array_position branch must reproduce the caller's order exactly")
 	})
 
 	t.Run("total count reflects ids filter", func(t *testing.T) {

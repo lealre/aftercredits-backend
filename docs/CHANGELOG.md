@@ -2,9 +2,11 @@
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
 
 Ratings and comments become group-scoped — which needs a schema migration and a
-short stop of the backend during the deploy, see below. Plus two bug fixes,
-fewer database round-trips on `GET /groups/{id}/titles`, and the
-query-parameter tests that endpoint never had.
+short stop of the backend during the deploy, see below. Plus a handful of bug
+fixes — including titles going missing from a paged list, and spurious logouts
+during a database blip — fewer database round-trips on
+`GET /groups/{id}/titles`, and the query-parameter tests that endpoint never
+had.
 
 * **Ratings and comments are now per-group facts.** A rating or comment belongs to one group, keyed on (user, title, group), so the same title can be rated and commented differently in each group you share it with. Previously one rating was shared across every group the author belonged to
 * Fix a group's title detail showing other groups' ratings. The group-titles read applied no group filter at all, so every rating on a title by any user in the system was served to every group holding it. Comments were already filtered; ratings never were
@@ -16,6 +18,8 @@ query-parameter tests that endpoint never had.
 * Note that migration 003's `Down` is one-way once used: rolling back re-adds the global (user, title) uniqueness, which fails as soon as anyone holds two ratings or comments for one title in different groups
 * Fix `orderBy=watched` returning a different order on every request. The id list is built by ranging a map, and nothing re-sorted it for that key, so the sort order — and therefore which titles landed on which page — was effectively random. It now sorts unwatched first (matching `ORDER BY watched ASC`) with a title-id tie-break, giving a total order
 * Fix a database error being reported as `404 Not Found`. Six handlers checked `!ok` before `err`, so any store failure surfaced as "not found" instead of a 500
+* Fix titles being duplicated or skipped when paging a sorted list. Any sort whose column repeats a value — the same rating, the same year, the same type — left those rows in no defined order, so a title could come back on two pages while another was never returned at all. Walking a 122-title group by rating gave 119 rows and 118 distinct titles. Every sort now ends in a title-id tie-break, so paging returns each title exactly once. Titles that tie are now ordered by id among themselves, which can change which of them lands on which page compared with before — that ordering was previously arbitrary and could differ between two identical requests, so there was no stable "before" to preserve. Where titles with no `updatedAt` appear is unchanged
+* Fix a database blip logging everyone out. Any error other than "user not found" while loading the caller left the auth middleware looking at an empty user, which it reported as `401 Invalid or inactive user` — and never logged. A transient store failure is now a logged `500`; a genuinely unknown or deactivated user still gets the same `401` as before
 * Guard `GET /groups/{id}/titles` and `GET /groups/{id}/users` with a single `EXISTS` query instead of loading the whole group and discarding it — the group, its members, every group title and every season row were being materialized twice per request
 * Fetch ratings for the titles on the requested page rather than for every title in the group
 * Remove `EnsureGroupExists`, now that nothing calls it

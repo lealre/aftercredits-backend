@@ -100,6 +100,8 @@ func isGroupFieldOrderBy(orderBy string) bool {
 //     order.
 //   - CASE 2: otherwise -> ORDER BY <whitelisted column> <ASC|DESC>, column
 //     from titleOrderColumns, direction from ascending (default ASC).
+//   - Every branch ends in a deterministic "id ASC" tie-break, so the order is
+//     total and paging cannot repeat or skip a row (see the ORDER BY below).
 //   - LIMIT size OFFSET (page-1)*size, matching the previous skip/limit
 //     computation verbatim (no extra clamping here; that's the service
 //     layer's job).
@@ -131,15 +133,41 @@ func (s *Store) GetTitlesPage(
 		direction = "DESC"
 	}
 
+	// Both branches end in "id ASC". The clause feeds LIMIT/OFFSET, and a
+	// non-total order under paging lets Postgres return the same row on two
+	// pages while never returning another (CONVENTIONS §6). id is the primary
+	// key — unique and NOT NULL — so appending it makes each branch total.
+	//
+	// The tie-break is pinned to ASC and is never flipped with `direction`:
+	// its only job is to make ties deterministic, and a fixed direction keeps
+	// the rule simple to state and identical for every sort key. Which rows
+	// tie is decided entirely by the primary key, so the visible ordering is
+	// unaffected either way.
 	var orderClause string
 	if len(ids) > 0 && isGroupFieldOrderBy(orderBy) {
-		orderClause = "ORDER BY array_position($1::text[], id)"
+		// array_position cannot tie here: the WHERE clause restricts the result
+		// to rows whose id is in this same $1 array, ids are unique (primary
+		// key), and array_position returns the FIRST index of a value, so two
+		// distinct ids always land on two distinct positions — even if the
+		// array itself carried duplicates. It cannot return NULL either, since
+		// every returned row's id is in the array by construction. The
+		// tie-break is appended anyway so this branch's totality is a property
+		// of the ORDER BY itself rather than of the WHERE clause staying in
+		// sync with it; in practice it is never reached.
+		orderClause = "ORDER BY array_position($1::text[], id), id ASC"
 	} else {
 		column, ok := titleOrderColumns[orderBy]
 		if !ok {
 			column = titleOrderColumns[""]
 		}
-		orderClause = fmt.Sprintf("ORDER BY %s %s", column, direction)
+		// No NULLS FIRST/LAST is added: Postgres' defaults (NULLS LAST for ASC,
+		// NULLS FIRST for DESC) keep deciding where rows with a NULL sort value
+		// land, so nothing a client sees moves. added_at and updated_at are the
+		// only nullable columns in titleOrderColumns (rating_aggregate and
+		// vote_count are NOT NULL DEFAULT 0, so a "missing" rating sorts as 0,
+		// not as NULL). NULLs tie with one another for sorting, so the appended
+		// id only fixes the previously arbitrary order *within* that tie group.
+		orderClause = fmt.Sprintf("ORDER BY %s %s, id ASC", column, direction)
 	}
 
 	args := append([]any{}, whereArgs...)

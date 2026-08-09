@@ -2325,3 +2325,95 @@ func TestGroupTitlesQueryParams(t *testing.T) {
 		require.ElementsMatch(t, []string{movieB.ID, series.ID}, descending[2:], "unwatched titles come last when descending")
 	})
 }
+
+// TestGroupTitlesPaginationIsTotallyOrdered is a regression test for a sort
+// that fed LIMIT/OFFSET without a tie-break (CONVENTIONS §6).
+//
+// When rows compare equal on the sort column, nothing pins their relative
+// order, and Postgres is free to break the tie differently for each page — the
+// bound it sorts under changes with the OFFSET. A title can then be returned on
+// two pages while another is never returned at all. It was reproduced on real
+// data: walking a 122-title group by rating descending yielded 119 rows but
+// only 118 distinct titles.
+//
+// The fixture ties heavily on every whitelisted sort column, so the walk below
+// fails unless the ORDER BY ends in a deterministic tie-break.
+func TestGroupTitlesPaginationIsTotallyOrdered(t *testing.T) {
+	const titleCount = 60
+	const pageSize = 7
+
+	t.Run("walking every page returns each group title exactly once", func(t *testing.T) {
+		resetDB(t)
+		fixture := setupTiedTitlesGroup(t, titleCount)
+
+		for _, orderBy := range tiedSortKeys {
+			for _, ascending := range []string{"true", "false"} {
+				query := fmt.Sprintf("orderBy=%s&ascending=%s", orderBy, ascending)
+				pages := walkGroupTitlePages(t, fixture.group.Id, pageSize, query, fixture.token)
+				all := flattenPages(pages)
+
+				require.Len(t, all, titleCount,
+					"walking every page of %q must return as many rows as the group has titles", query)
+
+				distinct := map[string]int{}
+				for _, id := range all {
+					distinct[id]++
+				}
+				require.Len(t, distinct, titleCount,
+					"walking every page of %q must return %d distinct titles, got %d (a title was returned twice and another never)",
+					query, titleCount, len(distinct))
+
+				require.ElementsMatch(t, fixture.titleIds, all,
+					"the union of all pages of %q must be exactly the group's titles", query)
+			}
+		}
+	})
+
+	t.Run("no title appears on two different pages", func(t *testing.T) {
+		resetDB(t)
+		fixture := setupTiedTitlesGroup(t, titleCount)
+
+		for _, orderBy := range tiedSortKeys {
+			for _, ascending := range []string{"true", "false"} {
+				query := fmt.Sprintf("orderBy=%s&ascending=%s", orderBy, ascending)
+				pages := walkGroupTitlePages(t, fixture.group.Id, pageSize, query, fixture.token)
+
+				pageOf := map[string]int{}
+				for index, page := range pages {
+					for _, id := range page {
+						previous, seen := pageOf[id]
+						require.False(t, seen,
+							"title %s appeared on page %d and again on page %d of %q",
+							id, previous+1, index+1, query)
+						pageOf[id] = index
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("the paged walk reproduces the unpaginated order", func(t *testing.T) {
+		resetDB(t)
+		fixture := setupTiedTitlesGroup(t, titleCount)
+
+		// The strongest statement of the property: paging must be a partition
+		// of one single ordering, so concatenating the pages has to equal the
+		// same sort asked for in one request. Without a tie-break each page is
+		// sorted under a different bound, so the two disagree even when no row
+		// happens to be duplicated.
+		for _, orderBy := range tiedSortKeys {
+			for _, ascending := range []string{"true", "false"} {
+				query := fmt.Sprintf("orderBy=%s&ascending=%s", orderBy, ascending)
+
+				whole := getGroupTitlesPage(t, fixture.group.Id,
+					fmt.Sprintf("size=%d&page=1&%s", titleCount, query), fixture.token)
+				require.Len(t, whole.Content, titleCount,
+					"sanity: a single page of %d must hold the whole group for %q", titleCount, query)
+
+				require.Equal(t, groupTitleIds(whole),
+					flattenPages(walkGroupTitlePages(t, fixture.group.Id, pageSize, query, fixture.token)),
+					"the pages of %q must concatenate back into the unpaginated order", query)
+			}
+		}
+	})
+}
