@@ -34,8 +34,11 @@ go.work.sum
 backups/
 
 *.log
-# Design/planning docs and superpowers artifacts (local only, never committed)
-docs/
+# Design/planning docs and superpowers artifacts stay local. Only the
+# maintained docs listed below are committed.
+docs/*
+!docs/CHANGELOG.md
+!docs/CONVENTIONS.md
 .superpowers/
 
 # Compiled binaries (the Dockerfile builds these names at the repo root)

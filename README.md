@@ -11,12 +11,12 @@ See **[Title metadata providers](internal/titleprovider/README.md)** for a
 comparison of each provider's strengths and weaknesses and the required API keys.
 
 Backend code conventions (handlers vs. services, error mapping, comment
-invariants) are documented in **[CONVENTIONS.md](CONVENTIONS.md)**.
+invariants) are documented in **[docs/CONVENTIONS.md](docs/CONVENTIONS.md)**.
 
 ## Table of Contents
 
 - [Title metadata providers](internal/titleprovider/README.md)
-- [Code conventions](CONVENTIONS.md)
+- [Code conventions](docs/CONVENTIONS.md)
 - [How to Run](#how-to-run)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)

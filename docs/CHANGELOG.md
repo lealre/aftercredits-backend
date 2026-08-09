@@ -10,6 +10,10 @@ query-parameter tests that endpoint never had.
 * Fetch ratings for the titles on the requested page rather than for every title in the group
 * Remove `EnsureGroupExists`, now that nothing calls it
 * Add integration coverage for the group-titles query parameters: pagination, page-past-the-last totals, `Content` null-vs-`[]`, `watched` and `titleType` filters, and ordering by `watched`, `watchedAt` and `addedAt`
+* Move `CHANGELOG.md` and `CONVENTIONS.md` under `docs/`
+* Remove the `git-chglog` configuration: the changelog is maintained by hand. Regenerating it overwrote the written entries, listed merge commits as changelog lines, and dropped any release that was never tagged
+* Merge the two `v0.0.13` changelog entries, which the version's two PRs had each appended separately
+* Document the conventions that were only implicit: the `store.Store` boundary, the nil-vs-empty response contract, checking `err` before `!ok` on `(bool, error)` guards, total ordering for paginated sorts, migrations as a deploy step, and the `X_test.go`/`X_setup_test.go` split
 
 <a name="v0.1.1"></a>
 ## [v0.1.1](https://github.com/lealre/aftercredits-backend/compare/v0.1.0...v0.1.1) (2026-08-07)
