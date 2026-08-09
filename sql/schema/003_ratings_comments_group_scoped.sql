@@ -121,12 +121,16 @@ ALTER TABLE comments DROP CONSTRAINT comments_user_id_title_id_key;
 ALTER TABLE ratings ADD CONSTRAINT ratings_user_id_title_id_group_id_unique UNIQUE (user_id, title_id, group_id);
 ALTER TABLE comments ADD CONSTRAINT comments_user_id_title_id_group_id_unique UNIQUE (user_id, title_id, group_id);
 
--- NO ACTION, deliberately not ON DELETE CASCADE: groups are only ever
--- soft-deleted, so this FK never fires today. CASCADE would silently destroy
--- every rating and comment in a group the first time someone purges
--- soft-deleted rows; NO ACTION makes that purge fail loudly instead.
-ALTER TABLE ratings ADD CONSTRAINT ratings_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id);
-ALTER TABLE comments ADD CONSTRAINT comments_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id);
+-- ON DELETE CASCADE, matching group_members and group_titles in 001_init.sql.
+-- A rating or comment is a fact about (user, title, group), so it carries no
+-- meaning once its group is gone. Groups are only ever soft-deleted today, so
+-- this never fires; when a purge of soft-deleted groups is eventually written,
+-- cascading is what it wants, and it spares that code from hand-ordering the
+-- child deletes.
+ALTER TABLE ratings ADD CONSTRAINT ratings_group_id_fkey
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE;
+ALTER TABLE comments ADD CONSTRAINT comments_group_id_fkey
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE;
 
 CREATE INDEX ratings_group_id_idx ON ratings(group_id);
 CREATE INDEX comments_group_id_idx ON comments(group_id);

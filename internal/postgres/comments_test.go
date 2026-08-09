@@ -561,3 +561,34 @@ func TestAddComment_DuplicateUserTitle(t *testing.T) {
 		require.Equal(t, groupB, second.GroupId)
 	})
 }
+
+// TestStore_Comments_CascadeOnGroupDelete is the comments half of the
+// ON DELETE CASCADE contract asserted in ratings_test.go.
+func TestStore_Comments_CascadeOnGroupDelete(t *testing.T) {
+	t.Run("hard-deleting a group removes its comments", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		groupA := addTestGroup(t, s)
+		groupB := addTestGroup(t, s)
+		titleId := "tt-cascade-" + uuid.NewString()
+		userId := "user-cascade-" + uuid.NewString()
+
+		_, err := s.AddComment(ctx, newTestMovieComment(t, titleId, userId, groupA, "in the doomed group"))
+		require.NoError(t, err, "failed to seed the comment in the group being deleted")
+		_, err = s.AddComment(ctx, newTestMovieComment(t, titleId, userId, groupB, "in the surviving group"))
+		require.NoError(t, err, "failed to seed the comment in the surviving group")
+
+		_, err = newTestPool(t).Exec(ctx, `DELETE FROM groups WHERE id = $1`, groupA)
+		require.NoError(t, err, "hard-deleting a group must succeed, not be blocked by the comments foreign key")
+
+		gone, err := s.GetCommentsByTitleId(ctx, titleId, groupA)
+		require.NoError(t, err)
+		require.Empty(t, gone, "the deleted group's comments must be gone")
+
+		kept, err := s.GetCommentsByTitleId(ctx, titleId, groupB)
+		require.NoError(t, err)
+		require.Len(t, kept, 1, "the other group's comment must survive the cascade")
+	})
+}

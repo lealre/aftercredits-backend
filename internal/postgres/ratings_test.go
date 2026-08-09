@@ -591,3 +591,38 @@ func TestStore_DeleteRating(t *testing.T) {
 		require.ErrorIs(t, err, store.ErrRecordNotFound)
 	})
 }
+
+// TestStore_Ratings_CascadeOnGroupDelete locks in the ON DELETE CASCADE on
+// ratings.group_id. A rating is a fact about (user, title, group), so it has no
+// meaning once its group is gone, and cascading matches group_members and
+// group_titles in 001_init.sql. Nothing in the application hard-deletes a group
+// today (SoftDeleteGroup only sets deleted = true), so this asserts the schema
+// contract a future purge routine would rely on.
+func TestStore_Ratings_CascadeOnGroupDelete(t *testing.T) {
+	t.Run("hard-deleting a group removes its ratings", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		groupA := addTestGroup(t, s)
+		groupB := addTestGroup(t, s)
+		titleId := "tt-cascade-" + uuid.NewString()
+		userId := "user-cascade-" + uuid.NewString()
+
+		_, err := s.AddRating(ctx, newTestMovieRating(t, titleId, userId, groupA, 8.0))
+		require.NoError(t, err, "failed to seed the rating in the group being deleted")
+		_, err = s.AddRating(ctx, newTestMovieRating(t, titleId, userId, groupB, 3.0))
+		require.NoError(t, err, "failed to seed the rating in the surviving group")
+
+		_, err = newTestPool(t).Exec(ctx, `DELETE FROM groups WHERE id = $1`, groupA)
+		require.NoError(t, err, "hard-deleting a group must succeed, not be blocked by the ratings foreign key")
+
+		gone, err := s.GetRatingsByTitleId(ctx, titleId, groupA)
+		require.NoError(t, err)
+		require.Empty(t, gone, "the deleted group's ratings must be gone")
+
+		kept, err := s.GetRatingsByTitleId(ctx, titleId, groupB)
+		require.NoError(t, err)
+		require.Len(t, kept, 1, "the other group's rating must survive the cascade")
+	})
+}
