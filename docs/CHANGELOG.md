@@ -10,6 +10,10 @@ query-parameter tests that endpoint never had.
 * Fetch ratings for the titles on the requested page rather than for every title in the group
 * Remove `EnsureGroupExists`, now that nothing calls it
 * Add integration coverage for the group-titles query parameters: pagination, page-past-the-last totals, `Content` null-vs-`[]`, `watched` and `titleType` filters, and ordering by `watched`, `watchedAt` and `addedAt`
+* Move `CHANGELOG.md` and `CONVENTIONS.md` under `docs/`
+* Remove the `git-chglog` configuration: the changelog is maintained by hand. Regenerating it overwrote the written entries, listed merge commits as changelog lines, and dropped any release that was never tagged
+* Merge the two `v0.0.13` changelog entries, which the version's two PRs had each appended separately
+* Document the conventions that were only implicit: the `store.Store` boundary, the nil-vs-empty response contract, checking `err` before `!ok` on `(bool, error)` guards, total ordering for paginated sorts, migrations as a deploy step, and the `X_test.go`/`X_setup_test.go` split
 
 <a name="v0.1.1"></a>
 ## [v0.1.1](https://github.com/lealre/aftercredits-backend/compare/v0.1.0...v0.1.1) (2026-08-07)
@@ -42,21 +46,17 @@ response-shape or auth changes.
 * Run the app, the deploy one-shot, the scheduled title sync and the integration suite on Postgres; `database -migrate` applies the embedded goose migrations
 * Switch backups from `mongodump` to `pg_dump`/`pg_restore`
 
-<a name="v0.0.13-groups"></a>
-## v0.0.13 — Group management (2026-07-31)
+<a name="v0.0.13"></a>
+## v0.0.13 — Episodes on demand and group management (2026-07-31)
 
+* Add GET /titles/{id}/episodes to load episodes on demand
+* Omit the embedded episodes array from the group-titles list response (lighter payloads; seasons summary retained)
 * Add PATCH /groups/{id} to rename a group (owner only)
 * Add DELETE /groups/{id} soft-delete (owner only); excluded from all reads, member group lists cleaned up
 * Add DELETE /groups/{id}/users/{userId} to leave a group (non-owner, self)
 * Exclude soft-deleted groups from the unique (ownerId, name) index so names can be reused
 * Add an optional group description (set on create, editable via PATCH /groups/{id})
 * Backfill deleted=false + description="" on existing groups automatically via db-setup (`database -backfill-groups`), before the index reset
-
-<a name="v0.0.13"></a>
-## [v0.0.13](https://github.com/lealre/aftercredits-backend/compare/v0.0.12...v0.0.13) (2026-07-25)
-
-* Add GET /titles/{id}/episodes to load episodes on demand
-* Omit the embedded episodes array from the group-titles list response (lighter payloads; seasons summary retained)
 
 <a name="v0.0.12"></a>
 ## [v0.0.12](https://github.com/lealre/aftercredits-backend/compare/v0.0.11...v0.0.12) (2026-07-25)
