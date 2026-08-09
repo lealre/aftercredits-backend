@@ -1,3 +1,16 @@
+<a name="v0.1.2"></a>
+## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
+
+Two bug fixes and fewer database round-trips on `GET /groups/{id}/titles`, plus the
+query-parameter tests that endpoint never had.
+
+* Fix `orderBy=watched` returning a different order on every request. The id list is built by ranging a map, and nothing re-sorted it for that key, so the sort order — and therefore which titles landed on which page — was effectively random. It now sorts unwatched first (matching `ORDER BY watched ASC`) with a title-id tie-break, giving a total order
+* Fix a database error being reported as `404 Not Found`. Six handlers checked `!ok` before `err`, so any store failure surfaced as "not found" instead of a 500
+* Guard `GET /groups/{id}/titles` and `GET /groups/{id}/users` with a single `EXISTS` query instead of loading the whole group and discarding it — the group, its members, every group title and every season row were being materialized twice per request
+* Fetch ratings for the titles on the requested page rather than for every title in the group
+* Remove `EnsureGroupExists`, now that nothing calls it
+* Add integration coverage for the group-titles query parameters: pagination, page-past-the-last totals, `Content` null-vs-`[]`, `watched` and `titleType` filters, and ordering by `watched`, `watchedAt` and `addedAt`
+
 <a name="v0.1.1"></a>
 ## [v0.1.1](https://github.com/lealre/aftercredits-backend/compare/v0.1.0...v0.1.1) (2026-08-07)
 

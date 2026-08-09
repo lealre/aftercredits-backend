@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -14,7 +13,6 @@ import (
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
-	"github.com/lealre/movies-backend/internal/store"
 )
 
 func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -169,22 +167,22 @@ func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1 - Check the group exists for this user
-	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-		return
-	} else if err != nil {
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	}
 
 	// 2 - Check if user to be added to group exists
-	if ok, err := users.UserExists(api.Db, r.Context(), req.UserId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.UserId))
-		return
-	} else if err != nil {
+	if ok, err := users.UserExists(api.Db, r.Context(), req.UserId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", req.UserId))
 		return
 	}
 
@@ -224,14 +222,14 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 		titleTypePtr = &titleType
 	}
 
-	err := groups.EnsureGroupExists(api.Db, r.Context(), groupId, currentUser.Id)
-	if err != nil {
-		if errors.Is(err, store.ErrRecordNotFound) {
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-			return
-		}
+	// Existence/membership guard only — GroupExists is a single EXISTS query,
+	// where loading the group would materialize every title and season row.
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	}
 
@@ -255,15 +253,15 @@ func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := groups.EnsureGroupExists(api.Db, r.Context(), groupId, currentUser.Id)
-	if err != nil {
-		if errors.Is(err, store.ErrRecordNotFound) {
-			logger.Printf("Group with id %s not found", groupId)
-			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-			return
-		}
+	// Existence/membership guard only — GroupExists is a single EXISTS query,
+	// where loading the group would materialize every title and season row.
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		logger.Printf("Group with id %s not found", groupId)
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	}
 
@@ -293,12 +291,12 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupId := req.GroupId
-	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-		return
-	} else if err != nil {
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	}
 
@@ -376,12 +374,12 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, req.TitleId, currentUser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, req.TitleId))
-		return
-	} else if err != nil {
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, req.TitleId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, req.TitleId))
 		return
 	}
 
@@ -422,21 +420,21 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
-		return
-	} else if err != nil {
+	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group with id %s not found", groupId))
 		return
 	}
 
-	if ok, err := titles.TitleExists(api.Db, r.Context(), titleId); !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
-		return
-	} else if err != nil {
+	if ok, err := titles.TitleExists(api.Db, r.Context(), titleId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
 		return
 	}
 

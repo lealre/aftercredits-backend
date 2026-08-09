@@ -200,7 +200,7 @@ func GetTitlesFromGroup(
 		}, nil
 	}
 
-	if len(allTitlesIds) > 1 && (orderBy == "watchedAt" || orderBy == "addedAt") {
+	if len(allTitlesIds) > 1 && (orderBy == "watched" || orderBy == "watchedAt" || orderBy == "addedAt") {
 		isAscending := true
 		if ascending != nil {
 			isAscending = *ascending
@@ -208,6 +208,27 @@ func GetTitlesFromGroup(
 
 		// If its a group field sorting, we must sort on the ids order of the group titles.
 		// Later in GetPageOfTitles, it will mantain the order of the ids.
+		//
+		// Every branch here must impose a total order. allTitlesIds is built by
+		// ranging group.Titles, which is a map, so its starting order differs
+		// between requests; without a tie-break on the id the same query would
+		// return a different page each time.
+		if orderBy == "watched" {
+			sort.SliceStable(allTitlesIds, func(i, j int) bool {
+				left := titleGroupMap[allTitlesIds[i]]
+				right := titleGroupMap[allTitlesIds[j]]
+
+				if left.Watched == right.Watched {
+					return allTitlesIds[i] < allTitlesIds[j]
+				}
+				// Ascending puts unwatched first, matching ORDER BY watched ASC.
+				if isAscending {
+					return !left.Watched
+				}
+				return left.Watched
+			})
+		}
+
 		if orderBy == "addedAt" || orderBy == "watchedAt" {
 			getOrderValue := func(title models.GroupTitleItem) (timeValue *time.Time) {
 				if orderBy == "watchedAt" {
@@ -247,7 +268,14 @@ func GetTitlesFromGroup(
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
-	ratings, err := ratings.GetRatingsBatch(db, ctx, allTitlesIds)
+	// Only the titles on this page are read back below, so fetch ratings for
+	// those ids rather than for every title in the group.
+	pageTitleIds := make([]string, 0, len(titles.Content))
+	for _, title := range titles.Content {
+		pageTitleIds = append(pageTitleIds, title.Id)
+	}
+
+	ratings, err := ratings.GetRatingsBatch(db, ctx, pageTitleIds)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
@@ -586,12 +614,4 @@ func GroupExists(db store.Store, ctx context.Context, groupId, userId string) (b
 // contains the given title. Thin service passthrough.
 func GroupContainsTitle(db store.Store, ctx context.Context, groupId, titleId, userId string) (bool, error) {
 	return db.GroupContainsTitle(ctx, groupId, titleId, userId)
-}
-
-// EnsureGroupExists returns nil if the group exists for the user, or the
-// underlying error (store.ErrRecordNotFound when absent). Thin service
-// passthrough for handlers that only need the existence/ownership guard.
-func EnsureGroupExists(db store.Store, ctx context.Context, groupId, userId string) error {
-	_, err := db.GetGroupById(ctx, groupId, userId)
-	return err
 }
