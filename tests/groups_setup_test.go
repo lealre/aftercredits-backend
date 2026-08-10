@@ -360,9 +360,10 @@ type tiedTitlesFixture struct {
 
 // tiedSortKeys are the orderBy values a group-titles request routes through the
 // whitelisted-column branch of the store's sort (the LIMIT/OFFSET path whose
-// order must be total). watched/watchedAt/addedAt are deliberately absent: for a
-// group they take the array_position branch instead, which is ordered by the
-// service and covered by the existing ordering subtests.
+// order must be total). watched/watchedAt/addedAt are deliberately absent here:
+// those group-side keys sort via the same total-order SQL as every other key —
+// GetGroupTitlesPage's CASE-based ORDER BY, ending in the same t.id ASC
+// tie-break — and are covered by the existing ordering subtests instead.
 var tiedSortKeys = []string{"", "primaryTitle", "imdbRating", "startYear", "type", "voteCount", "updatedAt"}
 
 // setupTiedTitlesGroup seeds count movies and puts all of them in one group.

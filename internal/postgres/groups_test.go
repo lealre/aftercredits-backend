@@ -859,6 +859,33 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		require.EqualValues(t, 5, total, "an out-of-range page must still report the correct total")
 	})
 
+	t.Run("an extreme page number returns an empty page with the correct total instead of erroring", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "extreme-page", owner))
+		require.NoError(t, err)
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			title := newTestMovieTitle(t, fmt.Sprintf("tt-extreme-%d", i), name, 5.0)
+			require.NoError(t, s.AddTitle(ctx, title))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+		}
+
+		// page=30_000_000, size=100 makes (page-1)*size = 2_999_999_900, which
+		// overflows int32 (the generated query's PageOffset param type) and
+		// would wrap negative if cast directly, causing Postgres to reject it
+		// with "OFFSET must not be negative". This must instead take the
+		// zero-rows path and report the group's true title count.
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 100, 30_000_000)
+		require.NoError(t, err)
+		require.Equal(t, []models.GroupPagedTitle{}, got)
+		require.EqualValues(t, len(names), total)
+	})
+
 	t.Run("a group_titles row with no matching titles row is invisible to content and total", func(t *testing.T) {
 		resetDB(t)
 		s := newTestStore(t)

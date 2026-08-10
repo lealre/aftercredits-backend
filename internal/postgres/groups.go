@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -498,6 +499,25 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		watchedArg = pgtype.Bool{Bool: *watched, Valid: true}
 	}
 
+	// The service bounds size (<=100) but not page, so an extreme page can
+	// make (page-1)*size overflow int32 (the generated query's PageOffset
+	// param type) — e.g. page=30_000_000, size=100 wraps negative and
+	// Postgres rejects it with "OFFSET must not be negative", a 500. Compute
+	// in int64 first and, when it would overflow, skip the page query
+	// entirely: no row could ever exist at an offset that large, so this
+	// takes the same zero-rows path a past-the-end page already takes below —
+	// an empty page with the correct total, never an error.
+	offset := int64(page-1) * int64(size)
+	if offset > math.MaxInt32 {
+		total, err := s.q.CountGroupTitles(ctx, database.CountGroupTitlesParams{
+			GroupID: groupId, Watched: watchedArg, TitleTypes: titleTypes,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		return []models.GroupPagedTitle{}, total, nil
+	}
+
 	rows, err := s.q.GetGroupTitlesPage(ctx, database.GetGroupTitlesPageParams{
 		GroupID:    groupId,
 		Watched:    watchedArg,
@@ -505,7 +525,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		OrderBy:    orderBy,
 		Descending: descending,
 		PageSize:   int32(size),
-		PageOffset: int32((page - 1) * size),
+		PageOffset: int32(offset),
 	})
 	if err != nil {
 		return nil, 0, err
