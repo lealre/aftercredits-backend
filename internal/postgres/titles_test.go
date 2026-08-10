@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -331,6 +332,41 @@ func TestStore_GetTitlesPage(t *testing.T) {
 				require.ElementsMatch(t, want, got,
 					"paging by %q (ascending=%v) must return every row exactly once", orderBy, direction)
 			}
+		}
+	})
+
+	t.Run("an extreme page number returns an empty page with the correct total instead of erroring", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, fmt.Sprintf("tt-extreme-%d", i), name, 5.0)))
+		}
+
+		cases := []struct {
+			name string
+			page int
+		}{
+			// (page-1)*size overflows int32 (the generated query's PageOffset
+			// param type) and would wrap negative if cast directly, causing
+			// Postgres to reject it with "OFFSET must not be negative".
+			{"page-1 * size wraps to a small positive int64", 92_233_720_368_547_760},
+			// page-1 is near MaxInt64; multiplying by size=100 in int64 BEFORE
+			// the overflow guard would itself wrap to a small negative int64,
+			// reintroducing the original "OFFSET must not be negative" 500.
+			// The guard must reject this by comparing before any multiply,
+			// not after.
+			{"page-1 near MaxInt64: int64 multiply would wrap negative", math.MaxInt64},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				got, total, err := s.GetTitlesPage(ctx, "", nil, 100, tc.page)
+				require.NoError(t, err)
+				require.Equal(t, []models.Title{}, got)
+				require.EqualValues(t, len(names), total)
+			})
 		}
 	})
 }

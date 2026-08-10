@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countTitles = `-- name: CountTitles :one
+SELECT count(*) FROM titles
+`
+
+func (q *Queries) CountTitles(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTitles)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteTitle = `-- name: DeleteTitle :execrows
 DELETE FROM titles WHERE id = $1
 `
@@ -42,6 +53,74 @@ func (q *Queries) GetTitleById(ctx context.Context, id string) (Title, error) {
 		&i.Metadata,
 	)
 	return i, err
+}
+
+const getTitlesPage = `-- name: GetTitlesPage :many
+SELECT id, primary_title, type, start_year, rating_aggregate, vote_count, added_at, updated_at, metadata
+FROM titles
+ORDER BY
+    CASE WHEN $1::text IN ('', 'primaryTitle') AND NOT $2::bool THEN primary_title END ASC,
+    CASE WHEN $1::text IN ('', 'primaryTitle') AND $2::bool     THEN primary_title END DESC,
+    CASE WHEN $1::text = 'imdbRating' AND NOT $2::bool THEN rating_aggregate END ASC,
+    CASE WHEN $1::text = 'imdbRating' AND $2::bool     THEN rating_aggregate END DESC,
+    CASE WHEN $1::text = 'startYear'  AND NOT $2::bool THEN start_year END ASC,
+    CASE WHEN $1::text = 'startYear'  AND $2::bool     THEN start_year END DESC,
+    CASE WHEN $1::text = 'type'       AND NOT $2::bool THEN type END ASC,
+    CASE WHEN $1::text = 'type'       AND $2::bool     THEN type END DESC,
+    CASE WHEN $1::text = 'voteCount'  AND NOT $2::bool THEN vote_count END ASC,
+    CASE WHEN $1::text = 'voteCount'  AND $2::bool     THEN vote_count END DESC,
+    CASE WHEN $1::text = 'addedAt'    AND NOT $2::bool THEN added_at END ASC,
+    CASE WHEN $1::text = 'addedAt'    AND $2::bool     THEN added_at END DESC,
+    CASE WHEN $1::text = 'updatedAt'  AND NOT $2::bool THEN updated_at END ASC,
+    CASE WHEN $1::text = 'updatedAt'  AND $2::bool     THEN updated_at END DESC,
+    id ASC
+LIMIT $4 OFFSET $3
+`
+
+type GetTitlesPageParams struct {
+	OrderBy    string
+	Descending bool
+	PageOffset int32
+	PageSize   int32
+}
+
+// Static total ORDER BY (CONVENTIONS §6 — ends in id ASC). order_by arrives
+// pre-normalized (unknown keys -> ”). No NULLS FIRST/LAST anywhere: Postgres'
+// defaults keep deciding where NULL sort values land (added_at/updated_at are
+// the only nullable keys), exactly as the hand-written version behaved.
+func (q *Queries) GetTitlesPage(ctx context.Context, arg GetTitlesPageParams) ([]Title, error) {
+	rows, err := q.db.Query(ctx, getTitlesPage,
+		arg.OrderBy,
+		arg.Descending,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Title
+	for rows.Next() {
+		var i Title
+		if err := rows.Scan(
+			&i.ID,
+			&i.PrimaryTitle,
+			&i.Type,
+			&i.StartYear,
+			&i.RatingAggregate,
+			&i.VoteCount,
+			&i.AddedAt,
+			&i.UpdatedAt,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertTitle = `-- name: InsertTitle :exec

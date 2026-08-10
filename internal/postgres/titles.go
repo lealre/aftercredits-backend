@@ -2,7 +2,7 @@ package postgres
 
 import (
 	"context"
-	"fmt"
+	"math"
 
 	"github.com/lealre/movies-backend/internal/database"
 	"github.com/lealre/movies-backend/internal/models"
@@ -45,32 +45,38 @@ func (s *Store) TitleExists(ctx context.Context, id string) (bool, error) {
 	return s.q.TitleExists(ctx, id)
 }
 
-// titleOrderColumns is the FIXED whitelist of orderBy -> titles column used
-// by GetTitlesPage. Column names in the generated SQL come ONLY from this
-// map — the caller-supplied orderBy string is never interpolated directly.
-// Applies the remapping ("" and "imdbRating"), plus every other titles
-// column a client can reasonably ask to sort by. Any orderBy value not
-// present here (including "watched", which has no titles-table equivalent)
-// falls back to the same column as "" (primary_title).
-var titleOrderColumns = map[string]string{
-	"":             "primary_title",
-	"primaryTitle": "primary_title",
-	"imdbRating":   "rating_aggregate",
-	"startYear":    "start_year",
-	"type":         "type",
-	"voteCount":    "vote_count",
-	"addedAt":      "added_at",
-	"updatedAt":    "updated_at",
+// titleOrderKeys is the sort-key whitelist for GetTitlesPage. Unknown keys
+// normalize to "" (primary_title), keeping the requested direction — the
+// same fallback GetGroupTitlesPage applies. The actual column mapping now
+// lives entirely in the CASE-paired static ORDER BY in sql/queries/titles.sql
+// (GetTitlesPage); the caller-supplied orderBy string is never interpolated
+// directly into SQL.
+var titleOrderKeys = map[string]bool{
+	"": true, "primaryTitle": true, "imdbRating": true, "startYear": true,
+	"type": true, "voteCount": true, "addedAt": true, "updatedAt": true,
 }
 
 // GetTitlesPage pages and sorts titles against the
 // hybrid JSONB titles table:
 //
-//   - total is COUNT(*) over the whole table.
-//   - ORDER BY <whitelisted column> <ASC|DESC>, column from titleOrderColumns,
-//     direction from ascending (default ASC).
+//   - total is COUNT(*) over the whole table (CountTitles), fetched
+//     unconditionally, same shape as before.
+//   - ORDER BY is static in SQL, CASE-paired per whitelisted sort key with
+//     direction from ascending (default ASC — see GetTitlesPage in
+//     sql/queries/titles.sql). No NULLS FIRST/LAST is added: Postgres'
+//     defaults (NULLS LAST for ASC, NULLS FIRST for DESC) keep deciding where
+//     rows with a NULL sort value land, so nothing a client sees moves.
+//     added_at and updated_at are the only nullable sort keys
+//     (rating_aggregate and vote_count are NOT NULL DEFAULT 0, so a "missing"
+//     rating sorts as 0, not as NULL).
 //   - Every result ends in a deterministic "id ASC" tie-break, so the order is
-//     total and paging cannot repeat or skip a row (see the ORDER BY below).
+//     total and paging cannot repeat or skip a row (CONVENTIONS §6): a
+//     non-total order under paging lets Postgres return the same row on two
+//     pages while never returning another. id is the primary key — unique
+//     and NOT NULL — so appending it makes the order total. The tie-break is
+//     pinned to ASC and never flipped with the requested direction: its only
+//     job is to make ties deterministic, and a fixed direction keeps the rule
+//     simple and identical for every sort key.
 //   - LIMIT size OFFSET (page-1)*size, matching the previous skip/limit
 //     computation verbatim (no extra clamping here; that's the service
 //     layer's job).
@@ -80,74 +86,56 @@ func (s *Store) GetTitlesPage(
 	ascending *bool,
 	size, page int,
 ) ([]models.Title, int64, error) {
-	var total int64
-	if err := s.pool.QueryRow(ctx, "SELECT count(*) FROM titles").Scan(&total); err != nil {
-		return nil, 0, err
+	if !titleOrderKeys[orderBy] {
+		orderBy = ""
 	}
+	descending := ascending != nil && !*ascending
 
-	direction := "ASC"
-	if ascending != nil && !*ascending {
-		direction = "DESC"
-	}
-
-	column, ok := titleOrderColumns[orderBy]
-	if !ok {
-		column = titleOrderColumns[""]
-	}
-	// No NULLS FIRST/LAST is added: Postgres' defaults (NULLS LAST for ASC,
-	// NULLS FIRST for DESC) keep deciding where rows with a NULL sort value
-	// land, so nothing a client sees moves. added_at and updated_at are the
-	// only nullable columns in titleOrderColumns (rating_aggregate and
-	// vote_count are NOT NULL DEFAULT 0, so a "missing" rating sorts as 0,
-	// not as NULL). NULLs tie with one another for sorting, so the appended
-	// id only fixes the previously arbitrary order *within* that tie group.
-	//
-	// The tie-break is pinned to ASC and is never flipped with `direction`:
-	// its only job is to make ties deterministic, and a fixed direction keeps
-	// the rule simple to state and identical for every sort key. Which rows
-	// tie is decided entirely by the primary key, so the visible ordering is
-	// unaffected either way. It also feeds LIMIT/OFFSET: a non-total order
-	// under paging lets Postgres return the same row on two pages while never
-	// returning another (CONVENTIONS §6). id is the primary key — unique and
-	// NOT NULL — so appending it makes the order total.
-	orderClause := fmt.Sprintf("ORDER BY %s %s, id ASC", column, direction)
-
-	query := fmt.Sprintf(
-		`SELECT id, primary_title, type, start_year, rating_aggregate, vote_count, added_at, updated_at, metadata
-		 FROM titles %s LIMIT $1 OFFSET $2`,
-		orderClause,
-	)
-
-	rows, err := s.pool.Query(ctx, query, size, (page-1)*size)
+	total, err := s.q.CountTitles(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
 
-	titles := []models.Title{}
-	for rows.Next() {
-		var row database.Title
-		if err := rows.Scan(
-			&row.ID,
-			&row.PrimaryTitle,
-			&row.Type,
-			&row.StartYear,
-			&row.RatingAggregate,
-			&row.VoteCount,
-			&row.AddedAt,
-			&row.UpdatedAt,
-			&row.Metadata,
-		); err != nil {
-			return nil, 0, err
-		}
+	// The service bounds size (<=100) but not page, so an extreme page can
+	// make (page-1)*size overflow int32 (the generated query's PageOffset
+	// param type) — e.g. page=30_000_000, size=100 wraps negative and
+	// Postgres rejects it with "OFFSET must not be negative", a 500. page
+	// itself is unbounded (Atoi allows up to MaxInt64), so (page-1)*size can
+	// also overflow int64 before the result is ever compared against
+	// MaxInt32 — the guard below MUST run before any multiplication, not
+	// after computing the product.
+	//
+	// (page-1) cannot overflow on its own (page >= 1 assumed from the service
+	// layer, same as size >= 1). Comparing it against the floor division
+	// math.MaxInt32/size predicts whether the product would exceed MaxInt32
+	// without ever computing that product: for positive integers a, b, N,
+	// a > N/b (floor) implies a*b > N. So once this guard is false, the
+	// multiply that builds offset below is provably in int32 range.
+	if int64(page-1) > math.MaxInt32/int64(size) {
+		// No row could ever exist at such an offset; same fallback as a
+		// past-the-end page takes below — an empty page with the correct
+		// total, never an error.
+		return []models.Title{}, total, nil
+	}
+	offset := int32((page - 1) * size) // now provably in range
+
+	rows, err := s.q.GetTitlesPage(ctx, database.GetTitlesPageParams{
+		OrderBy:    orderBy,
+		Descending: descending,
+		PageSize:   int32(size),
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	titles := make([]models.Title, 0, len(rows))
+	for _, row := range rows {
 		title, err := rowToTitle(row)
 		if err != nil {
 			return nil, 0, err
 		}
 		titles = append(titles, title)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, err
 	}
 
 	return titles, total, nil
