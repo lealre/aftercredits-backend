@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -875,15 +876,34 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
 		}
 
-		// page=30_000_000, size=100 makes (page-1)*size = 2_999_999_900, which
-		// overflows int32 (the generated query's PageOffset param type) and
-		// would wrap negative if cast directly, causing Postgres to reject it
-		// with "OFFSET must not be negative". This must instead take the
-		// zero-rows path and report the group's true title count.
-		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 100, 30_000_000)
-		require.NoError(t, err)
-		require.Equal(t, []models.GroupPagedTitle{}, got)
-		require.EqualValues(t, len(names), total)
+		cases := []struct {
+			name string
+			page int
+		}{
+			// (page-1)*size = 2_999_999_900, which overflows int32 (the
+			// generated query's PageOffset param type) and would wrap
+			// negative if cast directly, causing Postgres to reject it with
+			// "OFFSET must not be negative".
+			{"overflows int32 only", 30_000_000},
+			// page-1 is near MaxInt64; multiplying by size=100 in int64
+			// BEFORE the overflow guard would itself wrap to a small
+			// negative int64 (offset -200), reintroducing the original
+			// "OFFSET must not be negative" 500. The guard must reject this
+			// by comparing before any multiply, not after.
+			{"page-1 near MaxInt64: int64 multiply would wrap negative", math.MaxInt64},
+			// page-1 * size wraps to a small POSITIVE int64 (92) if the
+			// guard multiplies first — which would silently return some
+			// unrelated page's rows instead of erroring or emptying out.
+			{"page-1 * size wraps to a small positive int64", 92_233_720_368_547_760},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 100, tc.page)
+				require.NoError(t, err)
+				require.Equal(t, []models.GroupPagedTitle{}, got)
+				require.EqualValues(t, len(names), total)
+			})
+		}
 	})
 
 	t.Run("a group_titles row with no matching titles row is invisible to content and total", func(t *testing.T) {

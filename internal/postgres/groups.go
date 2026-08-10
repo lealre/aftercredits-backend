@@ -502,13 +502,22 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 	// The service bounds size (<=100) but not page, so an extreme page can
 	// make (page-1)*size overflow int32 (the generated query's PageOffset
 	// param type) — e.g. page=30_000_000, size=100 wraps negative and
-	// Postgres rejects it with "OFFSET must not be negative", a 500. Compute
-	// in int64 first and, when it would overflow, skip the page query
-	// entirely: no row could ever exist at an offset that large, so this
-	// takes the same zero-rows path a past-the-end page already takes below —
-	// an empty page with the correct total, never an error.
-	offset := int64(page-1) * int64(size)
-	if offset > math.MaxInt32 {
+	// Postgres rejects it with "OFFSET must not be negative", a 500. page
+	// itself is unbounded (Atoi allows up to MaxInt64), so (page-1)*size can
+	// also overflow int64 before the result is ever compared against
+	// MaxInt32 — the guard below MUST run before any multiplication, not
+	// after computing the product.
+	//
+	// (page-1) cannot overflow on its own (page >= 1 after service
+	// normalization). Comparing it against the floor division
+	// math.MaxInt32/size predicts whether the product would exceed MaxInt32
+	// without ever computing that product: for positive integers a, b, N,
+	// a > N/b (floor) implies a*b > N. So once this guard is false, the
+	// multiply that builds offset below is provably in int32 range.
+	if int64(page-1) > math.MaxInt32/int64(size) {
+		// No row could ever exist at such an offset; same fallback as a
+		// past-the-end page takes below — an empty page with the correct
+		// total, never an error.
 		total, err := s.q.CountGroupTitles(ctx, database.CountGroupTitlesParams{
 			GroupID: groupId, Watched: watchedArg, TitleTypes: titleTypes,
 		})
@@ -517,6 +526,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		}
 		return []models.GroupPagedTitle{}, total, nil
 	}
+	offset := int32((page - 1) * size) // now provably in range
 
 	rows, err := s.q.GetGroupTitlesPage(ctx, database.GetGroupTitlesPageParams{
 		GroupID:    groupId,
@@ -525,7 +535,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		OrderBy:    orderBy,
 		Descending: descending,
 		PageSize:   int32(size),
-		PageOffset: int32(offset),
+		PageOffset: offset,
 	})
 	if err != nil {
 		return nil, 0, err
