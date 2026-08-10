@@ -24,16 +24,9 @@ func GetPageOfTitles(
 ) (generics.Page[Title], error) {
 
 	// App-level pagination normalization - stays in the service, it has
-	// nothing to do with the storage backend.
-	if size <= 0 {
-		size = config.DefaultPageSize()
-	}
-	if maxSize := config.MaxPageSize(); size > maxSize {
-		size = maxSize
-	}
-	if page <= 0 {
-		page = 1
-	}
+	// nothing to do with the storage backend. Shared with the group-titles
+	// listing so the two cannot drift.
+	size, page = config.NormalizePageParams(size, page)
 
 	// Everything storage-specific (filter/pipeline construction, the two
 	// sort strategies, and the orderBy field remapping) lives in the store.

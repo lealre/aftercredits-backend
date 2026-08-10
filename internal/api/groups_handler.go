@@ -222,8 +222,10 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 		titleTypePtr = &titleType
 	}
 
-	// Existence/membership guard only — GroupExists is a single EXISTS query,
-	// where loading the group would materialize every title and season row.
+	// The one existence/membership guard for this endpoint — GroupExists is a
+	// single EXISTS query, where loading the group would materialize every
+	// title and season row. GetTitlesFromGroup deliberately does not repeat
+	// it, so this must stay.
 	if ok, err := groups.GroupExists(api.Db, r.Context(), groupId, currentUser.Id); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
@@ -233,8 +235,12 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	titles, err := groups.GetTitlesFromGroup(api.Db, r.Context(), groupId, currentUser.Id, size, page, orderBy, watched, ascending, titleTypePtr)
+	titles, err := groups.GetTitlesFromGroup(api.Db, r.Context(), groupId, size, page, orderBy, watched, ascending, titleTypePtr)
 	if err != nil {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return

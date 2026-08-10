@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -485,6 +484,24 @@ var groupTitlesOrderKeys = map[string]bool{
 	"watched": true, "watchedAt": true, "addedAt": true,
 }
 
+// GroupHasTitleEntries reports whether the group holds any title entry
+// matching the same filters GetGroupTitlesPage applies, counting entries whose
+// title is no longer in the catalogue (GetGroupTitlesPage's INNER JOIN hides
+// those, so its total alone cannot tell an empty group from a fully orphaned
+// one). See the query comment in sql/queries/groups.sql for why the join side
+// is a LEFT JOIN and what the caller does with the answer.
+func (s *Store) GroupHasTitleEntries(ctx context.Context, groupId string, watched *bool, titleTypes []string) (bool, error) {
+	var watchedArg pgtype.Bool
+	if watched != nil {
+		watchedArg = pgtype.Bool{Bool: *watched, Valid: true}
+	}
+	return s.q.GroupHasTitleEntries(ctx, database.GroupHasTitleEntriesParams{
+		GroupID:    groupId,
+		Watched:    watchedArg,
+		TitleTypes: titleTypes, // nil slice -> SQL NULL -> filter off
+	})
+}
+
 // GetGroupTitlesPage returns one page of a group's titles — full title plus
 // this group's watch-state, seasons stitched in — with the post-filter total.
 // Filters are nil-defaulted; the ORDER BY is total (ends in t.id ASC).
@@ -499,25 +516,10 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		watchedArg = pgtype.Bool{Bool: *watched, Valid: true}
 	}
 
-	// The service bounds size (<=100) but not page, so an extreme page can
-	// make (page-1)*size overflow int32 (the generated query's PageOffset
-	// param type) — e.g. page=30_000_000, size=100 wraps negative and
-	// Postgres rejects it with "OFFSET must not be negative", a 500. page
-	// itself is unbounded (Atoi allows up to MaxInt64), so (page-1)*size can
-	// also overflow int64 before the result is ever compared against
-	// MaxInt32 — the guard below MUST run before any multiplication, not
-	// after computing the product.
-	//
-	// (page-1) cannot overflow on its own (page >= 1 after service
-	// normalization). Comparing it against the floor division
-	// math.MaxInt32/size predicts whether the product would exceed MaxInt32
-	// without ever computing that product: for positive integers a, b, N,
-	// a > N/b (floor) implies a*b > N. So once this guard is false, the
-	// multiply that builds offset below is provably in int32 range.
-	if int64(page-1) > math.MaxInt32/int64(size) {
-		// No row could ever exist at such an offset; same fallback as a
-		// past-the-end page takes below — an empty page with the correct
-		// total, never an error.
+	// Whenever no row can be returned, the window-function total goes with
+	// them, so the total has to come from the companion count over the same
+	// WHERE. Every such exit uses this.
+	emptyPage := func() ([]models.GroupPagedTitle, int64, error) {
 		total, err := s.q.CountGroupTitles(ctx, database.CountGroupTitlesParams{
 			GroupID: groupId, Watched: watchedArg, TitleTypes: titleTypes,
 		})
@@ -526,7 +528,14 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		}
 		return []models.GroupPagedTitle{}, total, nil
 	}
-	offset := int32((page - 1) * size) // now provably in range
+
+	// A non-positive size or an offset that would overflow int64 selects no
+	// row at all (see pageOffset): same fallback as a past-the-end page takes
+	// below — an empty page with the correct total, never an error.
+	offset, ok := pageOffset(size, page)
+	if !ok {
+		return emptyPage()
+	}
 
 	rows, err := s.q.GetGroupTitlesPage(ctx, database.GetGroupTitlesPageParams{
 		GroupID:    groupId,
@@ -534,7 +543,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		TitleTypes: titleTypes, // nil slice -> SQL NULL -> filter off
 		OrderBy:    orderBy,
 		Descending: descending,
-		PageSize:   int32(size),
+		PageSize:   int64(size),
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -544,29 +553,45 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 	if len(rows) == 0 {
 		// Empty result set and past-the-end page look identical here; the
 		// companion count keeps the total correct either way.
-		total, err := s.q.CountGroupTitles(ctx, database.CountGroupTitlesParams{
-			GroupID: groupId, Watched: watchedArg, TitleTypes: titleTypes,
+		return emptyPage()
+	}
+	total := rows[0].TotalCount
+
+	// group_title_seasons rows are only ever written for a TV series — the
+	// season watched-update refuses any other title type — so a page holding
+	// no series cannot have any, and asking for them is a round trip whose
+	// answer is known to be empty. The page rows already carry the type, so
+	// the decision costs nothing.
+	//
+	// Leaving seasonsByTitle nil in that case is deliberate and safe:
+	// indexing a nil map yields the nil slice, which assembleSeasonsWatched
+	// maps to a nil SeasonsWatched — exactly the "no season rows" shape the
+	// contract requires (CONVENTIONS §5: the season maps are nil when absent,
+	// never an empty map), and the same value the query would have produced.
+	hasSeries := false
+	for _, r := range rows {
+		if models.IsSeriesTitleType(r.Type) {
+			hasSeries = true
+			break
+		}
+	}
+
+	var seasonsByTitle map[string][]database.GroupTitleSeason
+	if hasSeries {
+		titleIds := make([]string, 0, len(rows))
+		for _, r := range rows {
+			titleIds = append(titleIds, r.ID)
+		}
+		seasonRows, err := s.q.GetGroupTitleSeasonRowsForTitles(ctx, database.GetGroupTitleSeasonRowsForTitlesParams{
+			GroupID: groupId, TitleIds: titleIds,
 		})
 		if err != nil {
 			return nil, 0, err
 		}
-		return []models.GroupPagedTitle{}, total, nil
-	}
-	total := rows[0].TotalCount
-
-	titleIds := make([]string, 0, len(rows))
-	for _, r := range rows {
-		titleIds = append(titleIds, r.ID)
-	}
-	seasonRows, err := s.q.GetGroupTitleSeasonRowsForTitles(ctx, database.GetGroupTitleSeasonRowsForTitlesParams{
-		GroupID: groupId, TitleIds: titleIds,
-	})
-	if err != nil {
-		return nil, 0, err
-	}
-	seasonsByTitle := map[string][]database.GroupTitleSeason{}
-	for _, sr := range seasonRows {
-		seasonsByTitle[sr.TitleID] = append(seasonsByTitle[sr.TitleID], sr)
+		seasonsByTitle = make(map[string][]database.GroupTitleSeason, len(seasonRows))
+		for _, sr := range seasonRows {
+			seasonsByTitle[sr.TitleID] = append(seasonsByTitle[sr.TitleID], sr)
+		}
 	}
 
 	out := make([]models.GroupPagedTitle, 0, len(rows))
@@ -583,7 +608,20 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		out = append(out, models.GroupPagedTitle{
 			Title: title,
 			Item: models.GroupTitleItem{
-				TitleId:        r.ID,
+				TitleId: r.ID,
+				// Deliberately titles.type, NOT group_titles.title_type.
+				// The two are independent stores of the same fact and they
+				// disagree in practice: title_type is stamped once at
+				// add-to-group time — always the literal "movie", see
+				// AddNewGroupTitle — and never refreshed, while titles.type
+				// tracks the catalogue. On the production database 98 of 122
+				// group_titles rows are wrong under the old source (88 hold
+				// the schema default "" and 10 say "movie" for a
+				// tvSeries/tvMiniSeries), so reading it back would report a
+				// series as a movie. This page is also filtered by
+				// titles.type (see GetGroupTitlesPage in
+				// sql/queries/groups.sql), and a row must not claim a type
+				// its own filter contradicts.
 				TitleType:      title.Type,
 				SeasonsWatched: assembleSeasonsWatched(seasonsByTitle[r.ID]),
 				Watched:        r.GtWatched,

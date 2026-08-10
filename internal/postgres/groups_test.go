@@ -880,11 +880,11 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 			name string
 			page int
 		}{
-			// (page-1)*size = 2_999_999_900, which overflows int32 (the
-			// generated query's PageOffset param type) and would wrap
-			// negative if cast directly, causing Postgres to reject it with
-			// "OFFSET must not be negative".
-			{"overflows int32 only", 30_000_000},
+			// (page-1)*size = 2_999_999_900, past the end of any real table
+			// and past int32 — it reaches Postgres as a bigint OFFSET and
+			// must come back as an empty page, not as the "OFFSET must not
+			// be negative" 500 a narrowing cast used to produce.
+			{"exceeds int32 but not int64", 30_000_000},
 			// page-1 is near MaxInt64; multiplying by size=100 in int64
 			// BEFORE the overflow guard would itself wrap to a small
 			// negative int64 (offset -200), reintroducing the original
@@ -904,6 +904,79 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 				require.EqualValues(t, len(names), total)
 			})
 		}
+	})
+
+	// Clamping size is the service's job, so it arrives here unvalidated, and
+	// this method is reachable directly (this file). A non-positive size must
+	// page to nothing, the way it did when size was only ever bound as a
+	// LIMIT parameter. size == 0 in particular must never reach the offset
+	// guard's division by size: this process has no panic-recovery
+	// middleware, so an integer divide-by-zero there takes the whole server
+	// down rather than failing one request.
+	t.Run("a non-positive size returns an empty page with the correct total", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "non-positive-size", owner))
+		require.NoError(t, err)
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			title := newTestMovieTitle(t, fmt.Sprintf("tt-size-%d", i), name, 5.0)
+			require.NoError(t, s.AddTitle(ctx, title))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+		}
+
+		for _, size := range []int{0, -1, math.MinInt64} {
+			t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
+				for _, page := range []int{1, 2, math.MaxInt64} {
+					// Asserted through NotPanics rather than called directly:
+					// without the guard this is an integer divide-by-zero, and
+					// an unrecovered panic aborts the whole test binary instead
+					// of reporting which case regressed.
+					var (
+						got   []models.GroupPagedTitle
+						total int64
+						err   error
+					)
+					require.NotPanics(t, func() {
+						got, total, err = s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, size, page)
+					}, "size=%d page=%d must not panic", size, page)
+					require.NoError(t, err, "size=%d page=%d must not error", size, page)
+					require.Equal(t, []models.GroupPagedTitle{}, got, "size=%d page=%d must page to nothing", size, page)
+					require.EqualValues(t, len(names), total, "size=%d page=%d must still report the real total", size, page)
+				}
+			})
+		}
+	})
+
+	// MAX_PAGE_SIZE is env-configurable with no upper bound, so the clamped
+	// size the service passes down can legitimately exceed int32. Narrowing it
+	// to the generated LIMIT parameter used to wrap it negative, and Postgres
+	// rejects a negative LIMIT outright — every request would 500. page_size
+	// is a bigint for exactly this reason.
+	t.Run("a size larger than int32 is not narrowed", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "wide-size", owner))
+		require.NoError(t, err)
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			title := newTestMovieTitle(t, fmt.Sprintf("tt-wide-%d", i), name, 5.0)
+			require.NoError(t, s.AddTitle(ctx, title))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+		}
+
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, math.MaxInt32+1, 1)
+		require.NoError(t, err, "a size past int32 must not wrap into a negative LIMIT")
+		require.Len(t, got, len(names), "a size that large must simply return every row")
+		require.EqualValues(t, len(names), total)
 	})
 
 	t.Run("a group_titles row with no matching titles row is invisible to content and total", func(t *testing.T) {
@@ -930,6 +1003,46 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		require.EqualValues(t, 1, total)
 		require.Len(t, got, 1)
 		require.Equal(t, present.ID, got[0].Title.ID)
+	})
+
+	// group_titles.title_type and titles.type are independent stores of the
+	// same fact, and they disagree constantly: AddNewGroupTitle stamps the
+	// literal "movie" on every entry and nothing ever refreshes it, so on the
+	// production database 98 of 122 rows carry a title_type that contradicts
+	// the catalogue. This page reads the catalogue, deliberately — the same
+	// column it filters titleType on, so a returned row can never claim a type
+	// that its own filter would have excluded.
+	t.Run("TitleType comes from the catalogue, not from the stale group_titles column", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "title-type-source", owner))
+		require.NoError(t, err)
+
+		series := newTestMovieTitle(t, "tt-type-source", "A Series", 5.0)
+		series.Type = "tvSeries"
+		require.NoError(t, s.AddTitle(ctx, series))
+
+		// What AddNewGroupTitle would have written: "movie", now stale.
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, series.ID, "movie", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, "tvSeries", got[0].Item.TitleType,
+			"the paged item must report the catalogue's type, not the stale group_titles.title_type")
+		require.Equal(t, "tvSeries", got[0].Title.Type,
+			"the item's type must agree with the title it was joined to")
+
+		// And the filter agrees with what the row reports: asking for movies
+		// excludes it entirely.
+		movies, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, []string{"movie"}, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.Empty(t, movies, "a titleType=movie filter must not return a title the catalogue calls a series")
+		require.EqualValues(t, 0, total)
 	})
 
 	t.Run("seasons stitching: a series gets non-nil SeasonsWatched, a movie gets nil", func(t *testing.T) {

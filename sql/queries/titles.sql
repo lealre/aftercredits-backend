@@ -32,6 +32,11 @@ SELECT count(*) FROM titles;
 -- pre-normalized (unknown keys -> ''). No NULLS FIRST/LAST anywhere: Postgres'
 -- defaults keep deciding where NULL sort values land (added_at/updated_at are
 -- the only nullable keys), exactly as the hand-written version behaved.
+--
+-- page_size/page_offset are cast to bigint so sqlc generates int64 params:
+-- Go's page/size are plain ints, and narrowing them to int32 could wrap
+-- negative (MAX_PAGE_SIZE is env-configurable without an upper bound), which
+-- Postgres rejects with "LIMIT/OFFSET must not be negative".
 SELECT id, primary_title, type, start_year, rating_aggregate, vote_count, added_at, updated_at, metadata
 FROM titles
 ORDER BY
@@ -50,4 +55,4 @@ ORDER BY
     CASE WHEN sqlc.arg('order_by')::text = 'updatedAt'  AND NOT sqlc.arg('descending')::bool THEN updated_at END ASC,
     CASE WHEN sqlc.arg('order_by')::text = 'updatedAt'  AND sqlc.arg('descending')::bool     THEN updated_at END DESC,
     id ASC
-LIMIT sqlc.arg('page_size') OFFSET sqlc.arg('page_offset');
+LIMIT sqlc.arg('page_size')::bigint OFFSET sqlc.arg('page_offset')::bigint;

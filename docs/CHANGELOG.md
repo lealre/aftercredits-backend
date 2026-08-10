@@ -22,6 +22,8 @@ had.
 * Fix a database blip logging everyone out. Any error other than "user not found" while loading the caller left the auth middleware looking at an empty user, which it reported as `401 Invalid or inactive user` — and never logged. A transient store failure is now a logged `500`; a genuinely unknown or deactivated user still gets the same `401` as before
 * Guard `GET /groups/{id}/titles` and `GET /groups/{id}/users` with a single `EXISTS` query instead of loading the whole group and discarding it — the group, its members, every group title and every season row were being materialized twice per request
 * Fetch ratings for the titles on the requested page rather than for every title in the group
+* **`GET /groups/{id}/titles` now reads through a single SQL query.** It used to load the whole group — every member, every title and every season row — then filter, sort and paginate in memory before re-fetching the page. Filtering, sorting, paging and the result count now happen in one round trip in the database. Responses are unchanged, field for field, including the ordering of every sort key and how an empty page is represented
+* Sorting a group's titles by `watched`, `watchedAt` or `addedAt` is now paginated by the database like every other sort key, and carries the same title-id tie-break, so those three can no longer repeat or skip a title across pages either
 * Remove `EnsureGroupExists`, now that nothing calls it
 * Add integration coverage for the group-titles query parameters: pagination, page-past-the-last totals, `Content` null-vs-`[]`, `watched` and `titleType` filters, and ordering by `watched`, `watchedAt` and `addedAt`
 * Move `CHANGELOG.md` and `CONVENTIONS.md` under `docs/`

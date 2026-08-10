@@ -118,66 +118,81 @@ func AddUserToGroup(db store.Store, ctx context.Context, groupId, ownerId, userI
 	return nil
 }
 
+// GetTitlesFromGroup returns one page of a group's titles.
+//
+// It does NOT check that the group exists or that the caller may see it: the
+// caller must have established that first. The HTTP handler does, with
+// groups.GroupExists — a single EXISTS whose 404 this function cannot improve
+// on — so running the same check again here would only add a round trip to
+// the endpoint. That is also why it takes no userId: an ignored one would
+// imply a per-user scoping this function does not perform.
 func GetTitlesFromGroup(
 	db store.Store,
 	ctx context.Context,
-	groupId, userId string,
+	groupId string,
 	size, page int,
 	orderBy string,
 	watched *bool,
 	ascending *bool,
 	titleType *string,
 ) (generics.Page[GroupTitleDetail], error) {
-	ok, err := db.GroupExists(ctx, groupId, userId)
-	if err != nil {
-		return generics.Page[GroupTitleDetail]{}, err
-	}
-	if !ok {
-		return generics.Page[GroupTitleDetail]{}, ErrGroupNotFound
-	}
-
 	// API vocabulary -> title.type values; anything unrecognized means no
 	// filter, matching the previous behavior.
 	var titleTypes []string
 	if titleType != nil {
 		switch *titleType {
 		case "serie":
-			titleTypes = []string{"tvSeries", "tvMiniSeries"}
+			titleTypes = models.SeriesTitleTypes()
 		case "movie":
 			titleTypes = []string{"movie"}
 		}
 	}
 
-	// App-level pagination normalization for the query itself, mirroring
-	// titles.GetPageOfTitles. The raw, caller-given size/page are kept for the
-	// zero-total response below, matching the previous early-return shape.
-	querySize := size
-	if querySize <= 0 {
-		querySize = config.DefaultPageSize()
-	}
-	if maxSize := config.MaxPageSize(); querySize > maxSize {
-		querySize = maxSize
-	}
-	queryPage := page
-	if queryPage <= 0 {
-		queryPage = 1
-	}
+	// App-level pagination normalization for the query itself, shared with
+	// titles.GetPageOfTitles. The raw, caller-given size/page are deliberately
+	// kept alongside: the "group holds nothing to page over" response below
+	// reports them unnormalized — see the comment there.
+	querySize, queryPage := config.NormalizePageParams(size, page)
 
 	pageRows, total, err := db.GetGroupTitlesPage(ctx, groupId, watched, titleTypes, orderBy, ascending, querySize, queryPage)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
-	// Covers a plain empty group as well as a watched/titleType filter that
-	// matches nothing.
+	// Three distinct situations produce an empty page, and clients can tell
+	// two shapes apart (`"Content":[]` vs `"Content":null`, plus whether
+	// size/page are normalized), so the split is an observable API contract
+	// (CONVENTIONS §5) that this function must keep:
+	//
+	//  1. the group holds no title entry matching the filters — an empty
+	//     group, or a watched/titleType filter that matches none of its
+	//     entries: `[]`, with the caller's raw size/page echoed back;
+	//  2. every matching entry points at a title that is gone from the
+	//     catalogue (group_titles has no FK to titles, so entries outlive
+	//     deleted titles): `null`, with normalized size/page;
+	//  3. the requested page is past the last one: `null`, with normalized
+	//     size/page and a non-zero total.
+	//
+	// GetGroupTitlesPage inner-joins titles, so its total is 0 for both (1)
+	// and (2) — hence the extra EXISTS, which counts orphaned entries and so
+	// separates them. It runs only on this already-empty path, never on the
+	// hot one. Cases (2) and (3) need no branch at all: falling through
+	// leaves allTitlesDetails nil, which is exactly the `null` those two
+	// return.
 	if total == 0 {
-		return generics.Page[GroupTitleDetail]{
-			TotalResults: 0,
-			Size:         size,
-			Page:         page,
-			TotalPages:   0,
-			Content:      []GroupTitleDetail{},
-		}, nil
+		hasEntries, err := db.GroupHasTitleEntries(ctx, groupId, watched, titleTypes)
+		if err != nil {
+			return generics.Page[GroupTitleDetail]{}, err
+		}
+		if !hasEntries {
+			return generics.Page[GroupTitleDetail]{
+				TotalResults: 0,
+				Size:         size,
+				Page:         page,
+				TotalPages:   0,
+				Content:      []GroupTitleDetail{},
+			}, nil
+		}
 	}
 
 	pageTitleIds := make([]string, 0, len(pageRows))

@@ -107,6 +107,9 @@ SELECT * FROM groups WHERE id = $1;
 -- pre-normalized (the store method maps unknown keys to ''); watched_at is
 -- NULLS LAST in both directions to match the Go comparator this replaces.
 -- Title-side keys keep Postgres' default NULL placement (see GetTitlesPage).
+--
+-- page_size/page_offset are cast to bigint so sqlc generates int64 params —
+-- see the same note on GetTitlesPage.
 SELECT
     t.id, t.primary_title, t.type, t.start_year, t.rating_aggregate,
     t.vote_count, t.added_at, t.updated_at, t.metadata,
@@ -138,7 +141,7 @@ ORDER BY
     CASE WHEN sqlc.arg('order_by')::text = 'updatedAt'  AND NOT sqlc.arg('descending')::bool THEN t.updated_at END ASC,
     CASE WHEN sqlc.arg('order_by')::text = 'updatedAt'  AND sqlc.arg('descending')::bool     THEN t.updated_at END DESC,
     t.id ASC
-LIMIT sqlc.arg('page_size') OFFSET sqlc.arg('page_offset');
+LIMIT sqlc.arg('page_size')::bigint OFFSET sqlc.arg('page_offset')::bigint;
 
 -- name: CountGroupTitles :one
 -- Companion to GetGroupTitlesPage: the window-function total disappears when
@@ -149,6 +152,29 @@ JOIN titles t ON t.id = gt.title_id
 WHERE gt.group_id = sqlc.arg('group_id')
   AND (sqlc.narg('watched')::boolean IS NULL OR gt.watched = sqlc.narg('watched'))
   AND (sqlc.narg('title_types')::text[] IS NULL OR t.type = ANY(sqlc.narg('title_types')::text[]));
+
+-- name: GroupHasTitleEntries :one
+-- Does the group hold any title entry matching the filters, counting entries
+-- whose title is no longer in the catalogue?
+--
+-- group_titles.title_id carries no FK to titles, so an entry can outlive the
+-- title it points at. GetGroupTitlesPage's INNER JOIN hides those orphans,
+-- which makes "the group is empty" and "every one of the group's titles was
+-- deleted from the catalogue" indistinguishable from its total alone — and
+-- the two produce different empty-page envelopes (see GetTitlesFromGroup).
+-- The LEFT JOIN is what keeps orphans visible here; it also reproduces the
+-- pre-refactor titleType behavior exactly, because an orphan's t.type is NULL
+-- and so never matches an explicit type filter.
+--
+-- EXISTS, not count: the caller only needs zero vs. non-zero, and this runs
+-- only on the already-empty path.
+SELECT EXISTS (
+    SELECT 1 FROM group_titles gt
+    LEFT JOIN titles t ON t.id = gt.title_id
+    WHERE gt.group_id = sqlc.arg('group_id')
+      AND (sqlc.narg('watched')::boolean IS NULL OR gt.watched = sqlc.narg('watched'))
+      AND (sqlc.narg('title_types')::text[] IS NULL OR t.type = ANY(sqlc.narg('title_types')::text[]))
+);
 
 -- name: GetGroupTitleSeasonRowsForTitles :many
 SELECT * FROM group_title_seasons

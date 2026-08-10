@@ -358,13 +358,19 @@ type tiedTitlesFixture struct {
 	titleIds []string
 }
 
-// tiedSortKeys are the orderBy values a group-titles request routes through the
-// whitelisted-column branch of the store's sort (the LIMIT/OFFSET path whose
-// order must be total). watched/watchedAt/addedAt are deliberately absent here:
-// those group-side keys sort via the same total-order SQL as every other key —
-// GetGroupTitlesPage's CASE-based ORDER BY, ending in the same t.id ASC
-// tie-break — and are covered by the existing ordering subtests instead.
-var tiedSortKeys = []string{"", "primaryTitle", "imdbRating", "startYear", "type", "voteCount", "updatedAt"}
+// tiedSortKeys is every orderBy value a group-titles request accepts — the
+// whole whitelist, title-side and group-side alike. All of them now sort
+// through one CASE-based ORDER BY in SQL (GetGroupTitlesPage) under the same
+// LIMIT/OFFSET, so all of them depend on the same trailing t.id ASC tie-break
+// to page correctly, and all of them belong here. The group-side three
+// (watched, watchedAt, addedAt) used to take a separate in-Go branch and were
+// excluded for that reason; that branch is gone.
+//
+// Keep this in sync with groupTitlesOrderKeys in internal/postgres/groups.go.
+var tiedSortKeys = []string{
+	"", "primaryTitle", "imdbRating", "startYear", "type", "voteCount", "updatedAt",
+	"watched", "watchedAt", "addedAt",
+}
 
 // setupTiedTitlesGroup seeds count movies and puts all of them in one group.
 // Values repeat on a short cycle per column, so every sort key has large groups
@@ -374,6 +380,13 @@ var tiedSortKeys = []string{"", "primaryTitle", "imdbRating", "startYear", "type
 //   - startYear:    2 values, primaryTitle: 3, rating: 4, voteCount: 5
 //   - updatedAt:    NULL on every other title, one shared timestamp otherwise —
 //     NULL rows tie with each other too
+//
+// and, on the group_titles side:
+//
+//   - watched:      true on every 4th entry, false on the rest — two big ties
+//   - watchedAt:    one shared timestamp on the watched entries, NULL on the
+//     rest, so entries tie on a value and on NULL
+//   - addedAt:      2 shared timestamps, alternating
 //
 // The cycle lengths are coprime-ish on purpose: no two columns partition the
 // set the same way, so no column accidentally acts as another's tie-break.
@@ -418,8 +431,49 @@ func setupTiedTitlesGroup(t *testing.T, count int) tiedTitlesFixture {
 			GroupId: group.Id,
 		}, token)
 	}
+	setTiedGroupTitleColumns(t, group.Id, titleIds)
 
 	return tiedTitlesFixture{token: token, group: group, titleIds: titleIds}
+}
+
+// setTiedGroupTitleColumns overwrites the three group_titles columns the sort
+// whitelist can order by (watched, watched_at, added_at) with deliberately
+// repeating values, so those sort keys are as thoroughly tied as the
+// title-side ones.
+//
+// It has to write them directly: add-title-to-group stamps watched=false and
+// watched_at=NULL on every entry (already ties, but only one value each) and
+// added_at from time.Now(), which is DISTINCT per row — under a distinct
+// column the order is total with or without a tie-break, so paging by addedAt
+// would pass whether or not the fix is in place. That is the vacuous pass
+// CONVENTIONS §8 warns about, which is exactly what this helper exists to
+// prevent.
+func setTiedGroupTitleColumns(t *testing.T, groupId string, titleIds []string) {
+	t.Helper()
+
+	watchedAt := time.Date(2025, 6, 7, 8, 9, 10, 0, time.UTC)
+	addedAt := []time.Time{
+		time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC),
+		time.Date(2024, 5, 6, 0, 0, 0, 0, time.UTC),
+	}
+
+	for i, titleId := range titleIds {
+		watched := i%4 == 0
+		// Only a watched entry carries a watchedAt, mirroring the invariant
+		// the watched-update endpoint enforces.
+		var entryWatchedAt *time.Time
+		if watched {
+			entryWatchedAt = &watchedAt
+		}
+
+		tag, err := testPool.Exec(context.Background(),
+			`UPDATE group_titles SET watched = $3, watched_at = $4, added_at = $5
+			 WHERE group_id = $1 AND title_id = $2`,
+			groupId, titleId, watched, entryWatchedAt, addedAt[i%2])
+		require.NoError(t, err, "failed to set the tied group-title columns for %s", titleId)
+		require.EqualValues(t, 1, tag.RowsAffected(),
+			"expected to update exactly one group_titles row for %s", titleId)
+	}
 }
 
 // walkGroupTitlePages pages through GET /groups/{id}/titles from page 1 to the
@@ -450,6 +504,26 @@ func flattenPages(pages [][]string) []string {
 		all = append(all, page...)
 	}
 	return all
+}
+
+// deleteTitleFromCatalogue removes a title from the titles table while leaving
+// every group_titles row that points at it in place, producing an orphaned
+// group entry. group_titles.title_id carries no foreign key to titles (see
+// sql/schema/001_init.sql), so this is a state the production database can
+// reach through the admin delete-title endpoint — not a fabricated one.
+func deleteTitleFromCatalogue(t *testing.T, titleId string) {
+	t.Helper()
+
+	tag, err := testPool.Exec(context.Background(), "DELETE FROM titles WHERE id = $1", titleId)
+	require.NoError(t, err, "failed to delete title %s from the catalogue", titleId)
+	require.EqualValues(t, 1, tag.RowsAffected(), "expected to delete exactly one title row for %s", titleId)
+
+	var groupEntries int
+	require.NoError(t,
+		testPool.QueryRow(context.Background(),
+			"SELECT count(*) FROM group_titles WHERE title_id = $1", titleId).Scan(&groupEntries),
+		"failed to count the group entries left behind for %s", titleId)
+	require.NotZero(t, groupEntries, "the group entry for %s must survive the title deletion, or there is no orphan to test", titleId)
 }
 
 // setGroupTitleWatched marks a group title watched (or not) with an explicit

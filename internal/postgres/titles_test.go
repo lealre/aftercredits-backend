@@ -349,15 +349,15 @@ func TestStore_GetTitlesPage(t *testing.T) {
 			name string
 			page int
 		}{
-			// (page-1)*size overflows int32 (the generated query's PageOffset
-			// param type) and would wrap negative if cast directly, causing
-			// Postgres to reject it with "OFFSET must not be negative".
+			// page-1 * size wraps to a small POSITIVE int64 (92) if the guard
+			// multiplies first — which would silently return some unrelated
+			// page's rows instead of emptying out.
 			{"page-1 * size wraps to a small positive int64", 92_233_720_368_547_760},
 			// page-1 is near MaxInt64; multiplying by size=100 in int64 BEFORE
 			// the overflow guard would itself wrap to a small negative int64,
-			// reintroducing the original "OFFSET must not be negative" 500.
-			// The guard must reject this by comparing before any multiply,
-			// not after.
+			// which Postgres rejects with "OFFSET must not be negative", a
+			// 500. The guard must reject this by comparing before any
+			// multiply, not after.
 			{"page-1 near MaxInt64: int64 multiply would wrap negative", math.MaxInt64},
 		}
 		for _, tc := range cases {
@@ -368,6 +368,67 @@ func TestStore_GetTitlesPage(t *testing.T) {
 				require.EqualValues(t, len(names), total)
 			})
 		}
+	})
+
+	// The doc comment on GetTitlesPage makes clamping the service's job, so
+	// size arrives unvalidated — and this method is reachable directly (this
+	// file, cmd/routines). A non-positive size must page to nothing, the way
+	// it did when size was only ever bound as a LIMIT parameter. size == 0 in
+	// particular must never reach the offset guard's division by size: this
+	// process has no panic-recovery middleware, so an integer divide-by-zero
+	// there takes the whole server down rather than failing one request.
+	t.Run("a non-positive size returns an empty page with the correct total", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, fmt.Sprintf("tt-size-%d", i), name, 5.0)))
+		}
+
+		for _, size := range []int{0, -1, math.MinInt64} {
+			t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
+				for _, page := range []int{1, 2, math.MaxInt64} {
+					// Asserted through NotPanics rather than called directly:
+					// without the guard this is an integer divide-by-zero, and
+					// an unrecovered panic aborts the whole test binary instead
+					// of reporting which case regressed.
+					var (
+						got   []models.Title
+						total int64
+						err   error
+					)
+					require.NotPanics(t, func() {
+						got, total, err = s.GetTitlesPage(ctx, "", nil, size, page)
+					}, "size=%d page=%d must not panic", size, page)
+					require.NoError(t, err, "size=%d page=%d must not error", size, page)
+					require.Equal(t, []models.Title{}, got, "size=%d page=%d must page to nothing", size, page)
+					require.EqualValues(t, len(names), total, "size=%d page=%d must still report the real total", size, page)
+				}
+			})
+		}
+	})
+
+	// MAX_PAGE_SIZE is env-configurable with no upper bound, so the clamped
+	// size the service passes down can legitimately exceed int32. Narrowing it
+	// to the generated LIMIT parameter used to wrap it negative, and Postgres
+	// rejects a negative LIMIT outright — every request would 500. page_size
+	// is a bigint for exactly this reason.
+	t.Run("a size larger than int32 is not narrowed", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, fmt.Sprintf("tt-wide-%d", i), name, 5.0)))
+		}
+
+		got, total, err := s.GetTitlesPage(ctx, "", nil, math.MaxInt32+1, 1)
+		require.NoError(t, err, "a size past int32 must not wrap into a negative LIMIT")
+		require.Len(t, got, len(names), "a size that large must simply return every row")
+		require.EqualValues(t, len(names), total)
 	})
 }
 

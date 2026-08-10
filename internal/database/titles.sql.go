@@ -74,20 +74,25 @@ ORDER BY
     CASE WHEN $1::text = 'updatedAt'  AND NOT $2::bool THEN updated_at END ASC,
     CASE WHEN $1::text = 'updatedAt'  AND $2::bool     THEN updated_at END DESC,
     id ASC
-LIMIT $4 OFFSET $3
+LIMIT $4::bigint OFFSET $3::bigint
 `
 
 type GetTitlesPageParams struct {
 	OrderBy    string
 	Descending bool
-	PageOffset int32
-	PageSize   int32
+	PageOffset int64
+	PageSize   int64
 }
 
 // Static total ORDER BY (CONVENTIONS §6 — ends in id ASC). order_by arrives
 // pre-normalized (unknown keys -> ”). No NULLS FIRST/LAST anywhere: Postgres'
 // defaults keep deciding where NULL sort values land (added_at/updated_at are
 // the only nullable keys), exactly as the hand-written version behaved.
+//
+// page_size/page_offset are cast to bigint so sqlc generates int64 params:
+// Go's page/size are plain ints, and narrowing them to int32 could wrap
+// negative (MAX_PAGE_SIZE is env-configurable without an upper bound), which
+// Postgres rejects with "LIMIT/OFFSET must not be negative".
 func (q *Queries) GetTitlesPage(ctx context.Context, arg GetTitlesPageParams) ([]Title, error) {
 	rows, err := q.db.Query(ctx, getTitlesPage,
 		arg.OrderBy,

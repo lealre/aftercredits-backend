@@ -2326,6 +2326,128 @@ func TestGroupTitlesQueryParams(t *testing.T) {
 	})
 }
 
+// TestGroupTitlesEmptyPageShapes pins the three ways GET /groups/{id}/titles
+// can come back empty. They are not interchangeable: `"Content":null` and
+// `"Content":[]` are different bytes on the wire and a client reading
+// TotalPages or dividing by Size sees different numbers, so the split is part
+// of the API contract (CONVENTIONS §5) and every assertion here is made on the
+// RAW body — a decoded generics.Page cannot tell null from [].
+//
+// The third case, a group whose entries all point at titles deleted from the
+// catalogue, is the one the query-parameter suite does not cover, and it is
+// where the single-query rewrite regressed: it answered `{"Page":0,"Size":0,
+// ...,"Content":[]}` where every earlier release answered `{"Page":1,
+// "Size":20,...,"Content":null}` — raw instead of normalized pagination, so a
+// client computing ceil(total/size) divided by zero.
+func TestGroupTitlesEmptyPageShapes(t *testing.T) {
+	const orphanTitleId = "tt3100001"
+	const liveTitleId = "tt3100002"
+
+	// setup seeds two titles, puts each in its own group, and returns the
+	// caller's token plus the three groups the cases below need.
+	setup := func(t *testing.T) (token string, orphanGroup, liveGroup, emptyGroup groups.GroupResponse) {
+		t.Helper()
+		resetDB(t)
+
+		_, token = addUser(t, users.NewUserRequest{
+			Username: "emptyshapes",
+			Password: "testPass",
+		})
+
+		seedTitles(t, []models.Title{
+			{ID: orphanTitleId, PrimaryTitle: "Doomed Movie", Type: "movie"},
+			{ID: liveTitleId, PrimaryTitle: "Surviving Movie", Type: "movie"},
+		})
+
+		orphanGroup = createGroup(t, groups.CreateGroupRequest{Name: "orphanshape"}, token)
+		liveGroup = createGroup(t, groups.CreateGroupRequest{Name: "liveshape"}, token)
+		emptyGroup = createGroup(t, groups.CreateGroupRequest{Name: "emptyshape"}, token)
+
+		for groupId, titleId := range map[string]string{
+			orphanGroup.Id: orphanTitleId,
+			liveGroup.Id:   liveTitleId,
+		} {
+			addTitleToGroup(t, groups.AddTitleToGroupRequest{
+				URL:     "https://www.imdb.com/title/" + titleId + "/",
+				GroupId: groupId,
+			}, token)
+		}
+		return token, orphanGroup, liveGroup, emptyGroup
+	}
+
+	t.Run("a group whose titles were all deleted from the catalogue keeps normalized pagination and null content", func(t *testing.T) {
+		token, orphanGroup, _, _ := setup(t)
+		deleteTitleFromCatalogue(t, orphanTitleId)
+
+		// No query parameters: size/page arrive as 0/0 and MUST come back
+		// normalized to the defaults, because TotalPages is derived from them
+		// and a client recomputing it divides by Size.
+		require.Equal(t,
+			`{"Page":1,"Size":20,"TotalPages":0,"TotalResults":0,"Content":null}`,
+			getGroupTitlesRawBody(t, orphanGroup.Id, "", token),
+			"an entry whose title is gone from the catalogue must still produce the normalized, null-content envelope")
+
+		// An explicit size is echoed back as given (it is already valid), and
+		// the shape does not change.
+		require.Equal(t,
+			`{"Page":1,"Size":5,"TotalPages":0,"TotalResults":0,"Content":null}`,
+			getGroupTitlesRawBody(t, orphanGroup.Id, "size=5&page=1", token),
+			"an explicit page size must survive the orphaned-entry path unchanged")
+
+		// The watched filter is evaluated on the group entry, which still
+		// exists, so it does not turn this into the empty-group shape.
+		require.Equal(t,
+			`{"Page":1,"Size":20,"TotalPages":0,"TotalResults":0,"Content":null}`,
+			getGroupTitlesRawBody(t, orphanGroup.Id, "watched=false", token),
+			"a filter that matches the surviving group entry must keep the orphan shape")
+	})
+
+	t.Run("an empty group answers with raw pagination and an empty array", func(t *testing.T) {
+		token, _, _, emptyGroup := setup(t)
+
+		require.Equal(t,
+			`{"Page":0,"Size":0,"TotalPages":0,"TotalResults":0,"Content":[]}`,
+			getGroupTitlesRawBody(t, emptyGroup.Id, "", token),
+			"a group holding no entries at all keeps the long-standing raw-size/page, empty-array shape")
+
+		require.Equal(t,
+			`{"Page":3,"Size":5,"TotalPages":0,"TotalResults":0,"Content":[]}`,
+			getGroupTitlesRawBody(t, emptyGroup.Id, "size=5&page=3", token),
+			"the empty-group shape echoes whatever size/page the caller asked for")
+	})
+
+	t.Run("a filter matching no entry answers like an empty group", func(t *testing.T) {
+		token, orphanGroup, liveGroup, _ := setup(t)
+
+		// The group's one entry is unwatched, so watched=true excludes it at
+		// the entry level: nothing is left to page over.
+		require.Equal(t,
+			`{"Page":0,"Size":0,"TotalPages":0,"TotalResults":0,"Content":[]}`,
+			getGroupTitlesRawBody(t, liveGroup.Id, "watched=true", token),
+			"a filter that no group entry matches takes the empty-group shape")
+
+		// An explicit titleType filter cannot be evaluated for an orphaned
+		// entry — the type lives on the deleted title — so such an entry is
+		// excluded and the group reads as empty. This is the pre-rewrite
+		// behavior; the LEFT JOIN behind GroupHasTitleEntries is what
+		// reproduces it.
+		deleteTitleFromCatalogue(t, orphanTitleId)
+		require.Equal(t,
+			`{"Page":0,"Size":0,"TotalPages":0,"TotalResults":0,"Content":[]}`,
+			getGroupTitlesRawBody(t, orphanGroup.Id, "titleType=movie", token),
+			"an orphaned entry cannot satisfy an explicit titleType filter, so the group reads as empty")
+	})
+
+	t.Run("a page past the last one keeps its totals and null content", func(t *testing.T) {
+		token, _, liveGroup, _ := setup(t)
+
+		require.Equal(t,
+			`{"Page":9,"Size":1,"TotalPages":1,"TotalResults":1,"Content":null}`,
+			getGroupTitlesRawBody(t, liveGroup.Id, "size=1&page=9", token),
+			"paging past the end reports the real totals with null content")
+	})
+}
+
 // TestGroupTitlesPaginationIsTotallyOrdered is a regression test for a sort
 // that fed LIMIT/OFFSET without a tie-break (CONVENTIONS §6).
 //

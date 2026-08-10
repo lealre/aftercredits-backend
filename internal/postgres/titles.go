@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"math"
 
 	"github.com/lealre/movies-backend/internal/database"
 	"github.com/lealre/movies-backend/internal/models"
@@ -79,7 +78,10 @@ var titleOrderKeys = map[string]bool{
 //     simple and identical for every sort key.
 //   - LIMIT size OFFSET (page-1)*size, matching the previous skip/limit
 //     computation verbatim (no extra clamping here; that's the service
-//     layer's job).
+//     layer's job). The offset is computed by the shared pageOffset helper,
+//     which also decides when a request can select no row at all (a
+//     non-positive size, or an offset past int64) and so must yield an empty
+//     page instead of a query.
 func (s *Store) GetTitlesPage(
 	ctx context.Context,
 	orderBy string,
@@ -96,33 +98,18 @@ func (s *Store) GetTitlesPage(
 		return nil, 0, err
 	}
 
-	// The service bounds size (<=100) but not page, so an extreme page can
-	// make (page-1)*size overflow int32 (the generated query's PageOffset
-	// param type) — e.g. page=30_000_000, size=100 wraps negative and
-	// Postgres rejects it with "OFFSET must not be negative", a 500. page
-	// itself is unbounded (Atoi allows up to MaxInt64), so (page-1)*size can
-	// also overflow int64 before the result is ever compared against
-	// MaxInt32 — the guard below MUST run before any multiplication, not
-	// after computing the product.
-	//
-	// (page-1) cannot overflow on its own (page >= 1 assumed from the service
-	// layer, same as size >= 1). Comparing it against the floor division
-	// math.MaxInt32/size predicts whether the product would exceed MaxInt32
-	// without ever computing that product: for positive integers a, b, N,
-	// a > N/b (floor) implies a*b > N. So once this guard is false, the
-	// multiply that builds offset below is provably in int32 range.
-	if int64(page-1) > math.MaxInt32/int64(size) {
-		// No row could ever exist at such an offset; same fallback as a
-		// past-the-end page takes below — an empty page with the correct
-		// total, never an error.
+	// A non-positive size or an offset that would overflow int64 selects no
+	// row at all (see pageOffset): same fallback as a past-the-end page takes
+	// below — an empty page with the correct total, never an error.
+	offset, ok := pageOffset(size, page)
+	if !ok {
 		return []models.Title{}, total, nil
 	}
-	offset := int32((page - 1) * size) // now provably in range
 
 	rows, err := s.q.GetTitlesPage(ctx, database.GetTitlesPageParams{
 		OrderBy:    orderBy,
 		Descending: descending,
-		PageSize:   int32(size),
+		PageSize:   int64(size),
 		PageOffset: offset,
 	})
 	if err != nil {
