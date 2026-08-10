@@ -45,32 +45,13 @@ func (s *Store) TitleExists(ctx context.Context, id string) (bool, error) {
 	return s.q.TitleExists(ctx, id)
 }
 
-// GetTitleTypes fetches title types for the given title IDs, returning a map
-// of titleId -> type. Matches the previous behavior: an empty/nil input
-// short-circuits to an empty map without hitting the database.
-func (s *Store) GetTitleTypes(ctx context.Context, titleIds []string) (map[string]string, error) {
-	if len(titleIds) == 0 {
-		return make(map[string]string), nil
-	}
-	rows, err := s.q.GetTitleTypes(ctx, titleIds)
-	if err != nil {
-		return nil, err
-	}
-	titleTypes := make(map[string]string, len(rows))
-	for _, r := range rows {
-		titleTypes[r.ID] = r.Type
-	}
-	return titleTypes, nil
-}
-
 // titleOrderColumns is the FIXED whitelist of orderBy -> titles column used
-// by GetTitlesPage's CASE 2 (standard column sort). Column names in the
-// generated SQL come ONLY from this map — the caller-supplied orderBy string
-// is never interpolated directly. Applies the remapping
-// ("" and "imdbRating"), plus every other titles column a client can
-// reasonably ask to sort by. Any orderBy value not present here (including
-// "watched", which has no titles-table equivalent and only makes sense for
-// CASE 1) falls back to the same column as "" (primary_title).
+// by GetTitlesPage. Column names in the generated SQL come ONLY from this
+// map — the caller-supplied orderBy string is never interpolated directly.
+// Applies the remapping ("" and "imdbRating"), plus every other titles
+// column a client can reasonably ask to sort by. Any orderBy value not
+// present here (including "watched", which has no titles-table equivalent)
+// falls back to the same column as "" (primary_title).
 var titleOrderColumns = map[string]string{
 	"":             "primary_title",
 	"primaryTitle": "primary_title",
@@ -82,49 +63,25 @@ var titleOrderColumns = map[string]string{
 	"updatedAt":    "updated_at",
 }
 
-// isGroupFieldOrderBy reports whether orderBy refers to a group-titles-join
-// field (watched/watchedAt/addedAt) rather than a native titles column.
-// Matches the group-fields sort check.
-func isGroupFieldOrderBy(orderBy string) bool {
-	return orderBy == "watched" || orderBy == "watchedAt" || orderBy == "addedAt"
-}
-
 // GetTitlesPage pages and sorts titles against the
 // hybrid JSONB titles table:
 //
-//   - empty (non-nil) ids -> ([]models.Title{}, 0, nil), no query issued.
-//   - WHERE id = ANY(ids) when ids is non-empty, no filter otherwise.
-//   - total is COUNT(*) under the same WHERE.
-//   - CASE 1: ids non-empty AND orderBy is a group field (watched/watchedAt/
-//     addedAt) -> ORDER BY array_position(ids, id), preserving the caller's
-//     order.
-//   - CASE 2: otherwise -> ORDER BY <whitelisted column> <ASC|DESC>, column
-//     from titleOrderColumns, direction from ascending (default ASC).
-//   - Every branch ends in a deterministic "id ASC" tie-break, so the order is
+//   - total is COUNT(*) over the whole table.
+//   - ORDER BY <whitelisted column> <ASC|DESC>, column from titleOrderColumns,
+//     direction from ascending (default ASC).
+//   - Every result ends in a deterministic "id ASC" tie-break, so the order is
 //     total and paging cannot repeat or skip a row (see the ORDER BY below).
 //   - LIMIT size OFFSET (page-1)*size, matching the previous skip/limit
 //     computation verbatim (no extra clamping here; that's the service
 //     layer's job).
 func (s *Store) GetTitlesPage(
 	ctx context.Context,
-	ids []string,
 	orderBy string,
 	ascending *bool,
 	size, page int,
 ) ([]models.Title, int64, error) {
-	if ids != nil && len(ids) == 0 {
-		return []models.Title{}, 0, nil
-	}
-
-	var whereArgs []any
-	where := ""
-	if len(ids) > 0 {
-		whereArgs = append(whereArgs, ids)
-		where = "WHERE id = ANY($1::text[])"
-	}
-
 	var total int64
-	if err := s.pool.QueryRow(ctx, "SELECT count(*) FROM titles "+where, whereArgs...).Scan(&total); err != nil {
+	if err := s.pool.QueryRow(ctx, "SELECT count(*) FROM titles").Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -133,55 +90,35 @@ func (s *Store) GetTitlesPage(
 		direction = "DESC"
 	}
 
-	// Both branches end in "id ASC". The clause feeds LIMIT/OFFSET, and a
-	// non-total order under paging lets Postgres return the same row on two
-	// pages while never returning another (CONVENTIONS §6). id is the primary
-	// key — unique and NOT NULL — so appending it makes each branch total.
+	column, ok := titleOrderColumns[orderBy]
+	if !ok {
+		column = titleOrderColumns[""]
+	}
+	// No NULLS FIRST/LAST is added: Postgres' defaults (NULLS LAST for ASC,
+	// NULLS FIRST for DESC) keep deciding where rows with a NULL sort value
+	// land, so nothing a client sees moves. added_at and updated_at are the
+	// only nullable columns in titleOrderColumns (rating_aggregate and
+	// vote_count are NOT NULL DEFAULT 0, so a "missing" rating sorts as 0,
+	// not as NULL). NULLs tie with one another for sorting, so the appended
+	// id only fixes the previously arbitrary order *within* that tie group.
 	//
 	// The tie-break is pinned to ASC and is never flipped with `direction`:
 	// its only job is to make ties deterministic, and a fixed direction keeps
 	// the rule simple to state and identical for every sort key. Which rows
 	// tie is decided entirely by the primary key, so the visible ordering is
-	// unaffected either way.
-	var orderClause string
-	if len(ids) > 0 && isGroupFieldOrderBy(orderBy) {
-		// array_position cannot tie here: the WHERE clause restricts the result
-		// to rows whose id is in this same $1 array, ids are unique (primary
-		// key), and array_position returns the FIRST index of a value, so two
-		// distinct ids always land on two distinct positions — even if the
-		// array itself carried duplicates. It cannot return NULL either, since
-		// every returned row's id is in the array by construction. The
-		// tie-break is appended anyway so this branch's totality is a property
-		// of the ORDER BY itself rather than of the WHERE clause staying in
-		// sync with it; in practice it is never reached.
-		orderClause = "ORDER BY array_position($1::text[], id), id ASC"
-	} else {
-		column, ok := titleOrderColumns[orderBy]
-		if !ok {
-			column = titleOrderColumns[""]
-		}
-		// No NULLS FIRST/LAST is added: Postgres' defaults (NULLS LAST for ASC,
-		// NULLS FIRST for DESC) keep deciding where rows with a NULL sort value
-		// land, so nothing a client sees moves. added_at and updated_at are the
-		// only nullable columns in titleOrderColumns (rating_aggregate and
-		// vote_count are NOT NULL DEFAULT 0, so a "missing" rating sorts as 0,
-		// not as NULL). NULLs tie with one another for sorting, so the appended
-		// id only fixes the previously arbitrary order *within* that tie group.
-		orderClause = fmt.Sprintf("ORDER BY %s %s, id ASC", column, direction)
-	}
-
-	args := append([]any{}, whereArgs...)
-	args = append(args, size, (page-1)*size)
-	limitIdx := len(whereArgs) + 1
-	offsetIdx := len(whereArgs) + 2
+	// unaffected either way. It also feeds LIMIT/OFFSET: a non-total order
+	// under paging lets Postgres return the same row on two pages while never
+	// returning another (CONVENTIONS §6). id is the primary key — unique and
+	// NOT NULL — so appending it makes the order total.
+	orderClause := fmt.Sprintf("ORDER BY %s %s, id ASC", column, direction)
 
 	query := fmt.Sprintf(
 		`SELECT id, primary_title, type, start_year, rating_aggregate, vote_count, added_at, updated_at, metadata
-		 FROM titles %s %s LIMIT $%d OFFSET $%d`,
-		where, orderClause, limitIdx, offsetIdx,
+		 FROM titles %s LIMIT $1 OFFSET $2`,
+		orderClause,
 	)
 
-	rows, err := s.pool.Query(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, size, (page-1)*size)
 	if err != nil {
 		return nil, 0, err
 	}

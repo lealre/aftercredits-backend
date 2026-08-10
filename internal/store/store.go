@@ -34,9 +34,8 @@ type Store interface {
 	GetTitleById(ctx context.Context, id string) (models.Title, error)
 	AddTitle(ctx context.Context, title models.Title) error
 	DeleteTitle(ctx context.Context, id string) (bool, error)
-	GetTitlesPage(ctx context.Context, ids []string, orderBy string, ascending *bool, size, page int) ([]models.Title, int64, error)
+	GetTitlesPage(ctx context.Context, orderBy string, ascending *bool, size, page int) ([]models.Title, int64, error)
 	TitleExists(ctx context.Context, id string) (bool, error)
-	GetTitleTypes(ctx context.Context, titleIds []string) (map[string]string, error)
 
 	// ----- Ratings -----
 	//

@@ -15,9 +15,6 @@ SELECT EXISTS(SELECT 1 FROM titles WHERE id = $1);
 -- name: DeleteTitle :execrows
 DELETE FROM titles WHERE id = $1;
 
--- name: GetTitleTypes :many
-SELECT id, type FROM titles WHERE id = ANY($1::text[]);
-
 -- name: ListTitleIds :many
 SELECT id FROM titles ORDER BY id;
 

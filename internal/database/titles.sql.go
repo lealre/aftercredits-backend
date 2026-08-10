@@ -44,35 +44,6 @@ func (q *Queries) GetTitleById(ctx context.Context, id string) (Title, error) {
 	return i, err
 }
 
-const getTitleTypes = `-- name: GetTitleTypes :many
-SELECT id, type FROM titles WHERE id = ANY($1::text[])
-`
-
-type GetTitleTypesRow struct {
-	ID   string
-	Type string
-}
-
-func (q *Queries) GetTitleTypes(ctx context.Context, dollar_1 []string) ([]GetTitleTypesRow, error) {
-	rows, err := q.db.Query(ctx, getTitleTypes, dollar_1)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetTitleTypesRow
-	for rows.Next() {
-		var i GetTitleTypesRow
-		if err := rows.Scan(&i.ID, &i.Type); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const insertTitle = `-- name: InsertTitle :exec
 INSERT INTO titles (
     id, primary_title, type, start_year, rating_aggregate, vote_count,

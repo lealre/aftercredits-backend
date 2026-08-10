@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"slices"
 	"testing"
 	"time"
 
@@ -226,30 +225,6 @@ func TestStore_TitleExists(t *testing.T) {
 	require.True(t, exists)
 }
 
-func TestStore_GetTitleTypes(t *testing.T) {
-	resetDB(t)
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	movie := newTestMovieTitle(t, "tt-movie", "A Movie", 7.5)
-	movie.Type = "movie"
-	series := newTestMovieTitle(t, "tt-series", "A Series", 8.0)
-	series.Type = "tvSeries"
-	require.NoError(t, s.AddTitle(ctx, movie))
-	require.NoError(t, s.AddTitle(ctx, series))
-
-	types, err := s.GetTitleTypes(ctx, []string{movie.ID, series.ID, "missing-id"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{
-		movie.ID:  "movie",
-		series.ID: "tvSeries",
-	}, types)
-
-	empty, err := s.GetTitleTypes(ctx, nil)
-	require.NoError(t, err)
-	require.Empty(t, empty)
-}
-
 func TestStore_GetTitlesPage(t *testing.T) {
 	t.Run("sorted by primary_title ascending with pagination", func(t *testing.T) {
 		resetDB(t)
@@ -264,13 +239,13 @@ func TestStore_GetTitlesPage(t *testing.T) {
 			require.NoError(t, s.AddTitle(ctx, ti))
 		}
 
-		page1, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", nil, 2, 1)
+		page1, total, err := s.GetTitlesPage(ctx, "primaryTitle", nil, 2, 1)
 		require.NoError(t, err)
 		require.EqualValues(t, 3, total)
 		require.Len(t, page1, 2)
 		require.Equal(t, []string{"Alpha", "Bravo"}, []string{page1[0].PrimaryTitle, page1[1].PrimaryTitle})
 
-		page2, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", nil, 2, 2)
+		page2, total, err := s.GetTitlesPage(ctx, "primaryTitle", nil, 2, 2)
 		require.NoError(t, err)
 		require.EqualValues(t, 3, total)
 		require.Len(t, page2, 1)
@@ -286,7 +261,7 @@ func TestStore_GetTitlesPage(t *testing.T) {
 		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-b", "Bravo", 6.0)))
 
 		descending := false
-		got, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", &descending, 10, 1)
+		got, total, err := s.GetTitlesPage(ctx, "primaryTitle", &descending, 10, 1)
 		require.NoError(t, err)
 		require.EqualValues(t, 2, total)
 		require.Equal(t, []string{"Bravo", "Alpha"}, []string{got[0].PrimaryTitle, got[1].PrimaryTitle})
@@ -300,47 +275,9 @@ func TestStore_GetTitlesPage(t *testing.T) {
 		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-low", "Low Rated", 3.0)))
 		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-high", "High Rated", 9.0)))
 
-		got, _, err := s.GetTitlesPage(ctx, nil, "imdbRating", nil, 10, 1)
+		got, _, err := s.GetTitlesPage(ctx, "imdbRating", nil, 10, 1)
 		require.NoError(t, err)
 		require.Equal(t, []string{"tt-low", "tt-high"}, []string{got[0].ID, got[1].ID})
-	})
-
-	t.Run("CASE 1 custom order via addedAt preserves ids order", func(t *testing.T) {
-		resetDB(t)
-		s := newTestStore(t)
-		ctx := context.Background()
-
-		for _, ti := range []models.Title{
-			newTestMovieTitle(t, "tt-a", "Alpha", 5.0),
-			newTestMovieTitle(t, "tt-b", "Bravo", 6.0),
-			newTestMovieTitle(t, "tt-c", "Charlie", 7.0),
-		} {
-			require.NoError(t, s.AddTitle(ctx, ti))
-		}
-
-		customOrder := []string{"tt-c", "tt-a", "tt-b"}
-		got, total, err := s.GetTitlesPage(ctx, customOrder, "addedAt", nil, 10, 1)
-		require.NoError(t, err)
-		require.EqualValues(t, 3, total)
-
-		gotIDs := make([]string, len(got))
-		for i, ti := range got {
-			gotIDs[i] = ti.ID
-		}
-		require.Equal(t, customOrder, gotIDs)
-	})
-
-	t.Run("empty ids returns empty page", func(t *testing.T) {
-		resetDB(t)
-		s := newTestStore(t)
-		ctx := context.Background()
-
-		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-a", "Alpha", 5.0)))
-
-		got, total, err := s.GetTitlesPage(ctx, []string{}, "primaryTitle", nil, 10, 1)
-		require.NoError(t, err)
-		require.Equal(t, []models.Title{}, got)
-		require.EqualValues(t, 0, total)
 	})
 
 	// Regression: the ORDER BY that feeds LIMIT/OFFSET had no tie-break, so rows
@@ -380,7 +317,7 @@ func TestStore_GetTitlesPage(t *testing.T) {
 				direction := ascending
 				var got []string
 				for page := 1; ; page++ {
-					titles, count, err := s.GetTitlesPage(ctx, nil, orderBy, &direction, pageSize, page)
+					titles, count, err := s.GetTitlesPage(ctx, orderBy, &direction, pageSize, page)
 					require.NoError(t, err, "paging by %q failed", orderBy)
 					require.EqualValues(t, total, count, "the total must not move while paging by %q", orderBy)
 					if len(titles) == 0 {
@@ -395,60 +332,6 @@ func TestStore_GetTitlesPage(t *testing.T) {
 					"paging by %q (ascending=%v) must return every row exactly once", orderBy, direction)
 			}
 		}
-	})
-
-	t.Run("the array_position order is stable across pages", func(t *testing.T) {
-		resetDB(t)
-		s := newTestStore(t)
-		ctx := context.Background()
-
-		const total = 50
-		ids := make([]string, 0, total)
-		for i := range total {
-			// Identical sort values everywhere, so only array_position (and the
-			// tie-break) can decide the order.
-			title := newTestMovieTitle(t, fmt.Sprintf("tt%05d", i), "Same Title", 8.0)
-			require.NoError(t, s.AddTitle(ctx, title))
-			ids = append(ids, title.ID)
-		}
-
-		// A caller-chosen order that matches neither insertion nor id order.
-		slices.Reverse(ids)
-
-		var got []string
-		for page := 1; ; page++ {
-			titles, count, err := s.GetTitlesPage(ctx, ids, "addedAt", nil, 6, page)
-			require.NoError(t, err)
-			require.EqualValues(t, total, count)
-			if len(titles) == 0 {
-				break
-			}
-			for _, title := range titles {
-				got = append(got, title.ID)
-			}
-		}
-
-		require.Equal(t, ids, got,
-			"paging the array_position branch must reproduce the caller's order exactly")
-	})
-
-	t.Run("total count reflects ids filter", func(t *testing.T) {
-		resetDB(t)
-		s := newTestStore(t)
-		ctx := context.Background()
-
-		for _, ti := range []models.Title{
-			newTestMovieTitle(t, "tt-a", "Alpha", 5.0),
-			newTestMovieTitle(t, "tt-b", "Bravo", 6.0),
-			newTestMovieTitle(t, "tt-c", "Charlie", 7.0),
-		} {
-			require.NoError(t, s.AddTitle(ctx, ti))
-		}
-
-		got, total, err := s.GetTitlesPage(ctx, []string{"tt-a", "tt-c"}, "primaryTitle", nil, 10, 1)
-		require.NoError(t, err)
-		require.EqualValues(t, 2, total)
-		require.Len(t, got, 2)
 	})
 }
 

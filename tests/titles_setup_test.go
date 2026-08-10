@@ -100,7 +100,7 @@ func loadTVSeriesTitlesFixture(t *testing.T) []models.Title {
 }
 
 func getTitles(t *testing.T) []models.Title {
-	titles, _, err := testStore.GetTitlesPage(context.Background(), nil, "", nil, 1000, 1)
+	titles, _, err := testStore.GetTitlesPage(context.Background(), "", nil, 1000, 1)
 	require.NoError(t, err, "error querying titles from db")
 	return titles
 }
