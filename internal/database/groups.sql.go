@@ -11,6 +11,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countGroupTitles = `-- name: CountGroupTitles :one
+SELECT count(*) FROM group_titles gt
+JOIN titles t ON t.id = gt.title_id
+WHERE gt.group_id = $1
+  AND ($2::boolean IS NULL OR gt.watched = $2)
+  AND ($3::text[] IS NULL OR t.type = ANY($3::text[]))
+`
+
+type CountGroupTitlesParams struct {
+	GroupID    string
+	Watched    pgtype.Bool
+	TitleTypes []string
+}
+
+// Companion to GetGroupTitlesPage: the window-function total disappears when
+// an out-of-range page returns zero rows, so the store method falls back to
+// this (same WHERE) only in that case. Hot path stays one round trip.
+func (q *Queries) CountGroupTitles(ctx context.Context, arg CountGroupTitlesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroupTitles, arg.GroupID, arg.Watched, arg.TitleTypes)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteGroupTitle = `-- name: DeleteGroupTitle :execrows
 DELETE FROM group_titles WHERE group_id = $1 AND title_id = $2
 `
@@ -279,6 +303,156 @@ func (q *Queries) GetGroupTitleSeasonRowsForTitle(ctx context.Context, arg GetGr
 			&i.WatchedAt,
 			&i.AddedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGroupTitleSeasonRowsForTitles = `-- name: GetGroupTitleSeasonRowsForTitles :many
+SELECT group_id, title_id, season, watched, watched_at, added_at, updated_at FROM group_title_seasons
+WHERE group_id = $1 AND title_id = ANY($2::text[])
+ORDER BY title_id, season
+`
+
+type GetGroupTitleSeasonRowsForTitlesParams struct {
+	GroupID  string
+	TitleIds []string
+}
+
+func (q *Queries) GetGroupTitleSeasonRowsForTitles(ctx context.Context, arg GetGroupTitleSeasonRowsForTitlesParams) ([]GroupTitleSeason, error) {
+	rows, err := q.db.Query(ctx, getGroupTitleSeasonRowsForTitles, arg.GroupID, arg.TitleIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GroupTitleSeason
+	for rows.Next() {
+		var i GroupTitleSeason
+		if err := rows.Scan(
+			&i.GroupID,
+			&i.TitleID,
+			&i.Season,
+			&i.Watched,
+			&i.WatchedAt,
+			&i.AddedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGroupTitlesPage = `-- name: GetGroupTitlesPage :many
+SELECT
+    t.id, t.primary_title, t.type, t.start_year, t.rating_aggregate,
+    t.vote_count, t.added_at, t.updated_at, t.metadata,
+    gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
+    gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
+    count(*) OVER () AS total_count
+FROM group_titles gt
+JOIN titles t ON t.id = gt.title_id
+WHERE gt.group_id = $1
+  AND ($2::boolean IS NULL OR gt.watched = $2)
+  AND ($3::text[] IS NULL OR t.type = ANY($3::text[]))
+ORDER BY
+    CASE WHEN $4::text = 'watched'   AND NOT $5::bool THEN gt.watched END ASC,
+    CASE WHEN $4::text = 'watched'   AND $5::bool     THEN gt.watched END DESC,
+    CASE WHEN $4::text = 'watchedAt' AND NOT $5::bool THEN gt.watched_at END ASC NULLS LAST,
+    CASE WHEN $4::text = 'watchedAt' AND $5::bool     THEN gt.watched_at END DESC NULLS LAST,
+    CASE WHEN $4::text = 'addedAt'   AND NOT $5::bool THEN gt.added_at END ASC,
+    CASE WHEN $4::text = 'addedAt'   AND $5::bool     THEN gt.added_at END DESC,
+    CASE WHEN $4::text IN ('', 'primaryTitle') AND NOT $5::bool THEN t.primary_title END ASC,
+    CASE WHEN $4::text IN ('', 'primaryTitle') AND $5::bool     THEN t.primary_title END DESC,
+    CASE WHEN $4::text = 'imdbRating' AND NOT $5::bool THEN t.rating_aggregate END ASC,
+    CASE WHEN $4::text = 'imdbRating' AND $5::bool     THEN t.rating_aggregate END DESC,
+    CASE WHEN $4::text = 'startYear'  AND NOT $5::bool THEN t.start_year END ASC,
+    CASE WHEN $4::text = 'startYear'  AND $5::bool     THEN t.start_year END DESC,
+    CASE WHEN $4::text = 'type'       AND NOT $5::bool THEN t.type END ASC,
+    CASE WHEN $4::text = 'type'       AND $5::bool     THEN t.type END DESC,
+    CASE WHEN $4::text = 'voteCount'  AND NOT $5::bool THEN t.vote_count END ASC,
+    CASE WHEN $4::text = 'voteCount'  AND $5::bool     THEN t.vote_count END DESC,
+    CASE WHEN $4::text = 'updatedAt'  AND NOT $5::bool THEN t.updated_at END ASC,
+    CASE WHEN $4::text = 'updatedAt'  AND $5::bool     THEN t.updated_at END DESC,
+    t.id ASC
+LIMIT $7 OFFSET $6
+`
+
+type GetGroupTitlesPageParams struct {
+	GroupID    string
+	Watched    pgtype.Bool
+	TitleTypes []string
+	OrderBy    string
+	Descending bool
+	PageOffset int32
+	PageSize   int32
+}
+
+type GetGroupTitlesPageRow struct {
+	ID              string
+	PrimaryTitle    string
+	Type            string
+	StartYear       int32
+	RatingAggregate float64
+	VoteCount       int32
+	AddedAt         pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	Metadata        []byte
+	GtWatched       bool
+	GtWatchedAt     pgtype.Timestamptz
+	GtAddedAt       pgtype.Timestamptz
+	GtUpdatedAt     pgtype.Timestamptz
+	TotalCount      int64
+}
+
+// One-round-trip page of a group's titles: join, NULL-defaulted filters,
+// static total ORDER BY (CONVENTIONS §6 — every branch ends in t.id ASC),
+// and the post-filter total via a window function. order_by arrives
+// pre-normalized (the store method maps unknown keys to ”); watched_at is
+// NULLS LAST in both directions to match the Go comparator this replaces.
+// Title-side keys keep Postgres' default NULL placement (see GetTitlesPage).
+func (q *Queries) GetGroupTitlesPage(ctx context.Context, arg GetGroupTitlesPageParams) ([]GetGroupTitlesPageRow, error) {
+	rows, err := q.db.Query(ctx, getGroupTitlesPage,
+		arg.GroupID,
+		arg.Watched,
+		arg.TitleTypes,
+		arg.OrderBy,
+		arg.Descending,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetGroupTitlesPageRow
+	for rows.Next() {
+		var i GetGroupTitlesPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PrimaryTitle,
+			&i.Type,
+			&i.StartYear,
+			&i.RatingAggregate,
+			&i.VoteCount,
+			&i.AddedAt,
+			&i.UpdatedAt,
+			&i.Metadata,
+			&i.GtWatched,
+			&i.GtWatchedAt,
+			&i.GtAddedAt,
+			&i.GtUpdatedAt,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}

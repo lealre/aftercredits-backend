@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/lealre/movies-backend/internal/database"
 	"github.com/lealre/movies-backend/internal/generics"
@@ -472,6 +473,97 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, groupId, userId string)
 	}
 
 	return tx.Commit(ctx)
+}
+
+// groupTitlesOrderKeys is the sort-key whitelist for GetGroupTitlesPage.
+// Unknown keys normalize to "" (primary_title), keeping the requested
+// direction — the same fallback GetTitlesPage applies.
+var groupTitlesOrderKeys = map[string]bool{
+	"": true, "primaryTitle": true, "imdbRating": true, "startYear": true,
+	"type": true, "voteCount": true, "updatedAt": true,
+	"watched": true, "watchedAt": true, "addedAt": true,
+}
+
+// GetGroupTitlesPage returns one page of a group's titles — full title plus
+// this group's watch-state, seasons stitched in — with the post-filter total.
+// Filters are nil-defaulted; the ORDER BY is total (ends in t.id ASC).
+func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched *bool, titleTypes []string, orderBy string, ascending *bool, size, page int) ([]models.GroupPagedTitle, int64, error) {
+	if !groupTitlesOrderKeys[orderBy] {
+		orderBy = ""
+	}
+	descending := ascending != nil && !*ascending
+
+	var watchedArg pgtype.Bool
+	if watched != nil {
+		watchedArg = pgtype.Bool{Bool: *watched, Valid: true}
+	}
+
+	rows, err := s.q.GetGroupTitlesPage(ctx, database.GetGroupTitlesPageParams{
+		GroupID:    groupId,
+		Watched:    watchedArg,
+		TitleTypes: titleTypes, // nil slice -> SQL NULL -> filter off
+		OrderBy:    orderBy,
+		Descending: descending,
+		PageSize:   int32(size),
+		PageOffset: int32((page - 1) * size),
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(rows) == 0 {
+		// Empty result set and past-the-end page look identical here; the
+		// companion count keeps the total correct either way.
+		total, err := s.q.CountGroupTitles(ctx, database.CountGroupTitlesParams{
+			GroupID: groupId, Watched: watchedArg, TitleTypes: titleTypes,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		return []models.GroupPagedTitle{}, total, nil
+	}
+	total := rows[0].TotalCount
+
+	titleIds := make([]string, 0, len(rows))
+	for _, r := range rows {
+		titleIds = append(titleIds, r.ID)
+	}
+	seasonRows, err := s.q.GetGroupTitleSeasonRowsForTitles(ctx, database.GetGroupTitleSeasonRowsForTitlesParams{
+		GroupID: groupId, TitleIds: titleIds,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	seasonsByTitle := map[string][]database.GroupTitleSeason{}
+	for _, sr := range seasonRows {
+		seasonsByTitle[sr.TitleID] = append(seasonsByTitle[sr.TitleID], sr)
+	}
+
+	out := make([]models.GroupPagedTitle, 0, len(rows))
+	for _, r := range rows {
+		title, err := rowToTitle(database.Title{
+			ID: r.ID, PrimaryTitle: r.PrimaryTitle, Type: r.Type,
+			StartYear: r.StartYear, RatingAggregate: r.RatingAggregate,
+			VoteCount: r.VoteCount, AddedAt: r.AddedAt, UpdatedAt: r.UpdatedAt,
+			Metadata: r.Metadata,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, models.GroupPagedTitle{
+			Title: title,
+			Item: models.GroupTitleItem{
+				TitleId:        r.ID,
+				TitleType:      title.Type,
+				SeasonsWatched: assembleSeasonsWatched(seasonsByTitle[r.ID]),
+				Watched:        r.GtWatched,
+				AddedAt:        r.GtAddedAt.Time,
+				UpdatedAt:      r.GtUpdatedAt.Time,
+				WatchedAt:      timestamptzToPtr(r.GtWatchedAt),
+			},
+		})
+	}
+	return out, total, nil
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its

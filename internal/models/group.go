@@ -42,3 +42,10 @@ type SeasonWatchedItem struct {
 	AddedAt   time.Time
 	UpdatedAt time.Time
 }
+
+// GroupPagedTitle is one row of a group's paged titles listing: the full
+// title plus this group's watch-state for it (seasons included).
+type GroupPagedTitle struct {
+	Title Title
+	Item  GroupTitleItem
+}

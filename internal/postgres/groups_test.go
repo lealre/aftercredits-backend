@@ -2,12 +2,14 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lealre/movies-backend/internal/database"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/store"
@@ -41,6 +43,53 @@ func flexDate(tm time.Time) *generics.FlexibleDate {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// addGroupTitleRow upserts a group_titles row via the generated query
+// directly, bypassing the store's higher-level helpers (AddNewGroupTitle
+// always creates a movie with watched=false and stamps "now") so tests can
+// pin every column GetGroupTitlesPage filters or sorts on — title_type,
+// watched, watchedAt (nil allowed), addedAt, updatedAt — independently.
+func addGroupTitleRow(t *testing.T, s *Store, groupId, titleId, titleType string, watched bool, watchedAt *time.Time, addedAt, updatedAt time.Time) {
+	t.Helper()
+	_, err := s.q.UpsertGroupTitle(context.Background(), database.UpsertGroupTitleParams{
+		GroupID:   groupId,
+		TitleID:   titleId,
+		TitleType: titleType,
+		Watched:   watched,
+		WatchedAt: ptrToTimestamptz(watchedAt),
+		AddedAt:   timeToTimestamptz(addedAt),
+		UpdatedAt: timeToTimestamptz(updatedAt),
+	})
+	require.NoError(t, err)
+}
+
+// addGroupTitleSeasonRow upserts a group_title_seasons row directly. Its
+// parent group_titles row (via addGroupTitleRow) must already exist — the
+// schema's FK requires it.
+func addGroupTitleSeasonRow(t *testing.T, s *Store, groupId, titleId, season string, watched bool, watchedAt *time.Time, addedAt, updatedAt time.Time) {
+	t.Helper()
+	_, err := s.q.UpsertGroupTitleSeason(context.Background(), database.UpsertGroupTitleSeasonParams{
+		GroupID:   groupId,
+		TitleID:   titleId,
+		Season:    season,
+		Watched:   watched,
+		WatchedAt: ptrToTimestamptz(watchedAt),
+		AddedAt:   timeToTimestamptz(addedAt),
+		UpdatedAt: timeToTimestamptz(updatedAt),
+	})
+	require.NoError(t, err)
+}
+
+// addTestTitleWithType builds and inserts a minimal movie title (via
+// newTestMovieTitle) with its type overridden, for titleTypes-filter and
+// type-sort tests.
+func addTestTitleWithType(t *testing.T, s *Store, id, primaryTitle, titleType string) models.Title {
+	t.Helper()
+	title := newTestMovieTitle(t, id, primaryTitle, 5.0)
+	title.Type = titleType
+	require.NoError(t, s.AddTitle(context.Background(), title))
+	return title
+}
 
 func TestStore_CreateGroup_GetGroupById(t *testing.T) {
 	resetDB(t)
@@ -425,4 +474,463 @@ func TestStore_GroupExists(t *testing.T) {
 	ok, err = s.GroupExists(ctx, created.Id, owner)
 	require.NoError(t, err)
 	require.False(t, ok, "a soft-deleted group must not exist")
+}
+
+func TestStore_GetGroupTitlesPage(t *testing.T) {
+	t.Run("happy path: no filters, default order is alphabetical by primary_title; total equals group size", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "happy", owner))
+		require.NoError(t, err)
+
+		bravo := newTestMovieTitle(t, "tt-happy-bravo", "Bravo", 5.0)
+		alpha := newTestMovieTitle(t, "tt-happy-alpha", "Alpha", 6.0)
+		charlie := newTestMovieTitle(t, "tt-happy-charlie", "Charlie", 7.0)
+		for _, ti := range []models.Title{bravo, alpha, charlie} {
+			require.NoError(t, s.AddTitle(ctx, ti))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, ti.ID))
+		}
+
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 3, total, "the window-function total must be present and correct on a full page")
+		require.Len(t, got, 3)
+		require.Equal(t, []string{"Alpha", "Bravo", "Charlie"},
+			[]string{got[0].Title.PrimaryTitle, got[1].Title.PrimaryTitle, got[2].Title.PrimaryTitle})
+		// Every row carries the full title plus the group's item for it.
+		require.Equal(t, alpha.ID, got[0].Title.ID)
+		require.Equal(t, alpha.ID, got[0].Item.TitleId)
+	})
+
+	t.Run("watched filter (true and false)", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "watched-filter", owner))
+		require.NoError(t, err)
+
+		watchedTitle := newTestMovieTitle(t, "tt-watched", "Watched One", 5.0)
+		unwatchedTitle := newTestMovieTitle(t, "tt-unwatched", "Unwatched One", 5.0)
+		require.NoError(t, s.AddTitle(ctx, watchedTitle))
+		require.NoError(t, s.AddTitle(ctx, unwatchedTitle))
+
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, watchedTitle.ID, "movie", true, &now, now, now)
+		addGroupTitleRow(t, s, group.Id, unwatchedTitle.ID, "movie", false, nil, now, now)
+
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, boolPtr(true), nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, total)
+		require.Len(t, got, 1)
+		require.Equal(t, watchedTitle.ID, got[0].Title.ID)
+		require.True(t, got[0].Item.Watched)
+
+		got, total, err = s.GetGroupTitlesPage(ctx, group.Id, boolPtr(false), nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, total)
+		require.Len(t, got, 1)
+		require.Equal(t, unwatchedTitle.ID, got[0].Title.ID)
+		require.False(t, got[0].Item.Watched)
+	})
+
+	t.Run("titleTypes filter (single and multi-element)", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "types", owner))
+		require.NoError(t, err)
+
+		movie := addTestTitleWithType(t, s, "tt-type-movie", "A Movie", "movie")
+		series := addTestTitleWithType(t, s, "tt-type-series", "A Series", "tvSeries")
+		short := addTestTitleWithType(t, s, "tt-type-short", "A Short", "short")
+
+		now := time.Now().UTC().Truncate(time.Second)
+		for _, ti := range []models.Title{movie, series, short} {
+			addGroupTitleRow(t, s, group.Id, ti.ID, ti.Type, false, nil, now, now)
+		}
+
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, []string{"movie"}, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, total)
+		require.Len(t, got, 1)
+		require.Equal(t, movie.ID, got[0].Title.ID)
+
+		got, total, err = s.GetGroupTitlesPage(ctx, group.Id, nil, []string{"movie", "tvSeries"}, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, total)
+		require.Len(t, got, 2)
+		require.ElementsMatch(t, []string{movie.ID, series.ID}, []string{got[0].Title.ID, got[1].Title.ID})
+	})
+
+	t.Run("watched and titleTypes filters combined", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "combined", owner))
+		require.NoError(t, err)
+
+		movieWatched := addTestTitleWithType(t, s, "tt-c-movie-w", "Movie Watched", "movie")
+		movieUnwatched := addTestTitleWithType(t, s, "tt-c-movie-u", "Movie Unwatched", "movie")
+		seriesWatched := addTestTitleWithType(t, s, "tt-c-series-w", "Series Watched", "tvSeries")
+
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, movieWatched.ID, "movie", true, &now, now, now)
+		addGroupTitleRow(t, s, group.Id, movieUnwatched.ID, "movie", false, nil, now, now)
+		addGroupTitleRow(t, s, group.Id, seriesWatched.ID, "tvSeries", true, &now, now, now)
+
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, boolPtr(true), []string{"movie"}, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, total)
+		require.Len(t, got, 1)
+		require.Equal(t, movieWatched.ID, got[0].Title.ID)
+	})
+
+	t.Run("sort by imdbRating ascending", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "rating-sort", owner))
+		require.NoError(t, err)
+
+		// ids are deliberately reversed relative to the expected rating order,
+		// so a correct result can only come from sorting by rating_aggregate,
+		// never by falling back to the id tie-break.
+		low := newTestMovieTitle(t, "tt-z-low-rating", "Z Low", 3.0)
+		high := newTestMovieTitle(t, "tt-a-high-rating", "A High", 9.0)
+		require.NoError(t, s.AddTitle(ctx, low))
+		require.NoError(t, s.AddTitle(ctx, high))
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, low.ID, "movie", false, nil, now, now)
+		addGroupTitleRow(t, s, group.Id, high.ID, "movie", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "imdbRating", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{low.ID, high.ID}, []string{got[0].Title.ID, got[1].Title.ID})
+	})
+
+	t.Run("sort by startYear ascending", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "year-sort", owner))
+		require.NoError(t, err)
+
+		early := newTestMovieTitle(t, "tt-z-early-year", "Z Early", 5.0)
+		early.StartYear = 1990
+		late := newTestMovieTitle(t, "tt-a-late-year", "A Late", 5.0)
+		late.StartYear = 2020
+		require.NoError(t, s.AddTitle(ctx, early))
+		require.NoError(t, s.AddTitle(ctx, late))
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, early.ID, "movie", false, nil, now, now)
+		addGroupTitleRow(t, s, group.Id, late.ID, "movie", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "startYear", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{early.ID, late.ID}, []string{got[0].Title.ID, got[1].Title.ID})
+	})
+
+	t.Run("sort by type ascending", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "type-sort", owner))
+		require.NoError(t, err)
+
+		movieT := addTestTitleWithType(t, s, "tt-z-movie-type", "Z Movie", "movie")
+		seriesT := addTestTitleWithType(t, s, "tt-a-series-type", "A Series", "tvSeries")
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, movieT.ID, "movie", false, nil, now, now)
+		addGroupTitleRow(t, s, group.Id, seriesT.ID, "tvSeries", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "type", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{movieT.ID, seriesT.ID}, []string{got[0].Title.ID, got[1].Title.ID},
+			`"movie" sorts before "tvSeries" lexically`)
+	})
+
+	t.Run("sort by voteCount ascending", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "votecount-sort", owner))
+		require.NoError(t, err)
+
+		few := newTestMovieTitle(t, "tt-z-few-votes", "Z Few", 5.0)
+		few.Rating.VoteCount = 10
+		many := newTestMovieTitle(t, "tt-a-many-votes", "A Many", 5.0)
+		many.Rating.VoteCount = 100000
+		require.NoError(t, s.AddTitle(ctx, few))
+		require.NoError(t, s.AddTitle(ctx, many))
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, few.ID, "movie", false, nil, now, now)
+		addGroupTitleRow(t, s, group.Id, many.ID, "movie", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "voteCount", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{few.ID, many.ID}, []string{got[0].Title.ID, got[1].Title.ID})
+	})
+
+	t.Run("sort by updatedAt descending keeps titles' default NULL placement (NULLS FIRST)", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "updatedat-sort", owner))
+		require.NoError(t, err)
+
+		dated := newTestMovieTitle(t, "tt-dated-updated", "Dated", 5.0) // UpdatedAt = now, set by the fixture.
+		nullUpdated := newTestMovieTitle(t, "tt-null-updated", "NullUpdated", 5.0)
+		nullUpdated.UpdatedAt = nil
+		require.NoError(t, s.AddTitle(ctx, dated))
+		require.NoError(t, s.AddTitle(ctx, nullUpdated))
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, dated.ID, "movie", false, nil, now, now)
+		addGroupTitleRow(t, s, group.Id, nullUpdated.ID, "movie", false, nil, now, now)
+
+		descending := false // ascending=false means descending, per the store's contract
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "updatedAt", &descending, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{nullUpdated.ID, dated.ID}, []string{got[0].Title.ID, got[1].Title.ID},
+			"unlike watchedAt, updatedAt carries no explicit NULLS clause, so Postgres' DESC default (NULLS FIRST) decides")
+	})
+
+	t.Run("sort by addedAt ascending", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "addedat-sort", owner))
+		require.NoError(t, err)
+
+		older := newTestMovieTitle(t, "tt-z-older-added", "Z Older", 5.0)
+		newer := newTestMovieTitle(t, "tt-a-newer-added", "A Newer", 5.0)
+		require.NoError(t, s.AddTitle(ctx, older))
+		require.NoError(t, s.AddTitle(ctx, newer))
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, older.ID, "movie", false, nil, now.Add(-48*time.Hour), now)
+		addGroupTitleRow(t, s, group.Id, newer.ID, "movie", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "addedAt", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{older.ID, newer.ID}, []string{got[0].Title.ID, got[1].Title.ID})
+	})
+
+	t.Run("sort by watched, both directions", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "watched-sort", owner))
+		require.NoError(t, err)
+
+		watchedTitle := newTestMovieTitle(t, "tt-z-watched-sort", "Z Watched", 5.0)
+		unwatchedTitle := newTestMovieTitle(t, "tt-a-unwatched-sort", "A Unwatched", 5.0)
+		require.NoError(t, s.AddTitle(ctx, watchedTitle))
+		require.NoError(t, s.AddTitle(ctx, unwatchedTitle))
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, watchedTitle.ID, "movie", true, &now, now, now)
+		addGroupTitleRow(t, s, group.Id, unwatchedTitle.ID, "movie", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "watched", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{unwatchedTitle.ID, watchedTitle.ID}, []string{got[0].Title.ID, got[1].Title.ID},
+			"ascending: false sorts before true")
+
+		descending := false // ascending=false means descending, per the store's contract
+		got, _, err = s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "watched", &descending, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{watchedTitle.ID, unwatchedTitle.ID}, []string{got[0].Title.ID, got[1].Title.ID},
+			"descending: true sorts before false")
+	})
+
+	t.Run("sort by watchedAt, both directions, nil watchedAt lands last either way", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "watchedat-sort", owner))
+		require.NoError(t, err)
+
+		earlyWatched := newTestMovieTitle(t, "tt-early-watched", "Early Watched", 5.0)
+		lateWatched := newTestMovieTitle(t, "tt-late-watched", "Late Watched", 5.0)
+		neverWatched := newTestMovieTitle(t, "tt-never-watched", "Never Watched", 5.0)
+		for _, ti := range []models.Title{earlyWatched, lateWatched, neverWatched} {
+			require.NoError(t, s.AddTitle(ctx, ti))
+		}
+
+		now := time.Now().UTC().Truncate(time.Second)
+		early := now.Add(-48 * time.Hour)
+		late := now
+		addGroupTitleRow(t, s, group.Id, earlyWatched.ID, "movie", true, &early, now, now)
+		addGroupTitleRow(t, s, group.Id, lateWatched.ID, "movie", true, &late, now, now)
+		addGroupTitleRow(t, s, group.Id, neverWatched.ID, "movie", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "watchedAt", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{earlyWatched.ID, lateWatched.ID, neverWatched.ID},
+			[]string{got[0].Title.ID, got[1].Title.ID, got[2].Title.ID},
+			"ascending: earliest watchedAt first, nil last")
+
+		descending := false // ascending=false means descending, per the store's contract
+		got, _, err = s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "watchedAt", &descending, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []string{lateWatched.ID, earlyWatched.ID, neverWatched.ID},
+			[]string{got[0].Title.ID, got[1].Title.ID, got[2].Title.ID},
+			"descending: latest watchedAt first, nil still last")
+	})
+
+	t.Run("unknown orderBy falls back to primaryTitle, keeping the requested direction", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "fallback", owner))
+		require.NoError(t, err)
+
+		alpha := newTestMovieTitle(t, "tt-fb-alpha", "Alpha", 5.0)
+		bravo := newTestMovieTitle(t, "tt-fb-bravo", "Bravo", 5.0)
+		charlie := newTestMovieTitle(t, "tt-fb-charlie", "Charlie", 5.0)
+		for _, ti := range []models.Title{alpha, bravo, charlie} {
+			require.NoError(t, s.AddTitle(ctx, ti))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, ti.ID))
+		}
+
+		descending := false // ascending=false means descending, per the store's contract
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "garbage", &descending, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 3, total)
+		require.Equal(t, []string{"Charlie", "Bravo", "Alpha"},
+			[]string{got[0].Title.PrimaryTitle, got[1].Title.PrimaryTitle, got[2].Title.PrimaryTitle})
+	})
+
+	t.Run("pagination partitions exactly; an out-of-range page returns empty content with the correct total", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "paging", owner))
+		require.NoError(t, err)
+
+		names := []string{"Alpha", "Bravo", "Charlie", "Delta", "Echo"}
+		for i, name := range names {
+			title := newTestMovieTitle(t, fmt.Sprintf("tt-page-%d", i), name, 5.0)
+			require.NoError(t, s.AddTitle(ctx, title))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+		}
+
+		var got []string
+		for page := 1; page <= 3; page++ {
+			titles, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 2, page)
+			require.NoError(t, err)
+			require.EqualValues(t, 5, total, "the total must not move while paging")
+			for _, ti := range titles {
+				got = append(got, ti.Title.PrimaryTitle)
+			}
+		}
+		require.Equal(t, names, got, "pages must partition the sorted set exactly, with no duplicate or skipped row")
+
+		empty, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 2, 4)
+		require.NoError(t, err)
+		require.Empty(t, empty)
+		require.EqualValues(t, 5, total, "an out-of-range page must still report the correct total")
+	})
+
+	t.Run("a group_titles row with no matching titles row is invisible to content and total", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "orphan", owner))
+		require.NoError(t, err)
+
+		present := newTestMovieTitle(t, "tt-present", "Present", 5.0)
+		require.NoError(t, s.AddTitle(ctx, present))
+		require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, present.ID))
+
+		// group_titles.title_id carries no FK to titles, so this row can exist
+		// with no backing titles row. The INNER JOIN in GetGroupTitlesPage must
+		// hide it from both content and total.
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, "tt-missing-title", "movie", false, nil, now, now)
+
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, total)
+		require.Len(t, got, 1)
+		require.Equal(t, present.ID, got[0].Title.ID)
+	})
+
+	t.Run("seasons stitching: a series gets non-nil SeasonsWatched, a movie gets nil", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "seasons", owner))
+		require.NoError(t, err)
+
+		series := newTestMovieTitle(t, "tt-series-seasons", "A Series", 5.0)
+		series.Type = "tvSeries"
+		movie := newTestMovieTitle(t, "tt-movie-seasons", "A Movie", 5.0)
+		require.NoError(t, s.AddTitle(ctx, series))
+		require.NoError(t, s.AddTitle(ctx, movie))
+
+		now := time.Now().UTC().Truncate(time.Second)
+		addGroupTitleRow(t, s, group.Id, series.ID, "tvSeries", true, &now, now, now)
+		addGroupTitleRow(t, s, group.Id, movie.ID, "movie", false, nil, now, now)
+		addGroupTitleSeasonRow(t, s, group.Id, series.ID, "1", true, &now, now, now)
+		addGroupTitleSeasonRow(t, s, group.Id, series.ID, "2", false, nil, now, now)
+
+		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+
+		byID := make(map[string]models.GroupPagedTitle, len(got))
+		for _, item := range got {
+			byID[item.Title.ID] = item
+		}
+		require.NotNil(t, byID[series.ID].Item.SeasonsWatched)
+		require.Len(t, *byID[series.ID].Item.SeasonsWatched, 2)
+		require.Nil(t, byID[movie.ID].Item.SeasonsWatched)
+	})
+
+	t.Run("empty group returns an empty slice and total 0", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		owner := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "empty", owner))
+		require.NoError(t, err)
+
+		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.Equal(t, []models.GroupPagedTitle{}, got)
+		require.EqualValues(t, 0, total)
+	})
 }

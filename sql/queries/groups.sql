@@ -99,3 +99,58 @@ SELECT * FROM group_title_seasons WHERE group_id = $1 AND title_id = $2 ORDER BY
 -- Test-only read: fetches a group row by id regardless of deleted state or
 -- membership (the store's readers filter both out).
 SELECT * FROM groups WHERE id = $1;
+
+-- name: GetGroupTitlesPage :many
+-- One-round-trip page of a group's titles: join, NULL-defaulted filters,
+-- static total ORDER BY (CONVENTIONS §6 — every branch ends in t.id ASC),
+-- and the post-filter total via a window function. order_by arrives
+-- pre-normalized (the store method maps unknown keys to ''); watched_at is
+-- NULLS LAST in both directions to match the Go comparator this replaces.
+-- Title-side keys keep Postgres' default NULL placement (see GetTitlesPage).
+SELECT
+    t.id, t.primary_title, t.type, t.start_year, t.rating_aggregate,
+    t.vote_count, t.added_at, t.updated_at, t.metadata,
+    gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
+    gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
+    count(*) OVER () AS total_count
+FROM group_titles gt
+JOIN titles t ON t.id = gt.title_id
+WHERE gt.group_id = sqlc.arg('group_id')
+  AND (sqlc.narg('watched')::boolean IS NULL OR gt.watched = sqlc.narg('watched'))
+  AND (sqlc.narg('title_types')::text[] IS NULL OR t.type = ANY(sqlc.narg('title_types')::text[]))
+ORDER BY
+    CASE WHEN sqlc.arg('order_by')::text = 'watched'   AND NOT sqlc.arg('descending')::bool THEN gt.watched END ASC,
+    CASE WHEN sqlc.arg('order_by')::text = 'watched'   AND sqlc.arg('descending')::bool     THEN gt.watched END DESC,
+    CASE WHEN sqlc.arg('order_by')::text = 'watchedAt' AND NOT sqlc.arg('descending')::bool THEN gt.watched_at END ASC NULLS LAST,
+    CASE WHEN sqlc.arg('order_by')::text = 'watchedAt' AND sqlc.arg('descending')::bool     THEN gt.watched_at END DESC NULLS LAST,
+    CASE WHEN sqlc.arg('order_by')::text = 'addedAt'   AND NOT sqlc.arg('descending')::bool THEN gt.added_at END ASC,
+    CASE WHEN sqlc.arg('order_by')::text = 'addedAt'   AND sqlc.arg('descending')::bool     THEN gt.added_at END DESC,
+    CASE WHEN sqlc.arg('order_by')::text IN ('', 'primaryTitle') AND NOT sqlc.arg('descending')::bool THEN t.primary_title END ASC,
+    CASE WHEN sqlc.arg('order_by')::text IN ('', 'primaryTitle') AND sqlc.arg('descending')::bool     THEN t.primary_title END DESC,
+    CASE WHEN sqlc.arg('order_by')::text = 'imdbRating' AND NOT sqlc.arg('descending')::bool THEN t.rating_aggregate END ASC,
+    CASE WHEN sqlc.arg('order_by')::text = 'imdbRating' AND sqlc.arg('descending')::bool     THEN t.rating_aggregate END DESC,
+    CASE WHEN sqlc.arg('order_by')::text = 'startYear'  AND NOT sqlc.arg('descending')::bool THEN t.start_year END ASC,
+    CASE WHEN sqlc.arg('order_by')::text = 'startYear'  AND sqlc.arg('descending')::bool     THEN t.start_year END DESC,
+    CASE WHEN sqlc.arg('order_by')::text = 'type'       AND NOT sqlc.arg('descending')::bool THEN t.type END ASC,
+    CASE WHEN sqlc.arg('order_by')::text = 'type'       AND sqlc.arg('descending')::bool     THEN t.type END DESC,
+    CASE WHEN sqlc.arg('order_by')::text = 'voteCount'  AND NOT sqlc.arg('descending')::bool THEN t.vote_count END ASC,
+    CASE WHEN sqlc.arg('order_by')::text = 'voteCount'  AND sqlc.arg('descending')::bool     THEN t.vote_count END DESC,
+    CASE WHEN sqlc.arg('order_by')::text = 'updatedAt'  AND NOT sqlc.arg('descending')::bool THEN t.updated_at END ASC,
+    CASE WHEN sqlc.arg('order_by')::text = 'updatedAt'  AND sqlc.arg('descending')::bool     THEN t.updated_at END DESC,
+    t.id ASC
+LIMIT sqlc.arg('page_size') OFFSET sqlc.arg('page_offset');
+
+-- name: CountGroupTitles :one
+-- Companion to GetGroupTitlesPage: the window-function total disappears when
+-- an out-of-range page returns zero rows, so the store method falls back to
+-- this (same WHERE) only in that case. Hot path stays one round trip.
+SELECT count(*) FROM group_titles gt
+JOIN titles t ON t.id = gt.title_id
+WHERE gt.group_id = sqlc.arg('group_id')
+  AND (sqlc.narg('watched')::boolean IS NULL OR gt.watched = sqlc.narg('watched'))
+  AND (sqlc.narg('title_types')::text[] IS NULL OR t.type = ANY(sqlc.narg('title_types')::text[]));
+
+-- name: GetGroupTitleSeasonRowsForTitles :many
+SELECT * FROM group_title_seasons
+WHERE group_id = sqlc.arg('group_id') AND title_id = ANY(sqlc.arg('title_ids')::text[])
+ORDER BY title_id, season;
