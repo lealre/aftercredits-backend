@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,38 @@ func seedTitles(t *testing.T, titles []models.Title) {
 		if err := testStore.AddTitle(ctx, tt); err != nil {
 			t.Fatalf("failed to insert seed title %s: %v", tt.ID, err)
 		}
+	}
+}
+
+// newSortableMovieTitle builds a minimal, valid movie title whose sort columns
+// (primary_title, start_year, rating_aggregate, vote_count, updated_at) are all
+// caller-controlled, so a test can deliberately create ties on any of them. The
+// id must be IMDb-shaped ("tt" + digits) because the add-title-to-group
+// endpoint parses it out of an IMDb URL.
+//
+// updatedAt is a pointer on purpose: updated_at is the one nullable column in
+// the sort whitelist, and NULL rows tie with each other just like equal values
+// do.
+func newSortableMovieTitle(
+	id, primaryTitle string,
+	startYear int,
+	rating float64,
+	voteCount int,
+	updatedAt *time.Time,
+) models.Title {
+	addedAt := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	return models.Title{
+		ID:             id,
+		Type:           "movie",
+		PrimaryTitle:   primaryTitle,
+		PrimaryImage:   models.Image{URL: "https://example.com/" + id + ".jpg", Width: 100, Height: 150},
+		StartYear:      startYear,
+		RuntimeSeconds: 7200,
+		Genres:         []string{"Drama"},
+		Rating:         models.Rating{AggregateRating: rating, VoteCount: voteCount},
+		Plot:           "plot for " + id,
+		AddedAt:        &addedAt,
+		UpdatedAt:      updatedAt,
 	}
 }
 
@@ -67,7 +100,7 @@ func loadTVSeriesTitlesFixture(t *testing.T) []models.Title {
 }
 
 func getTitles(t *testing.T) []models.Title {
-	titles, _, err := testStore.GetTitlesPage(context.Background(), nil, "", nil, 1000, 1)
+	titles, _, err := testStore.GetTitlesPage(context.Background(), "", nil, 1000, 1)
 	require.NoError(t, err, "error querying titles from db")
 	return titles
 }

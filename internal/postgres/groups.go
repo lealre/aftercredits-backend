@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/lealre/movies-backend/internal/database"
 	"github.com/lealre/movies-backend/internal/generics"
@@ -206,7 +207,6 @@ func (s *Store) AddNewGroupTitle(ctx context.Context, groupId string, titleId st
 	if _, err := qtx.UpsertGroupTitle(ctx, database.UpsertGroupTitleParams{
 		GroupID:   groupId,
 		TitleID:   titleId,
-		TitleType: "movie",
 		Watched:   false,
 		WatchedAt: ptrToTimestamptz(nil),
 		AddedAt:   now,
@@ -472,6 +472,151 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, groupId, userId string)
 	}
 
 	return tx.Commit(ctx)
+}
+
+// groupTitlesOrderKeys is the sort-key whitelist for GetGroupTitlesPage.
+// Unknown keys normalize to "" (primary_title), keeping the requested
+// direction — the same fallback GetTitlesPage applies.
+var groupTitlesOrderKeys = map[string]bool{
+	"": true, "primaryTitle": true, "imdbRating": true, "startYear": true,
+	"type": true, "voteCount": true, "updatedAt": true,
+	"watched": true, "watchedAt": true, "addedAt": true,
+}
+
+// GroupHasTitleEntries reports whether the group holds any title entry
+// matching the same filters GetGroupTitlesPage applies, counting entries whose
+// title is no longer in the catalogue (GetGroupTitlesPage's INNER JOIN hides
+// those, so its total alone cannot tell an empty group from a fully orphaned
+// one). See the query comment in sql/queries/groups.sql for why the join side
+// is a LEFT JOIN and what the caller does with the answer.
+func (s *Store) GroupHasTitleEntries(ctx context.Context, groupId string, watched *bool, titleTypes []string) (bool, error) {
+	var watchedArg pgtype.Bool
+	if watched != nil {
+		watchedArg = pgtype.Bool{Bool: *watched, Valid: true}
+	}
+	return s.q.GroupHasTitleEntries(ctx, database.GroupHasTitleEntriesParams{
+		GroupID:    groupId,
+		Watched:    watchedArg,
+		TitleTypes: titleTypes, // nil slice -> SQL NULL -> filter off
+	})
+}
+
+// GetGroupTitlesPage returns one page of a group's titles — full title plus
+// this group's watch-state, seasons stitched in — with the post-filter total.
+// Filters are nil-defaulted; the ORDER BY is total (ends in t.id ASC).
+func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched *bool, titleTypes []string, orderBy string, ascending *bool, size, page int) ([]models.GroupPagedTitle, int64, error) {
+	if !groupTitlesOrderKeys[orderBy] {
+		orderBy = ""
+	}
+	descending := ascending != nil && !*ascending
+
+	var watchedArg pgtype.Bool
+	if watched != nil {
+		watchedArg = pgtype.Bool{Bool: *watched, Valid: true}
+	}
+
+	// Whenever no row can be returned, the window-function total goes with
+	// them, so the total has to come from the companion count over the same
+	// WHERE. Every such exit uses this.
+	emptyPage := func() ([]models.GroupPagedTitle, int64, error) {
+		total, err := s.q.CountGroupTitles(ctx, database.CountGroupTitlesParams{
+			GroupID: groupId, Watched: watchedArg, TitleTypes: titleTypes,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		return []models.GroupPagedTitle{}, total, nil
+	}
+
+	// A non-positive size or an offset that would overflow int64 selects no
+	// row at all (see pageOffset): same fallback as a past-the-end page takes
+	// below — an empty page with the correct total, never an error.
+	offset, ok := pageOffset(size, page)
+	if !ok {
+		return emptyPage()
+	}
+
+	rows, err := s.q.GetGroupTitlesPage(ctx, database.GetGroupTitlesPageParams{
+		GroupID:    groupId,
+		Watched:    watchedArg,
+		TitleTypes: titleTypes, // nil slice -> SQL NULL -> filter off
+		OrderBy:    orderBy,
+		Descending: descending,
+		PageSize:   int64(size),
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(rows) == 0 {
+		// Empty result set and past-the-end page look identical here; the
+		// companion count keeps the total correct either way.
+		return emptyPage()
+	}
+	total := rows[0].TotalCount
+
+	// group_title_seasons rows are only ever written for a TV series — the
+	// season watched-update refuses any other title type — so a page holding
+	// no series cannot have any, and asking for them is a round trip whose
+	// answer is known to be empty. The page rows already carry the type, so
+	// the decision costs nothing.
+	//
+	// Leaving seasonsByTitle nil in that case is deliberate and safe:
+	// indexing a nil map yields the nil slice, which assembleSeasonsWatched
+	// maps to a nil SeasonsWatched — exactly the "no season rows" shape the
+	// contract requires (CONVENTIONS §5: the season maps are nil when absent,
+	// never an empty map), and the same value the query would have produced.
+	hasSeries := false
+	for _, r := range rows {
+		if models.IsSeriesTitleType(r.Type) {
+			hasSeries = true
+			break
+		}
+	}
+
+	var seasonsByTitle map[string][]database.GroupTitleSeason
+	if hasSeries {
+		titleIds := make([]string, 0, len(rows))
+		for _, r := range rows {
+			titleIds = append(titleIds, r.ID)
+		}
+		seasonRows, err := s.q.GetGroupTitleSeasonRowsForTitles(ctx, database.GetGroupTitleSeasonRowsForTitlesParams{
+			GroupID: groupId, TitleIds: titleIds,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		seasonsByTitle = make(map[string][]database.GroupTitleSeason, len(seasonRows))
+		for _, sr := range seasonRows {
+			seasonsByTitle[sr.TitleID] = append(seasonsByTitle[sr.TitleID], sr)
+		}
+	}
+
+	out := make([]models.GroupPagedTitle, 0, len(rows))
+	for _, r := range rows {
+		title, err := rowToTitle(database.Title{
+			ID: r.ID, PrimaryTitle: r.PrimaryTitle, Type: r.Type,
+			StartYear: r.StartYear, RatingAggregate: r.RatingAggregate,
+			VoteCount: r.VoteCount, AddedAt: r.AddedAt, UpdatedAt: r.UpdatedAt,
+			Metadata: r.Metadata,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, models.GroupPagedTitle{
+			Title: title,
+			Item: models.GroupTitleItem{
+				TitleId:        r.ID,
+				SeasonsWatched: assembleSeasonsWatched(seasonsByTitle[r.ID]),
+				Watched:        r.GtWatched,
+				AddedAt:        r.GtAddedAt.Time,
+				UpdatedAt:      r.GtUpdatedAt.Time,
+				WatchedAt:      timestamptzToPtr(r.GtWatchedAt),
+			},
+		})
+	}
+	return out, total, nil
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its

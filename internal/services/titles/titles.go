@@ -12,43 +12,25 @@ import (
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
 
-/*
-This can filter by the native titles fields from titles Ids or by the group fields sorting.
-
-IMPORTANT: Using this method with titleIds set to nil is specifically intended to return all
-titles from the titles collection, for use in the admin scenario.
-
-🟦 CASE 1: Filter by the fields in group titles, by preserving the order in titleIds list
-  - watched
-  - watchedAt
-  - addedAt
-
-🟩 CASE 2: Filter by the native titles collection fields
-*/
+// GetPageOfTitles returns a page of titles from the native titles
+// collection, sorted by orderByField/ascending. Used by the admin titles
+// listing, which pages over every title (there is no filtering).
 func GetPageOfTitles(
 	db store.Store,
 	ctx context.Context,
 	size, page int,
 	orderByField string,
 	ascending *bool,
-	titleIds []string,
 ) (generics.Page[Title], error) {
 
 	// App-level pagination normalization - stays in the service, it has
-	// nothing to do with the storage backend.
-	if size <= 0 {
-		size = config.DefaultPageSize()
-	}
-	if maxSize := config.MaxPageSize(); size > maxSize {
-		size = maxSize
-	}
-	if page <= 0 {
-		page = 1
-	}
+	// nothing to do with the storage backend. Shared with the group-titles
+	// listing so the two cannot drift.
+	size, page = config.NormalizePageParams(size, page)
 
 	// Everything storage-specific (filter/pipeline construction, the two
 	// sort strategies, and the orderBy field remapping) lives in the store.
-	titlesModel, totalResults, err := db.GetTitlesPage(ctx, titleIds, orderByField, ascending, size, page)
+	titlesModel, totalResults, err := db.GetTitlesPage(ctx, orderByField, ascending, size, page)
 	if err != nil {
 		return generics.Page[Title]{}, err
 	}

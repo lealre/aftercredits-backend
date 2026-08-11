@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -224,30 +226,6 @@ func TestStore_TitleExists(t *testing.T) {
 	require.True(t, exists)
 }
 
-func TestStore_GetTitleTypes(t *testing.T) {
-	resetDB(t)
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	movie := newTestMovieTitle(t, "tt-movie", "A Movie", 7.5)
-	movie.Type = "movie"
-	series := newTestMovieTitle(t, "tt-series", "A Series", 8.0)
-	series.Type = "tvSeries"
-	require.NoError(t, s.AddTitle(ctx, movie))
-	require.NoError(t, s.AddTitle(ctx, series))
-
-	types, err := s.GetTitleTypes(ctx, []string{movie.ID, series.ID, "missing-id"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{
-		movie.ID:  "movie",
-		series.ID: "tvSeries",
-	}, types)
-
-	empty, err := s.GetTitleTypes(ctx, nil)
-	require.NoError(t, err)
-	require.Empty(t, empty)
-}
-
 func TestStore_GetTitlesPage(t *testing.T) {
 	t.Run("sorted by primary_title ascending with pagination", func(t *testing.T) {
 		resetDB(t)
@@ -262,13 +240,13 @@ func TestStore_GetTitlesPage(t *testing.T) {
 			require.NoError(t, s.AddTitle(ctx, ti))
 		}
 
-		page1, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", nil, 2, 1)
+		page1, total, err := s.GetTitlesPage(ctx, "primaryTitle", nil, 2, 1)
 		require.NoError(t, err)
 		require.EqualValues(t, 3, total)
 		require.Len(t, page1, 2)
 		require.Equal(t, []string{"Alpha", "Bravo"}, []string{page1[0].PrimaryTitle, page1[1].PrimaryTitle})
 
-		page2, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", nil, 2, 2)
+		page2, total, err := s.GetTitlesPage(ctx, "primaryTitle", nil, 2, 2)
 		require.NoError(t, err)
 		require.EqualValues(t, 3, total)
 		require.Len(t, page2, 1)
@@ -284,7 +262,7 @@ func TestStore_GetTitlesPage(t *testing.T) {
 		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-b", "Bravo", 6.0)))
 
 		descending := false
-		got, total, err := s.GetTitlesPage(ctx, nil, "primaryTitle", &descending, 10, 1)
+		got, total, err := s.GetTitlesPage(ctx, "primaryTitle", &descending, 10, 1)
 		require.NoError(t, err)
 		require.EqualValues(t, 2, total)
 		require.Equal(t, []string{"Bravo", "Alpha"}, []string{got[0].PrimaryTitle, got[1].PrimaryTitle})
@@ -298,66 +276,159 @@ func TestStore_GetTitlesPage(t *testing.T) {
 		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-low", "Low Rated", 3.0)))
 		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-high", "High Rated", 9.0)))
 
-		got, _, err := s.GetTitlesPage(ctx, nil, "imdbRating", nil, 10, 1)
+		got, _, err := s.GetTitlesPage(ctx, "imdbRating", nil, 10, 1)
 		require.NoError(t, err)
 		require.Equal(t, []string{"tt-low", "tt-high"}, []string{got[0].ID, got[1].ID})
 	})
 
-	t.Run("CASE 1 custom order via addedAt preserves ids order", func(t *testing.T) {
+	// Regression: the ORDER BY that feeds LIMIT/OFFSET had no tie-break, so rows
+	// that compared equal on the sort column had no defined relative order and
+	// Postgres could place one of them differently for each page (the bound it
+	// sorts under changes with the OFFSET). Walking the pages then returned one
+	// row twice and another never — observed on real data, 122 titles ordered by
+	// rating descending yielding 119 rows and 118 distinct titles.
+	t.Run("paging a heavily tied sort returns every row exactly once", func(t *testing.T) {
 		resetDB(t)
 		s := newTestStore(t)
 		ctx := context.Background()
 
-		for _, ti := range []models.Title{
-			newTestMovieTitle(t, "tt-a", "Alpha", 5.0),
-			newTestMovieTitle(t, "tt-b", "Bravo", 6.0),
-			newTestMovieTitle(t, "tt-c", "Charlie", 7.0),
-		} {
-			require.NoError(t, s.AddTitle(ctx, ti))
+		// 200 rows over a handful of distinct values per column: every sort key
+		// has large blocks of rows that compare equal.
+		const total = 200
+		const pageSize = 7
+		want := make([]string, 0, total)
+		for i := range total {
+			title := newTestMovieTitle(t,
+				fmt.Sprintf("tt%05d", i),
+				fmt.Sprintf("Tied %d", i%3),
+				float64(5+i%4),
+			)
+			title.Rating.VoteCount = 100 * (i % 5)
+			title.StartYear = 2000 + i%2
+			// updated_at is the one nullable sort column; NULL rows tie too.
+			if i%2 == 0 {
+				title.UpdatedAt = nil
+			}
+			require.NoError(t, s.AddTitle(ctx, title))
+			want = append(want, title.ID)
 		}
 
-		customOrder := []string{"tt-c", "tt-a", "tt-b"}
-		got, total, err := s.GetTitlesPage(ctx, customOrder, "addedAt", nil, 10, 1)
-		require.NoError(t, err)
-		require.EqualValues(t, 3, total)
+		for _, orderBy := range []string{"", "primaryTitle", "imdbRating", "startYear", "type", "voteCount", "addedAt", "updatedAt"} {
+			for _, ascending := range []bool{true, false} {
+				direction := ascending
+				var got []string
+				for page := 1; ; page++ {
+					titles, count, err := s.GetTitlesPage(ctx, orderBy, &direction, pageSize, page)
+					require.NoError(t, err, "paging by %q failed", orderBy)
+					require.EqualValues(t, total, count, "the total must not move while paging by %q", orderBy)
+					if len(titles) == 0 {
+						break
+					}
+					for _, title := range titles {
+						got = append(got, title.ID)
+					}
+				}
 
-		gotIDs := make([]string, len(got))
-		for i, ti := range got {
-			gotIDs[i] = ti.ID
+				require.ElementsMatch(t, want, got,
+					"paging by %q (ascending=%v) must return every row exactly once", orderBy, direction)
+			}
 		}
-		require.Equal(t, customOrder, gotIDs)
 	})
 
-	t.Run("empty ids returns empty page", func(t *testing.T) {
+	t.Run("an extreme page number returns an empty page with the correct total instead of erroring", func(t *testing.T) {
 		resetDB(t)
 		s := newTestStore(t)
 		ctx := context.Background()
 
-		require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, "tt-a", "Alpha", 5.0)))
-
-		got, total, err := s.GetTitlesPage(ctx, []string{}, "primaryTitle", nil, 10, 1)
-		require.NoError(t, err)
-		require.Equal(t, []models.Title{}, got)
-		require.EqualValues(t, 0, total)
-	})
-
-	t.Run("total count reflects ids filter", func(t *testing.T) {
-		resetDB(t)
-		s := newTestStore(t)
-		ctx := context.Background()
-
-		for _, ti := range []models.Title{
-			newTestMovieTitle(t, "tt-a", "Alpha", 5.0),
-			newTestMovieTitle(t, "tt-b", "Bravo", 6.0),
-			newTestMovieTitle(t, "tt-c", "Charlie", 7.0),
-		} {
-			require.NoError(t, s.AddTitle(ctx, ti))
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, fmt.Sprintf("tt-extreme-%d", i), name, 5.0)))
 		}
 
-		got, total, err := s.GetTitlesPage(ctx, []string{"tt-a", "tt-c"}, "primaryTitle", nil, 10, 1)
-		require.NoError(t, err)
-		require.EqualValues(t, 2, total)
-		require.Len(t, got, 2)
+		cases := []struct {
+			name string
+			page int
+		}{
+			// page-1 * size wraps to a small POSITIVE int64 (92) if the guard
+			// multiplies first — which would silently return some unrelated
+			// page's rows instead of emptying out.
+			{"page-1 * size wraps to a small positive int64", 92_233_720_368_547_760},
+			// page-1 is near MaxInt64; multiplying by size=100 in int64 BEFORE
+			// the overflow guard would itself wrap to a small negative int64,
+			// which Postgres rejects with "OFFSET must not be negative", a
+			// 500. The guard must reject this by comparing before any
+			// multiply, not after.
+			{"page-1 near MaxInt64: int64 multiply would wrap negative", math.MaxInt64},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				got, total, err := s.GetTitlesPage(ctx, "", nil, 100, tc.page)
+				require.NoError(t, err)
+				require.Equal(t, []models.Title{}, got)
+				require.EqualValues(t, len(names), total)
+			})
+		}
+	})
+
+	// The doc comment on GetTitlesPage makes clamping the service's job, so
+	// size arrives unvalidated — and this method is reachable directly (this
+	// file, cmd/routines). A non-positive size must page to nothing, the way
+	// it did when size was only ever bound as a LIMIT parameter. size == 0 in
+	// particular must never reach the offset guard's division by size: this
+	// process has no panic-recovery middleware, so an integer divide-by-zero
+	// there takes the whole server down rather than failing one request.
+	t.Run("a non-positive size returns an empty page with the correct total", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, fmt.Sprintf("tt-size-%d", i), name, 5.0)))
+		}
+
+		for _, size := range []int{0, -1, math.MinInt64} {
+			t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
+				for _, page := range []int{1, 2, math.MaxInt64} {
+					// Asserted through NotPanics rather than called directly:
+					// without the guard this is an integer divide-by-zero, and
+					// an unrecovered panic aborts the whole test binary instead
+					// of reporting which case regressed.
+					var (
+						got   []models.Title
+						total int64
+						err   error
+					)
+					require.NotPanics(t, func() {
+						got, total, err = s.GetTitlesPage(ctx, "", nil, size, page)
+					}, "size=%d page=%d must not panic", size, page)
+					require.NoError(t, err, "size=%d page=%d must not error", size, page)
+					require.Equal(t, []models.Title{}, got, "size=%d page=%d must page to nothing", size, page)
+					require.EqualValues(t, len(names), total, "size=%d page=%d must still report the real total", size, page)
+				}
+			})
+		}
+	})
+
+	// MAX_PAGE_SIZE is env-configurable with no upper bound, so the clamped
+	// size the service passes down can legitimately exceed int32. Narrowing it
+	// to the generated LIMIT parameter used to wrap it negative, and Postgres
+	// rejects a negative LIMIT outright — every request would 500. page_size
+	// is a bigint for exactly this reason.
+	t.Run("a size larger than int32 is not narrowed", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		names := []string{"Alpha", "Bravo", "Charlie"}
+		for i, name := range names {
+			require.NoError(t, s.AddTitle(ctx, newTestMovieTitle(t, fmt.Sprintf("tt-wide-%d", i), name, 5.0)))
+		}
+
+		got, total, err := s.GetTitlesPage(ctx, "", nil, math.MaxInt32+1, 1)
+		require.NoError(t, err, "a size past int32 must not wrap into a negative LIMIT")
+		require.Len(t, got, len(names), "a size that large must simply return every row")
+		require.EqualValues(t, len(names), total)
 	})
 }
 

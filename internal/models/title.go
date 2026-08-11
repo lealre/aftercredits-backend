@@ -1,6 +1,26 @@
 package models
 
-import "time"
+import (
+	"slices"
+	"time"
+)
+
+// seriesTitleTypes is the canonical spelling of the Title.Type values that
+// denote a TV series (as opposed to "movie"). The pair is still written out
+// inline in the services and the title providers; this is the one definition
+// new code should reach for, and migrating the remaining sites onto it is
+// separate work. It is an array, not a slice, so it cannot be reassigned or
+// written through by a caller.
+var seriesTitleTypes = [...]string{"tvSeries", "tvMiniSeries"}
+
+// SeriesTitleTypes returns the Title.Type values that denote a TV series, as a
+// fresh slice the caller may keep or pass to a store filter.
+func SeriesTitleTypes() []string { return slices.Clone(seriesTitleTypes[:]) }
+
+// IsSeriesTitleType reports whether a Title.Type denotes a TV series.
+func IsSeriesTitleType(titleType string) bool {
+	return slices.Contains(seriesTitleTypes[:], titleType)
+}
 
 // Title is the storage-neutral representation of a title (movie or TV
 // series), carrying no persistence tags.

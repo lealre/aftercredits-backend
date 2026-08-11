@@ -23,7 +23,6 @@ type GroupTitles map[string]GroupTitleItem
 // GroupTitleItem is one title's entry within a group.
 type GroupTitleItem struct {
 	TitleId        string
-	TitleType      string
 	SeasonsWatched *SeasonsWatched
 	Watched        bool
 	AddedAt        time.Time
@@ -41,4 +40,11 @@ type SeasonWatchedItem struct {
 	WatchedAt *time.Time
 	AddedAt   time.Time
 	UpdatedAt time.Time
+}
+
+// GroupPagedTitle is one row of a group's paged titles listing: the full
+// title plus this group's watch-state for it (seasons included).
+type GroupPagedTitle struct {
+	Title Title
+	Item  GroupTitleItem
 }

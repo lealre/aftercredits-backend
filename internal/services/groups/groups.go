@@ -3,11 +3,11 @@ package groups
 import (
 	"context"
 	"errors"
-	"sort"
+	"math"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/lealre/movies-backend/internal/config"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/ratings"
@@ -118,186 +118,110 @@ func AddUserToGroup(db store.Store, ctx context.Context, groupId, ownerId, userI
 	return nil
 }
 
+// GetTitlesFromGroup returns one page of a group's titles.
+//
+// It does NOT check that the group exists or that the caller may see it: the
+// caller must have established that first. The HTTP handler does, with
+// groups.GroupExists — a single EXISTS whose 404 this function cannot improve
+// on — so running the same check again here would only add a round trip to
+// the endpoint. That is also why it takes no userId: an ignored one would
+// imply a per-user scoping this function does not perform.
 func GetTitlesFromGroup(
 	db store.Store,
 	ctx context.Context,
-	groupId, userId string,
+	groupId string,
 	size, page int,
 	orderBy string,
 	watched *bool,
 	ascending *bool,
 	titleType *string,
 ) (generics.Page[GroupTitleDetail], error) {
-	group, err := db.GetGroupById(ctx, groupId, userId)
-	if err != nil {
-		if errors.Is(err, store.ErrRecordNotFound) {
-			return generics.Page[GroupTitleDetail]{}, ErrGroupNotFound
+	// API vocabulary -> title.type values; anything unrecognized means no
+	// filter, matching the previous behavior.
+	var titleTypes []string
+	if titleType != nil {
+		switch *titleType {
+		case "serie":
+			titleTypes = models.SeriesTitleTypes()
+		case "movie":
+			titleTypes = []string{"movie"}
 		}
+	}
+
+	// App-level pagination normalization for the query itself, shared with
+	// titles.GetPageOfTitles. The raw, caller-given size/page are deliberately
+	// kept alongside: the "group holds nothing to page over" response below
+	// reports them unnormalized — see the comment there.
+	querySize, queryPage := config.NormalizePageParams(size, page)
+
+	pageRows, total, err := db.GetGroupTitlesPage(ctx, groupId, watched, titleTypes, orderBy, ascending, querySize, queryPage)
+	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
-	var allTitlesIds []string
-	var titleGroupMap map[string]models.GroupTitleItem = make(map[string]models.GroupTitleItem)
-	for _, title := range group.Titles {
-
-		if watched != nil && title.Watched != *watched {
-			continue
-		}
-
-		titleGroupMap[title.TitleId] = title
-		allTitlesIds = append(allTitlesIds, title.TitleId)
-	}
-
-	// Filter by titleType if specified
-	if titleType != nil && len(allTitlesIds) > 0 {
-		// Fetch title types from database with lightweight projection
-		titleTypes, err := db.GetTitleTypes(ctx, allTitlesIds)
+	// Three distinct situations produce an empty page, and clients can tell
+	// two shapes apart (`"Content":[]` vs `"Content":null`, plus whether
+	// size/page are normalized), so the split is an observable API contract
+	// (CONVENTIONS §5) that this function must keep:
+	//
+	//  1. the group holds no title entry matching the filters — an empty
+	//     group, or a watched/titleType filter that matches none of its
+	//     entries: `[]`, with the caller's raw size/page echoed back;
+	//  2. every matching entry points at a title that is gone from the
+	//     catalogue (group_titles has no FK to titles, so entries outlive
+	//     deleted titles): `null`, with normalized size/page;
+	//  3. the requested page is past the last one: `null`, with normalized
+	//     size/page and a non-zero total.
+	//
+	// GetGroupTitlesPage inner-joins titles, so its total is 0 for both (1)
+	// and (2) — hence the extra EXISTS, which counts orphaned entries and so
+	// separates them. It runs only on this already-empty path, never on the
+	// hot one. Cases (2) and (3) need no branch at all: falling through
+	// leaves allTitlesDetails nil, which is exactly the `null` those two
+	// return.
+	if total == 0 {
+		hasEntries, err := db.GroupHasTitleEntries(ctx, groupId, watched, titleTypes)
 		if err != nil {
 			return generics.Page[GroupTitleDetail]{}, err
 		}
-
-		// Filter allTitlesIds based on titleType
-		filteredTitlesIds := []string{}
-		filteredTitleGroupMap := make(map[string]models.GroupTitleItem)
-
-		for _, titleId := range allTitlesIds {
-			titleTypeValue, exists := titleTypes[titleId]
-			if !exists {
-				// Skip titles that don't exist in database
-				continue
-			}
-
-			shouldInclude := false
-			if *titleType == "serie" {
-				// Include tvSeries or tvMiniSeries
-				shouldInclude = titleTypeValue == "tvSeries" || titleTypeValue == "tvMiniSeries"
-			} else if *titleType == "movie" {
-				// Include only movies
-				shouldInclude = titleTypeValue == "movie"
-			} else {
-				// Invalid titleType value, include all (same as no filter)
-				shouldInclude = true
-			}
-
-			if shouldInclude {
-				filteredTitlesIds = append(filteredTitlesIds, titleId)
-				filteredTitleGroupMap[titleId] = titleGroupMap[titleId]
-			}
-		}
-
-		allTitlesIds = filteredTitlesIds
-		titleGroupMap = filteredTitleGroupMap
-	}
-
-	// Check this after the watched/unwatched filter, to include that case as well
-	if len(allTitlesIds) == 0 {
-		return generics.Page[GroupTitleDetail]{
-			TotalResults: 0,
-			Size:         size,
-			Page:         page,
-			TotalPages:   0,
-			Content:      []GroupTitleDetail{},
-		}, nil
-	}
-
-	if len(allTitlesIds) > 1 && (orderBy == "watched" || orderBy == "watchedAt" || orderBy == "addedAt") {
-		isAscending := true
-		if ascending != nil {
-			isAscending = *ascending
-		}
-
-		// If its a group field sorting, we must sort on the ids order of the group titles.
-		// Later in GetPageOfTitles, it will mantain the order of the ids.
-		//
-		// Every branch here must impose a total order. allTitlesIds is built by
-		// ranging group.Titles, which is a map, so its starting order differs
-		// between requests; without a tie-break on the id the same query would
-		// return a different page each time.
-		if orderBy == "watched" {
-			sort.SliceStable(allTitlesIds, func(i, j int) bool {
-				left := titleGroupMap[allTitlesIds[i]]
-				right := titleGroupMap[allTitlesIds[j]]
-
-				if left.Watched == right.Watched {
-					return allTitlesIds[i] < allTitlesIds[j]
-				}
-				// Ascending puts unwatched first, matching ORDER BY watched ASC.
-				if isAscending {
-					return !left.Watched
-				}
-				return left.Watched
-			})
-		}
-
-		if orderBy == "addedAt" || orderBy == "watchedAt" {
-			getOrderValue := func(title models.GroupTitleItem) (timeValue *time.Time) {
-				if orderBy == "watchedAt" {
-					return title.WatchedAt
-				}
-				return &title.AddedAt
-			}
-
-			sort.SliceStable(allTitlesIds, func(i, j int) bool {
-				left := titleGroupMap[allTitlesIds[i]]
-				right := titleGroupMap[allTitlesIds[j]]
-
-				leftTime := getOrderValue(left)
-				rightTime := getOrderValue(right)
-
-				switch {
-				case leftTime == nil && rightTime == nil:
-					return allTitlesIds[i] < allTitlesIds[j]
-				case leftTime == nil:
-					return false
-				case rightTime == nil:
-					return true
-				case leftTime.Equal(*rightTime):
-					return allTitlesIds[i] < allTitlesIds[j]
-				default:
-					if isAscending {
-						return leftTime.Before(*rightTime)
-					}
-					return leftTime.After(*rightTime)
-				}
-			})
+		if !hasEntries {
+			return generics.Page[GroupTitleDetail]{
+				TotalResults: 0,
+				Size:         size,
+				Page:         page,
+				TotalPages:   0,
+				Content:      []GroupTitleDetail{},
+			}, nil
 		}
 	}
 
-	titles, err := titles.GetPageOfTitles(db, ctx, size, page, orderBy, ascending, allTitlesIds)
-	if err != nil {
-		return generics.Page[GroupTitleDetail]{}, err
+	pageTitleIds := make([]string, 0, len(pageRows))
+	for _, row := range pageRows {
+		pageTitleIds = append(pageTitleIds, row.Title.ID)
 	}
 
-	// Only the titles on this page are read back below, so fetch ratings for
-	// those ids rather than for every title in the group.
-	pageTitleIds := make([]string, 0, len(titles.Content))
-	for _, title := range titles.Content {
-		pageTitleIds = append(pageTitleIds, title.Id)
-	}
-
-	// Scoped to this group: GroupRatings must carry only the ratings this group's
-	// own members left in this group, never another group's ratings on the same
-	// title.
-	ratings, err := ratings.GetRatingsBatch(db, ctx, pageTitleIds, groupId)
+	// Scoped to this group: GroupRatings must carry only the ratings this
+	// group's own members left in this group, never another group's ratings on
+	// the same title.
+	groupRatings, err := ratings.GetRatingsBatch(db, ctx, pageTitleIds, groupId)
 	if err != nil {
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
 	var allTitlesDetails []GroupTitleDetail
-	for _, title := range titles.Content {
-		groupTitle := titleGroupMap[title.Id]
+	for _, row := range pageRows {
 		detail := GroupTitleDetail{
-			GroupRatings: ratings.Titles[title.Id],
-			Watched:      groupTitle.Watched,
-			WatchedAt:    groupTitle.WatchedAt,
-			AddedAt:      groupTitle.AddedAt,
-			UpdatedAt:    groupTitle.UpdatedAt,
+			GroupRatings: groupRatings.Titles[row.Title.ID],
+			Watched:      row.Item.Watched,
+			WatchedAt:    row.Item.WatchedAt,
+			AddedAt:      row.Item.AddedAt,
+			UpdatedAt:    row.Item.UpdatedAt,
 		}
 
 		// Map seasons watched from database to API type
-		if groupTitle.SeasonsWatched != nil {
+		if row.Item.SeasonsWatched != nil {
 			seasonsWatched := make(SeasonsWatched)
-			for seasonKey, seasonDb := range *groupTitle.SeasonsWatched {
+			for seasonKey, seasonDb := range *row.Item.SeasonsWatched {
 				seasonsWatched[seasonKey] = SeasonWatched{
 					Watched:   seasonDb.Watched,
 					WatchedAt: seasonDb.WatchedAt,
@@ -308,18 +232,19 @@ func GetTitlesFromGroup(
 			detail.SeasonsWatched = &seasonsWatched
 		}
 
-		detail.Title = title
+		detail.Title = titles.MapDbTitleToApiTitle(row.Title)
 		// Episodes are loaded on demand via GET /titles/{id}/episodes;
 		// keep the list payload light. Seasons summary is retained.
 		detail.Title.Episodes = nil
 		allTitlesDetails = append(allTitlesDetails, detail)
 	}
 
+	totalPages := int(math.Ceil(float64(total) / float64(querySize)))
 	return generics.Page[GroupTitleDetail]{
-		TotalResults: titles.TotalResults,
-		Size:         titles.Size,
-		Page:         titles.Page,
-		TotalPages:   titles.TotalPages,
+		TotalResults: int(total),
+		Size:         querySize,
+		Page:         queryPage,
+		TotalPages:   totalPages,
 		Content:      allTitlesDetails,
 	}, nil
 }

@@ -29,7 +29,7 @@ func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 	orderBy := r.URL.Query().Get("orderBy")
 	ascending := parseUrlQueryToBool(r.URL.Query().Get("ascending"))
 
-	pageOfTitles, err := titles.GetPageOfTitles(api.Db, r.Context(), size, page, orderBy, ascending, nil)
+	pageOfTitles, err := titles.GetPageOfTitles(api.Db, r.Context(), size, page, orderBy, ascending)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch titles from database")

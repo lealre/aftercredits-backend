@@ -11,6 +11,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countGroupTitles = `-- name: CountGroupTitles :one
+SELECT count(*) FROM group_titles gt
+JOIN titles t ON t.id = gt.title_id
+WHERE gt.group_id = $1
+  AND ($2::boolean IS NULL OR gt.watched = $2)
+  AND ($3::text[] IS NULL OR t.type = ANY($3::text[]))
+`
+
+type CountGroupTitlesParams struct {
+	GroupID    string
+	Watched    pgtype.Bool
+	TitleTypes []string
+}
+
+// Companion to GetGroupTitlesPage: the window-function total disappears when
+// an out-of-range page returns zero rows, so the store method falls back to
+// this (same WHERE) only in that case. Hot path stays one round trip.
+func (q *Queries) CountGroupTitles(ctx context.Context, arg CountGroupTitlesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroupTitles, arg.GroupID, arg.Watched, arg.TitleTypes)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteGroupTitle = `-- name: DeleteGroupTitle :execrows
 DELETE FROM group_titles WHERE group_id = $1 AND title_id = $2
 `
@@ -141,7 +165,7 @@ func (q *Queries) GetGroupRowAnyById(ctx context.Context, id string) (Group, err
 }
 
 const getGroupTitleRow = `-- name: GetGroupTitleRow :one
-SELECT group_id, title_id, title_type, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 AND title_id = $2
+SELECT group_id, title_id, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 AND title_id = $2
 `
 
 type GetGroupTitleRowParams struct {
@@ -155,7 +179,6 @@ func (q *Queries) GetGroupTitleRow(ctx context.Context, arg GetGroupTitleRowPara
 	err := row.Scan(
 		&i.GroupID,
 		&i.TitleID,
-		&i.TitleType,
 		&i.Watched,
 		&i.WatchedAt,
 		&i.AddedAt,
@@ -165,7 +188,7 @@ func (q *Queries) GetGroupTitleRow(ctx context.Context, arg GetGroupTitleRowPara
 }
 
 const getGroupTitleRows = `-- name: GetGroupTitleRows :many
-SELECT group_id, title_id, title_type, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 ORDER BY title_id
+SELECT group_id, title_id, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 ORDER BY title_id
 `
 
 func (q *Queries) GetGroupTitleRows(ctx context.Context, groupID string) ([]GroupTitle, error) {
@@ -180,7 +203,6 @@ func (q *Queries) GetGroupTitleRows(ctx context.Context, groupID string) ([]Grou
 		if err := rows.Scan(
 			&i.GroupID,
 			&i.TitleID,
-			&i.TitleType,
 			&i.Watched,
 			&i.WatchedAt,
 			&i.AddedAt,
@@ -290,6 +312,159 @@ func (q *Queries) GetGroupTitleSeasonRowsForTitle(ctx context.Context, arg GetGr
 	return items, nil
 }
 
+const getGroupTitleSeasonRowsForTitles = `-- name: GetGroupTitleSeasonRowsForTitles :many
+SELECT group_id, title_id, season, watched, watched_at, added_at, updated_at FROM group_title_seasons
+WHERE group_id = $1 AND title_id = ANY($2::text[])
+ORDER BY title_id, season
+`
+
+type GetGroupTitleSeasonRowsForTitlesParams struct {
+	GroupID  string
+	TitleIds []string
+}
+
+func (q *Queries) GetGroupTitleSeasonRowsForTitles(ctx context.Context, arg GetGroupTitleSeasonRowsForTitlesParams) ([]GroupTitleSeason, error) {
+	rows, err := q.db.Query(ctx, getGroupTitleSeasonRowsForTitles, arg.GroupID, arg.TitleIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GroupTitleSeason
+	for rows.Next() {
+		var i GroupTitleSeason
+		if err := rows.Scan(
+			&i.GroupID,
+			&i.TitleID,
+			&i.Season,
+			&i.Watched,
+			&i.WatchedAt,
+			&i.AddedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGroupTitlesPage = `-- name: GetGroupTitlesPage :many
+SELECT
+    t.id, t.primary_title, t.type, t.start_year, t.rating_aggregate,
+    t.vote_count, t.added_at, t.updated_at, t.metadata,
+    gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
+    gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
+    count(*) OVER () AS total_count
+FROM group_titles gt
+JOIN titles t ON t.id = gt.title_id
+WHERE gt.group_id = $1
+  AND ($2::boolean IS NULL OR gt.watched = $2)
+  AND ($3::text[] IS NULL OR t.type = ANY($3::text[]))
+ORDER BY
+    CASE WHEN $4::text = 'watched'   AND NOT $5::bool THEN gt.watched END ASC,
+    CASE WHEN $4::text = 'watched'   AND $5::bool     THEN gt.watched END DESC,
+    CASE WHEN $4::text = 'watchedAt' AND NOT $5::bool THEN gt.watched_at END ASC NULLS LAST,
+    CASE WHEN $4::text = 'watchedAt' AND $5::bool     THEN gt.watched_at END DESC NULLS LAST,
+    CASE WHEN $4::text = 'addedAt'   AND NOT $5::bool THEN gt.added_at END ASC,
+    CASE WHEN $4::text = 'addedAt'   AND $5::bool     THEN gt.added_at END DESC,
+    CASE WHEN $4::text IN ('', 'primaryTitle') AND NOT $5::bool THEN t.primary_title END ASC,
+    CASE WHEN $4::text IN ('', 'primaryTitle') AND $5::bool     THEN t.primary_title END DESC,
+    CASE WHEN $4::text = 'imdbRating' AND NOT $5::bool THEN t.rating_aggregate END ASC,
+    CASE WHEN $4::text = 'imdbRating' AND $5::bool     THEN t.rating_aggregate END DESC,
+    CASE WHEN $4::text = 'startYear'  AND NOT $5::bool THEN t.start_year END ASC,
+    CASE WHEN $4::text = 'startYear'  AND $5::bool     THEN t.start_year END DESC,
+    CASE WHEN $4::text = 'type'       AND NOT $5::bool THEN t.type END ASC,
+    CASE WHEN $4::text = 'type'       AND $5::bool     THEN t.type END DESC,
+    CASE WHEN $4::text = 'voteCount'  AND NOT $5::bool THEN t.vote_count END ASC,
+    CASE WHEN $4::text = 'voteCount'  AND $5::bool     THEN t.vote_count END DESC,
+    CASE WHEN $4::text = 'updatedAt'  AND NOT $5::bool THEN t.updated_at END ASC,
+    CASE WHEN $4::text = 'updatedAt'  AND $5::bool     THEN t.updated_at END DESC,
+    t.id ASC
+LIMIT $7::bigint OFFSET $6::bigint
+`
+
+type GetGroupTitlesPageParams struct {
+	GroupID    string
+	Watched    pgtype.Bool
+	TitleTypes []string
+	OrderBy    string
+	Descending bool
+	PageOffset int64
+	PageSize   int64
+}
+
+type GetGroupTitlesPageRow struct {
+	ID              string
+	PrimaryTitle    string
+	Type            string
+	StartYear       int32
+	RatingAggregate float64
+	VoteCount       int32
+	AddedAt         pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	Metadata        []byte
+	GtWatched       bool
+	GtWatchedAt     pgtype.Timestamptz
+	GtAddedAt       pgtype.Timestamptz
+	GtUpdatedAt     pgtype.Timestamptz
+	TotalCount      int64
+}
+
+// One-round-trip page of a group's titles: join, NULL-defaulted filters,
+// static total ORDER BY (CONVENTIONS §6 — every branch ends in t.id ASC),
+// and the post-filter total via a window function. order_by arrives
+// pre-normalized (the store method maps unknown keys to ”); watched_at is
+// NULLS LAST in both directions to match the Go comparator this replaces.
+// Title-side keys keep Postgres' default NULL placement (see GetTitlesPage).
+//
+// page_size/page_offset are cast to bigint so sqlc generates int64 params —
+// see the same note on GetTitlesPage.
+func (q *Queries) GetGroupTitlesPage(ctx context.Context, arg GetGroupTitlesPageParams) ([]GetGroupTitlesPageRow, error) {
+	rows, err := q.db.Query(ctx, getGroupTitlesPage,
+		arg.GroupID,
+		arg.Watched,
+		arg.TitleTypes,
+		arg.OrderBy,
+		arg.Descending,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetGroupTitlesPageRow
+	for rows.Next() {
+		var i GetGroupTitlesPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PrimaryTitle,
+			&i.Type,
+			&i.StartYear,
+			&i.RatingAggregate,
+			&i.VoteCount,
+			&i.AddedAt,
+			&i.UpdatedAt,
+			&i.Metadata,
+			&i.GtWatched,
+			&i.GtWatchedAt,
+			&i.GtAddedAt,
+			&i.GtUpdatedAt,
+			&i.TotalCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const groupContainsTitle = `-- name: GroupContainsTitle :one
 SELECT EXISTS (
     SELECT 1 FROM groups g
@@ -354,6 +529,43 @@ type GroupHasMemberParams struct {
 
 func (q *Queries) GroupHasMember(ctx context.Context, arg GroupHasMemberParams) (bool, error) {
 	row := q.db.QueryRow(ctx, groupHasMember, arg.GroupID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const groupHasTitleEntries = `-- name: GroupHasTitleEntries :one
+SELECT EXISTS (
+    SELECT 1 FROM group_titles gt
+    LEFT JOIN titles t ON t.id = gt.title_id
+    WHERE gt.group_id = $1
+      AND ($2::boolean IS NULL OR gt.watched = $2)
+      AND ($3::text[] IS NULL OR t.type = ANY($3::text[]))
+)
+`
+
+type GroupHasTitleEntriesParams struct {
+	GroupID    string
+	Watched    pgtype.Bool
+	TitleTypes []string
+}
+
+// Does the group hold any title entry matching the filters, counting entries
+// whose title is no longer in the catalogue?
+//
+// group_titles.title_id carries no FK to titles, so an entry can outlive the
+// title it points at. GetGroupTitlesPage's INNER JOIN hides those orphans,
+// which makes "the group is empty" and "every one of the group's titles was
+// deleted from the catalogue" indistinguishable from its total alone — and
+// the two produce different empty-page envelopes (see GetTitlesFromGroup).
+// The LEFT JOIN is what keeps orphans visible here; it also reproduces the
+// pre-refactor titleType behavior exactly, because an orphan's t.type is NULL
+// and so never matches an explicit type filter.
+//
+// EXISTS, not count: the caller only needs zero vs. non-zero, and this runs
+// only on the already-empty path.
+func (q *Queries) GroupHasTitleEntries(ctx context.Context, arg GroupHasTitleEntriesParams) (bool, error) {
+	row := q.db.QueryRow(ctx, groupHasTitleEntries, arg.GroupID, arg.Watched, arg.TitleTypes)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -444,7 +656,7 @@ const updateGroupTitleWatchedRow = `-- name: UpdateGroupTitleWatchedRow :one
 UPDATE group_titles
 SET watched = $3, watched_at = $4, updated_at = $5
 WHERE group_id = $1 AND title_id = $2
-RETURNING group_id, title_id, title_type, watched, watched_at, added_at, updated_at
+RETURNING group_id, title_id, watched, watched_at, added_at, updated_at
 `
 
 type UpdateGroupTitleWatchedRowParams struct {
@@ -467,7 +679,6 @@ func (q *Queries) UpdateGroupTitleWatchedRow(ctx context.Context, arg UpdateGrou
 	err := row.Scan(
 		&i.GroupID,
 		&i.TitleID,
-		&i.TitleType,
 		&i.Watched,
 		&i.WatchedAt,
 		&i.AddedAt,
@@ -477,21 +688,19 @@ func (q *Queries) UpdateGroupTitleWatchedRow(ctx context.Context, arg UpdateGrou
 }
 
 const upsertGroupTitle = `-- name: UpsertGroupTitle :one
-INSERT INTO group_titles (group_id, title_id, title_type, watched, watched_at, added_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO group_titles (group_id, title_id, watched, watched_at, added_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (group_id, title_id) DO UPDATE
-SET title_type = EXCLUDED.title_type,
-    watched = EXCLUDED.watched,
+SET watched = EXCLUDED.watched,
     watched_at = EXCLUDED.watched_at,
     added_at = EXCLUDED.added_at,
     updated_at = EXCLUDED.updated_at
-RETURNING group_id, title_id, title_type, watched, watched_at, added_at, updated_at
+RETURNING group_id, title_id, watched, watched_at, added_at, updated_at
 `
 
 type UpsertGroupTitleParams struct {
 	GroupID   string
 	TitleID   string
-	TitleType string
 	Watched   bool
 	WatchedAt pgtype.Timestamptz
 	AddedAt   pgtype.Timestamptz
@@ -502,7 +711,6 @@ func (q *Queries) UpsertGroupTitle(ctx context.Context, arg UpsertGroupTitlePara
 	row := q.db.QueryRow(ctx, upsertGroupTitle,
 		arg.GroupID,
 		arg.TitleID,
-		arg.TitleType,
 		arg.Watched,
 		arg.WatchedAt,
 		arg.AddedAt,
@@ -512,7 +720,6 @@ func (q *Queries) UpsertGroupTitle(ctx context.Context, arg UpsertGroupTitlePara
 	err := row.Scan(
 		&i.GroupID,
 		&i.TitleID,
-		&i.TitleType,
 		&i.Watched,
 		&i.WatchedAt,
 		&i.AddedAt,

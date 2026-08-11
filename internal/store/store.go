@@ -34,9 +34,8 @@ type Store interface {
 	GetTitleById(ctx context.Context, id string) (models.Title, error)
 	AddTitle(ctx context.Context, title models.Title) error
 	DeleteTitle(ctx context.Context, id string) (bool, error)
-	GetTitlesPage(ctx context.Context, ids []string, orderBy string, ascending *bool, size, page int) ([]models.Title, int64, error)
+	GetTitlesPage(ctx context.Context, orderBy string, ascending *bool, size, page int) ([]models.Title, int64, error)
 	TitleExists(ctx context.Context, id string) (bool, error)
-	GetTitleTypes(ctx context.Context, titleIds []string) (map[string]string, error)
 
 	// ----- Ratings -----
 	//
@@ -78,4 +77,6 @@ type Store interface {
 	SoftDeleteGroup(ctx context.Context, groupId string) error
 	RemoveUserFromGroup(ctx context.Context, groupId, userId string) error
 	RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error
+	GetGroupTitlesPage(ctx context.Context, groupId string, watched *bool, titleTypes []string, orderBy string, ascending *bool, size, page int) ([]models.GroupPagedTitle, int64, error)
+	GroupHasTitleEntries(ctx context.Context, groupId string, watched *bool, titleTypes []string) (bool, error)
 }

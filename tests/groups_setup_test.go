@@ -54,7 +54,6 @@ func getGroup(t *testing.T, groupId string) models.Group {
 		}
 		titles[tr.TitleID] = models.GroupTitleItem{
 			TitleId:        tr.TitleID,
-			TitleType:      tr.TitleType,
 			SeasonsWatched: sw,
 			Watched:        tr.Watched,
 			AddedAt:        tr.AddedAt.Time,
@@ -347,6 +346,183 @@ func groupTitleIds(page generics.Page[groups.GroupTitleDetail]) []string {
 		ids = append(ids, detail.Id)
 	}
 	return ids
+}
+
+// tiedTitlesFixture is a group whose titles deliberately collide on every
+// column the titles sort whitelist can order by, so paging over it exercises a
+// sort that is only total if it ends in a tie-break.
+type tiedTitlesFixture struct {
+	token    string
+	group    groups.GroupResponse
+	titleIds []string
+}
+
+// tiedSortKeys is every orderBy value a group-titles request accepts — the
+// whole whitelist, title-side and group-side alike. All of them now sort
+// through one CASE-based ORDER BY in SQL (GetGroupTitlesPage) under the same
+// LIMIT/OFFSET, so all of them depend on the same trailing t.id ASC tie-break
+// to page correctly, and all of them belong here. The group-side three
+// (watched, watchedAt, addedAt) used to take a separate in-Go branch and were
+// excluded for that reason; that branch is gone.
+//
+// Keep this in sync with groupTitlesOrderKeys in internal/postgres/groups.go.
+var tiedSortKeys = []string{
+	"", "primaryTitle", "imdbRating", "startYear", "type", "voteCount", "updatedAt",
+	"watched", "watchedAt", "addedAt",
+}
+
+// setupTiedTitlesGroup seeds count movies and puts all of them in one group.
+// Values repeat on a short cycle per column, so every sort key has large groups
+// of rows that compare equal:
+//
+//   - type:         one value, so all count rows tie
+//   - startYear:    2 values, primaryTitle: 3, rating: 4, voteCount: 5
+//   - updatedAt:    NULL on every other title, one shared timestamp otherwise —
+//     NULL rows tie with each other too
+//
+// and, on the group_titles side:
+//
+//   - watched:      true on every 4th entry, false on the rest — two big ties
+//   - watchedAt:    one shared timestamp on the watched entries, NULL on the
+//     rest, so entries tie on a value and on NULL
+//   - addedAt:      2 shared timestamps, alternating
+//
+// The cycle lengths are coprime-ish on purpose: no two columns partition the
+// set the same way, so no column accidentally acts as another's tie-break.
+//
+// Callers are expected to have called resetDB(t) first.
+func setupTiedTitlesGroup(t *testing.T, count int) tiedTitlesFixture {
+	t.Helper()
+
+	_, token := addUser(t, users.NewUserRequest{
+		Username: "tiedtitlesowner",
+		Password: "testpass",
+	})
+	group := createGroup(t, groups.CreateGroupRequest{Name: "tied titles group"}, token)
+
+	updatedAt := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
+
+	titles := make([]models.Title, 0, count)
+	titleIds := make([]string, 0, count)
+	for i := range count {
+		var titleUpdatedAt *time.Time
+		if i%2 == 1 {
+			titleUpdatedAt = &updatedAt
+		}
+		title := newSortableMovieTitle(
+			fmt.Sprintf("tt90%05d", i),
+			fmt.Sprintf("Tied Movie %d", i%3),
+			2000+i%2,
+			float64(5+i%4),
+			100*(i%5),
+			titleUpdatedAt,
+		)
+		titles = append(titles, title)
+		titleIds = append(titleIds, title.ID)
+	}
+	seedTitles(t, titles)
+
+	// Seeded titles already exist, so this only creates the group_titles rows
+	// (the endpoint never reaches the title provider).
+	for _, titleId := range titleIds {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     "https://www.imdb.com/title/" + titleId + "/",
+			GroupId: group.Id,
+		}, token)
+	}
+	setTiedGroupTitleColumns(t, group.Id, titleIds)
+
+	return tiedTitlesFixture{token: token, group: group, titleIds: titleIds}
+}
+
+// setTiedGroupTitleColumns overwrites the three group_titles columns the sort
+// whitelist can order by (watched, watched_at, added_at) with deliberately
+// repeating values, so those sort keys are as thoroughly tied as the
+// title-side ones.
+//
+// It has to write them directly: add-title-to-group stamps watched=false and
+// watched_at=NULL on every entry (already ties, but only one value each) and
+// added_at from time.Now(), which is DISTINCT per row — under a distinct
+// column the order is total with or without a tie-break, so paging by addedAt
+// would pass whether or not the fix is in place. That is the vacuous pass
+// CONVENTIONS §8 warns about, which is exactly what this helper exists to
+// prevent.
+func setTiedGroupTitleColumns(t *testing.T, groupId string, titleIds []string) {
+	t.Helper()
+
+	watchedAt := time.Date(2025, 6, 7, 8, 9, 10, 0, time.UTC)
+	addedAt := []time.Time{
+		time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC),
+		time.Date(2024, 5, 6, 0, 0, 0, 0, time.UTC),
+	}
+
+	for i, titleId := range titleIds {
+		watched := i%4 == 0
+		// Only a watched entry carries a watchedAt, mirroring the invariant
+		// the watched-update endpoint enforces.
+		var entryWatchedAt *time.Time
+		if watched {
+			entryWatchedAt = &watchedAt
+		}
+
+		tag, err := testPool.Exec(context.Background(),
+			`UPDATE group_titles SET watched = $3, watched_at = $4, added_at = $5
+			 WHERE group_id = $1 AND title_id = $2`,
+			groupId, titleId, watched, entryWatchedAt, addedAt[i%2])
+		require.NoError(t, err, "failed to set the tied group-title columns for %s", titleId)
+		require.EqualValues(t, 1, tag.RowsAffected(),
+			"expected to update exactly one group_titles row for %s", titleId)
+	}
+}
+
+// walkGroupTitlePages pages through GET /groups/{id}/titles from page 1 to the
+// reported TotalPages, exactly as a client walking the list does, and returns
+// the title ids of each page. query carries the sort (and any filters) without
+// size or page, which this helper supplies.
+//
+// It returns one slice per page rather than a flat list so a caller can tell a
+// title repeated *within* a page from one that leaked across two pages.
+func walkGroupTitlePages(t *testing.T, groupId string, size int, query, token string) [][]string {
+	t.Helper()
+
+	first := getGroupTitlesPage(t, groupId, fmt.Sprintf("size=%d&page=1&%s", size, query), token)
+	pages := [][]string{groupTitleIds(first)}
+	for page := 2; page <= first.TotalPages; page++ {
+		next := getGroupTitlesPage(t, groupId, fmt.Sprintf("size=%d&page=%d&%s", size, page, query), token)
+		require.Equal(t, first.TotalResults, next.TotalResults,
+			"the total must not move while walking pages of %q", query)
+		pages = append(pages, groupTitleIds(next))
+	}
+	return pages
+}
+
+// flattenPages concatenates the per-page ids returned by walkGroupTitlePages.
+func flattenPages(pages [][]string) []string {
+	var all []string
+	for _, page := range pages {
+		all = append(all, page...)
+	}
+	return all
+}
+
+// deleteTitleFromCatalogue removes a title from the titles table while leaving
+// every group_titles row that points at it in place, producing an orphaned
+// group entry. group_titles.title_id carries no foreign key to titles (see
+// sql/schema/001_init.sql), so this is a state the production database can
+// reach through the admin delete-title endpoint — not a fabricated one.
+func deleteTitleFromCatalogue(t *testing.T, titleId string) {
+	t.Helper()
+
+	tag, err := testPool.Exec(context.Background(), "DELETE FROM titles WHERE id = $1", titleId)
+	require.NoError(t, err, "failed to delete title %s from the catalogue", titleId)
+	require.EqualValues(t, 1, tag.RowsAffected(), "expected to delete exactly one title row for %s", titleId)
+
+	var groupEntries int
+	require.NoError(t,
+		testPool.QueryRow(context.Background(),
+			"SELECT count(*) FROM group_titles WHERE title_id = $1", titleId).Scan(&groupEntries),
+		"failed to count the group entries left behind for %s", titleId)
+	require.NotZero(t, groupEntries, "the group entry for %s must survive the title deletion, or there is no orphan to test", titleId)
 }
 
 // setGroupTitleWatched marks a group title watched (or not) with an explicit

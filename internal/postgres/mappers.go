@@ -204,7 +204,6 @@ func groupRowToModel(g database.Group, users []string, titles models.GroupTitles
 func groupTitleRowToModel(t database.GroupTitle, seasons *models.SeasonsWatched) models.GroupTitleItem {
 	return models.GroupTitleItem{
 		TitleId:        t.TitleID,
-		TitleType:      t.TitleType,
 		SeasonsWatched: seasons,
 		Watched:        t.Watched,
 		AddedAt:        t.AddedAt.Time,

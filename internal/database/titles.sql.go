@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countTitles = `-- name: CountTitles :one
+SELECT count(*) FROM titles
+`
+
+func (q *Queries) CountTitles(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTitles)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteTitle = `-- name: DeleteTitle :execrows
 DELETE FROM titles WHERE id = $1
 `
@@ -44,25 +55,69 @@ func (q *Queries) GetTitleById(ctx context.Context, id string) (Title, error) {
 	return i, err
 }
 
-const getTitleTypes = `-- name: GetTitleTypes :many
-SELECT id, type FROM titles WHERE id = ANY($1::text[])
+const getTitlesPage = `-- name: GetTitlesPage :many
+SELECT id, primary_title, type, start_year, rating_aggregate, vote_count, added_at, updated_at, metadata
+FROM titles
+ORDER BY
+    CASE WHEN $1::text IN ('', 'primaryTitle') AND NOT $2::bool THEN primary_title END ASC,
+    CASE WHEN $1::text IN ('', 'primaryTitle') AND $2::bool     THEN primary_title END DESC,
+    CASE WHEN $1::text = 'imdbRating' AND NOT $2::bool THEN rating_aggregate END ASC,
+    CASE WHEN $1::text = 'imdbRating' AND $2::bool     THEN rating_aggregate END DESC,
+    CASE WHEN $1::text = 'startYear'  AND NOT $2::bool THEN start_year END ASC,
+    CASE WHEN $1::text = 'startYear'  AND $2::bool     THEN start_year END DESC,
+    CASE WHEN $1::text = 'type'       AND NOT $2::bool THEN type END ASC,
+    CASE WHEN $1::text = 'type'       AND $2::bool     THEN type END DESC,
+    CASE WHEN $1::text = 'voteCount'  AND NOT $2::bool THEN vote_count END ASC,
+    CASE WHEN $1::text = 'voteCount'  AND $2::bool     THEN vote_count END DESC,
+    CASE WHEN $1::text = 'addedAt'    AND NOT $2::bool THEN added_at END ASC,
+    CASE WHEN $1::text = 'addedAt'    AND $2::bool     THEN added_at END DESC,
+    CASE WHEN $1::text = 'updatedAt'  AND NOT $2::bool THEN updated_at END ASC,
+    CASE WHEN $1::text = 'updatedAt'  AND $2::bool     THEN updated_at END DESC,
+    id ASC
+LIMIT $4::bigint OFFSET $3::bigint
 `
 
-type GetTitleTypesRow struct {
-	ID   string
-	Type string
+type GetTitlesPageParams struct {
+	OrderBy    string
+	Descending bool
+	PageOffset int64
+	PageSize   int64
 }
 
-func (q *Queries) GetTitleTypes(ctx context.Context, dollar_1 []string) ([]GetTitleTypesRow, error) {
-	rows, err := q.db.Query(ctx, getTitleTypes, dollar_1)
+// Static total ORDER BY (CONVENTIONS §6 — ends in id ASC). order_by arrives
+// pre-normalized (unknown keys -> ”). No NULLS FIRST/LAST anywhere: Postgres'
+// defaults keep deciding where NULL sort values land (added_at/updated_at are
+// the only nullable keys), exactly as the hand-written version behaved.
+//
+// page_size/page_offset are cast to bigint so sqlc generates int64 params:
+// Go's page/size are plain ints, and narrowing them to int32 could wrap
+// negative (MAX_PAGE_SIZE is env-configurable without an upper bound), which
+// Postgres rejects with "LIMIT/OFFSET must not be negative".
+func (q *Queries) GetTitlesPage(ctx context.Context, arg GetTitlesPageParams) ([]Title, error) {
+	rows, err := q.db.Query(ctx, getTitlesPage,
+		arg.OrderBy,
+		arg.Descending,
+		arg.PageOffset,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetTitleTypesRow
+	var items []Title
 	for rows.Next() {
-		var i GetTitleTypesRow
-		if err := rows.Scan(&i.ID, &i.Type); err != nil {
+		var i Title
+		if err := rows.Scan(
+			&i.ID,
+			&i.PrimaryTitle,
+			&i.Type,
+			&i.StartYear,
+			&i.RatingAggregate,
+			&i.VoteCount,
+			&i.AddedAt,
+			&i.UpdatedAt,
+			&i.Metadata,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

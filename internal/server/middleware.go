@@ -114,7 +114,19 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 				return
 			}
 
+			// Check the error before the boolean (CONVENTIONS §3). A store
+			// failure leaves userDb as the zero models.User, whose IsActive is
+			// false, so folding the two cases together reported every transient
+			// database error as "invalid or inactive user" and logged nothing —
+			// silently logging out every caller for as long as the database was
+			// unreachable.
 			userDb, err := db.GetUserById(r.Context(), userId)
+			if err != nil && !errors.Is(err, store.ErrRecordNotFound) {
+				logx.FromContext(r.Context()).Printf("ERROR: %v", err)
+				http.Error(w, "Unexpected error occurred", http.StatusInternalServerError)
+				return
+			}
+			// Genuinely unknown or deactivated user: unchanged 401 body/status.
 			if errors.Is(err, store.ErrRecordNotFound) || !userDb.IsActive {
 				http.Error(w, "Invalid or inactive user", http.StatusUnauthorized)
 				return
