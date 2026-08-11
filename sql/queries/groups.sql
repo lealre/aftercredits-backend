@@ -52,11 +52,10 @@ WHERE m.group_id = $1
 ORDER BY u.id;
 
 -- name: UpsertGroupTitle :one
-INSERT INTO group_titles (group_id, title_id, title_type, watched, watched_at, added_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO group_titles (group_id, title_id, watched, watched_at, added_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (group_id, title_id) DO UPDATE
-SET title_type = EXCLUDED.title_type,
-    watched = EXCLUDED.watched,
+SET watched = EXCLUDED.watched,
     watched_at = EXCLUDED.watched_at,
     added_at = EXCLUDED.added_at,
     updated_at = EXCLUDED.updated_at

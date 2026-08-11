@@ -23,7 +23,6 @@ type GroupTitles map[string]GroupTitleItem
 // GroupTitleItem is one title's entry within a group.
 type GroupTitleItem struct {
 	TitleId        string
-	TitleType      string
 	SeasonsWatched *SeasonsWatched
 	Watched        bool
 	AddedAt        time.Time

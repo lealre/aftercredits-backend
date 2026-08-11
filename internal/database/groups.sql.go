@@ -165,7 +165,7 @@ func (q *Queries) GetGroupRowAnyById(ctx context.Context, id string) (Group, err
 }
 
 const getGroupTitleRow = `-- name: GetGroupTitleRow :one
-SELECT group_id, title_id, title_type, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 AND title_id = $2
+SELECT group_id, title_id, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 AND title_id = $2
 `
 
 type GetGroupTitleRowParams struct {
@@ -179,7 +179,6 @@ func (q *Queries) GetGroupTitleRow(ctx context.Context, arg GetGroupTitleRowPara
 	err := row.Scan(
 		&i.GroupID,
 		&i.TitleID,
-		&i.TitleType,
 		&i.Watched,
 		&i.WatchedAt,
 		&i.AddedAt,
@@ -189,7 +188,7 @@ func (q *Queries) GetGroupTitleRow(ctx context.Context, arg GetGroupTitleRowPara
 }
 
 const getGroupTitleRows = `-- name: GetGroupTitleRows :many
-SELECT group_id, title_id, title_type, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 ORDER BY title_id
+SELECT group_id, title_id, watched, watched_at, added_at, updated_at FROM group_titles WHERE group_id = $1 ORDER BY title_id
 `
 
 func (q *Queries) GetGroupTitleRows(ctx context.Context, groupID string) ([]GroupTitle, error) {
@@ -204,7 +203,6 @@ func (q *Queries) GetGroupTitleRows(ctx context.Context, groupID string) ([]Grou
 		if err := rows.Scan(
 			&i.GroupID,
 			&i.TitleID,
-			&i.TitleType,
 			&i.Watched,
 			&i.WatchedAt,
 			&i.AddedAt,
@@ -658,7 +656,7 @@ const updateGroupTitleWatchedRow = `-- name: UpdateGroupTitleWatchedRow :one
 UPDATE group_titles
 SET watched = $3, watched_at = $4, updated_at = $5
 WHERE group_id = $1 AND title_id = $2
-RETURNING group_id, title_id, title_type, watched, watched_at, added_at, updated_at
+RETURNING group_id, title_id, watched, watched_at, added_at, updated_at
 `
 
 type UpdateGroupTitleWatchedRowParams struct {
@@ -681,7 +679,6 @@ func (q *Queries) UpdateGroupTitleWatchedRow(ctx context.Context, arg UpdateGrou
 	err := row.Scan(
 		&i.GroupID,
 		&i.TitleID,
-		&i.TitleType,
 		&i.Watched,
 		&i.WatchedAt,
 		&i.AddedAt,
@@ -691,21 +688,19 @@ func (q *Queries) UpdateGroupTitleWatchedRow(ctx context.Context, arg UpdateGrou
 }
 
 const upsertGroupTitle = `-- name: UpsertGroupTitle :one
-INSERT INTO group_titles (group_id, title_id, title_type, watched, watched_at, added_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO group_titles (group_id, title_id, watched, watched_at, added_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (group_id, title_id) DO UPDATE
-SET title_type = EXCLUDED.title_type,
-    watched = EXCLUDED.watched,
+SET watched = EXCLUDED.watched,
     watched_at = EXCLUDED.watched_at,
     added_at = EXCLUDED.added_at,
     updated_at = EXCLUDED.updated_at
-RETURNING group_id, title_id, title_type, watched, watched_at, added_at, updated_at
+RETURNING group_id, title_id, watched, watched_at, added_at, updated_at
 `
 
 type UpsertGroupTitleParams struct {
 	GroupID   string
 	TitleID   string
-	TitleType string
 	Watched   bool
 	WatchedAt pgtype.Timestamptz
 	AddedAt   pgtype.Timestamptz
@@ -716,7 +711,6 @@ func (q *Queries) UpsertGroupTitle(ctx context.Context, arg UpsertGroupTitlePara
 	row := q.db.QueryRow(ctx, upsertGroupTitle,
 		arg.GroupID,
 		arg.TitleID,
-		arg.TitleType,
 		arg.Watched,
 		arg.WatchedAt,
 		arg.AddedAt,
@@ -726,7 +720,6 @@ func (q *Queries) UpsertGroupTitle(ctx context.Context, arg UpsertGroupTitlePara
 	err := row.Scan(
 		&i.GroupID,
 		&i.TitleID,
-		&i.TitleType,
 		&i.Watched,
 		&i.WatchedAt,
 		&i.AddedAt,

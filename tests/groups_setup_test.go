@@ -54,7 +54,6 @@ func getGroup(t *testing.T, groupId string) models.Group {
 		}
 		titles[tr.TitleID] = models.GroupTitleItem{
 			TitleId:        tr.TitleID,
-			TitleType:      tr.TitleType,
 			SeasonsWatched: sw,
 			Watched:        tr.Watched,
 			AddedAt:        tr.AddedAt.Time,

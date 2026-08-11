@@ -207,7 +207,6 @@ func (s *Store) AddNewGroupTitle(ctx context.Context, groupId string, titleId st
 	if _, err := qtx.UpsertGroupTitle(ctx, database.UpsertGroupTitleParams{
 		GroupID:   groupId,
 		TitleID:   titleId,
-		TitleType: "movie",
 		Watched:   false,
 		WatchedAt: ptrToTimestamptz(nil),
 		AddedAt:   now,
@@ -608,21 +607,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		out = append(out, models.GroupPagedTitle{
 			Title: title,
 			Item: models.GroupTitleItem{
-				TitleId: r.ID,
-				// Deliberately titles.type, NOT group_titles.title_type.
-				// The two are independent stores of the same fact and they
-				// disagree in practice: title_type is stamped once at
-				// add-to-group time — always the literal "movie", see
-				// AddNewGroupTitle — and never refreshed, while titles.type
-				// tracks the catalogue. On the production database 98 of 122
-				// group_titles rows are wrong under the old source (88 hold
-				// the schema default "" and 10 say "movie" for a
-				// tvSeries/tvMiniSeries), so reading it back would report a
-				// series as a movie. This page is also filtered by
-				// titles.type (see GetGroupTitlesPage in
-				// sql/queries/groups.sql), and a row must not claim a type
-				// its own filter contradicts.
-				TitleType:      title.Type,
+				TitleId:        r.ID,
 				SeasonsWatched: assembleSeasonsWatched(seasonsByTitle[r.ID]),
 				Watched:        r.GtWatched,
 				AddedAt:        r.GtAddedAt.Time,

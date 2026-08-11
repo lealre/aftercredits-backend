@@ -25,6 +25,7 @@ had.
 * **`GET /groups/{id}/titles` now reads through a single SQL query.** It used to load the whole group — every member, every title and every season row — then filter, sort and paginate in memory before re-fetching the page. Filtering, sorting, paging and the result count now happen in one round trip in the database. Responses are unchanged, field for field, including the ordering of every sort key and how an empty page is represented
 * Sorting a group's titles by `watched`, `watchedAt` or `addedAt` is now paginated by the database like every other sort key, and carries the same title-id tie-break, so those three can no longer repeat or skip a title across pages either
 * Remove `EnsureGroupExists`, now that nothing calls it
+* Drop `group_titles.title_type`. It was written exactly once — hard-coded to `movie` for every title, series included — never refreshed, and never read by anything; a title's type has only one source, the titles catalogue. Removed by migration 004, which is covered by the same deploy rule as 003 (stop the backend before `database -migrate`)
 * Add integration coverage for the group-titles query parameters: pagination, page-past-the-last totals, `Content` null-vs-`[]`, `watched` and `titleType` filters, and ordering by `watched`, `watchedAt` and `addedAt`
 * Move `CHANGELOG.md` and `CONVENTIONS.md` under `docs/`
 * Remove the `git-chglog` configuration: the changelog is maintained by hand. Regenerating it overwrote the written entries, listed merge commits as changelog lines, and dropped any release that was never tagged

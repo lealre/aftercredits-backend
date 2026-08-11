@@ -48,14 +48,16 @@ func boolPtr(b bool) *bool { return &b }
 // addGroupTitleRow upserts a group_titles row via the generated query
 // directly, bypassing the store's higher-level helpers (AddNewGroupTitle
 // always creates a movie with watched=false and stamps "now") so tests can
-// pin every column GetGroupTitlesPage filters or sorts on — title_type,
-// watched, watchedAt (nil allowed), addedAt, updatedAt — independently.
+// pin every column GetGroupTitlesPage filters or sorts on — watched,
+// watchedAt (nil allowed), addedAt, updatedAt — independently. titleType is
+// accepted but unused: callers still pass the catalogue type of the title
+// they are pinning a row for, which keeps call sites self-documenting even
+// though group_titles no longer stores it.
 func addGroupTitleRow(t *testing.T, s *Store, groupId, titleId, titleType string, watched bool, watchedAt *time.Time, addedAt, updatedAt time.Time) {
 	t.Helper()
 	_, err := s.q.UpsertGroupTitle(context.Background(), database.UpsertGroupTitleParams{
 		GroupID:   groupId,
 		TitleID:   titleId,
-		TitleType: titleType,
 		Watched:   watched,
 		WatchedAt: ptrToTimestamptz(watchedAt),
 		AddedAt:   timeToTimestamptz(addedAt),
@@ -223,7 +225,6 @@ func TestStore_AddNewGroupTitle(t *testing.T) {
 	require.Contains(t, got.Titles, titleId)
 	item := got.Titles[titleId]
 	require.Equal(t, titleId, item.TitleId)
-	require.Equal(t, "movie", item.TitleType)
 	require.False(t, item.Watched)
 	require.Nil(t, item.SeasonsWatched, "a freshly added movie must have nil SeasonsWatched")
 	require.Nil(t, item.WatchedAt)
@@ -1003,46 +1004,6 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		require.EqualValues(t, 1, total)
 		require.Len(t, got, 1)
 		require.Equal(t, present.ID, got[0].Title.ID)
-	})
-
-	// group_titles.title_type and titles.type are independent stores of the
-	// same fact, and they disagree constantly: AddNewGroupTitle stamps the
-	// literal "movie" on every entry and nothing ever refreshes it, so on the
-	// production database 98 of 122 rows carry a title_type that contradicts
-	// the catalogue. This page reads the catalogue, deliberately — the same
-	// column it filters titleType on, so a returned row can never claim a type
-	// that its own filter would have excluded.
-	t.Run("TitleType comes from the catalogue, not from the stale group_titles column", func(t *testing.T) {
-		resetDB(t)
-		s := newTestStore(t)
-		ctx := context.Background()
-
-		owner := addTestUser(t, s)
-		group, err := s.CreateGroup(ctx, newTestGroup(t, "title-type-source", owner))
-		require.NoError(t, err)
-
-		series := newTestMovieTitle(t, "tt-type-source", "A Series", 5.0)
-		series.Type = "tvSeries"
-		require.NoError(t, s.AddTitle(ctx, series))
-
-		// What AddNewGroupTitle would have written: "movie", now stale.
-		now := time.Now().UTC().Truncate(time.Second)
-		addGroupTitleRow(t, s, group.Id, series.ID, "movie", false, nil, now, now)
-
-		got, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
-		require.NoError(t, err)
-		require.Len(t, got, 1)
-		require.Equal(t, "tvSeries", got[0].Item.TitleType,
-			"the paged item must report the catalogue's type, not the stale group_titles.title_type")
-		require.Equal(t, "tvSeries", got[0].Title.Type,
-			"the item's type must agree with the title it was joined to")
-
-		// And the filter agrees with what the row reports: asking for movies
-		// excludes it entirely.
-		movies, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, []string{"movie"}, "", nil, 10, 1)
-		require.NoError(t, err)
-		require.Empty(t, movies, "a titleType=movie filter must not return a title the catalogue calls a series")
-		require.EqualValues(t, 0, total)
 	})
 
 	t.Run("seasons stitching: a series gets non-nil SeasonsWatched, a movie gets nil", func(t *testing.T) {

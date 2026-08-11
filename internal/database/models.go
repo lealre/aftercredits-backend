@@ -45,7 +45,6 @@ type GroupMember struct {
 type GroupTitle struct {
 	GroupID   string
 	TitleID   string
-	TitleType string
 	Watched   bool
 	WatchedAt pgtype.Timestamptz
 	AddedAt   pgtype.Timestamptz
