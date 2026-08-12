@@ -1,11 +1,13 @@
 package postgres
 
 import (
+	"context"
 	"math"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lealre/movies-backend/internal/database"
 	"github.com/lealre/movies-backend/internal/store"
+	"github.com/lealre/movies-backend/internal/uow"
 )
 
 // Store implements store.Store against PostgreSQL, wrapping a *pgxpool.Pool
@@ -57,4 +59,42 @@ func pageOffset(size, page int) (int64, bool) {
 		return 0, false
 	}
 	return int64(page-1) * int64(size), true // now provably in range
+}
+
+// qq returns the queries to use for this call: bound to the request's unit-of-work
+// transaction when one is active, else straight to the pool.
+//
+// Every query in this package goes through qq or inTx. A direct s.q call would
+// silently run outside the request's transaction — exactly the bug the unit of
+// work exists to prevent — so TestNoDirectQueryUse guards against it.
+func (s *Store) qq(ctx context.Context) *database.Queries {
+	if u := uow.FromContext(ctx); u != nil {
+		if tx := u.Active(); tx != nil {
+			return s.q.WithTx(tx)
+		}
+	}
+	return s.q
+}
+
+// inTx runs fn with queries bound to a transaction. It joins the request's unit
+// of work when there is one — so the caller's writes land in the same
+// transaction as its activity events — and otherwise owns a transaction for the
+// duration of the call.
+func (s *Store) inTx(ctx context.Context, fn func(q *database.Queries) error) error {
+	if u := uow.FromContext(ctx); u != nil {
+		tx, err := u.Tx(ctx)
+		if err != nil {
+			return err
+		}
+		return fn(s.q.WithTx(tx))
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
