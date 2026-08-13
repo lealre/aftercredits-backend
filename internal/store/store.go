@@ -79,4 +79,11 @@ type Store interface {
 	RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error
 	GetGroupTitlesPage(ctx context.Context, groupId string, watched *bool, titleTypes []string, orderBy string, ascending *bool, size, page int) ([]models.GroupPagedTitle, int64, error)
 	GroupHasTitleEntries(ctx context.Context, groupId string, watched *bool, titleTypes []string) (bool, error)
+
+	// ----- ActivityEvents -----
+
+	InsertActivityEvents(ctx context.Context, events []models.ActivityEvent) error
+	GetActivityFeed(ctx context.Context, userId string, before *int64, limit int) ([]models.ActivityEvent, error)
+	GetActivityUnreadCount(ctx context.Context, userId string) (int64, error)
+	MarkActivityRead(ctx context.Context, userId string, seq int64) error
 }

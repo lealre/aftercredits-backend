@@ -237,6 +237,54 @@ func assembleSeasonsWatched(rows []database.GroupTitleSeason) *models.SeasonsWat
 	return &out
 }
 
+// activityEventRowToModel converts a feed row into the domain type, decoding
+// the JSONB payload. A NULL/absent payload decodes to a nil map, which
+// serializes as {} at the API boundary.
+//
+// It takes the FEED row, not database.ActivityEvent: GetActivityFeedRows joins
+// groups for the label, so sqlc emits its own row struct
+// (database.GetActivityFeedRowsRow) carrying every event column plus GroupName.
+// The insert's returned row is discarded, so no mapper is needed for it. Check
+// the generated field name after `sqlc generate` and match it exactly.
+func activityEventRowToModel(row database.GetActivityFeedRowsRow) (models.ActivityEvent, error) {
+	var payload map[string]any
+	if len(row.Payload) > 0 {
+		if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			return models.ActivityEvent{}, err
+		}
+	}
+	return models.ActivityEvent{
+		Id:        row.ID,
+		Seq:       row.Seq,
+		GroupId:   row.GroupID,
+		GroupName: row.GroupName,
+		ActorId:   row.ActorID,
+		ActorName: row.ActorName,
+		Kind:      row.Kind,
+		TitleId:   textToPtr(row.TitleID),
+		TitleName: textToPtr(row.TitleName),
+		Payload:   payload,
+		CreatedAt: row.CreatedAt.Time,
+	}, nil
+}
+
+// int64PtrToNullable adapts an optional cursor to the generated nullable param.
+func int64PtrToNullable(v *int64) pgtype.Int8 {
+	if v == nil {
+		return pgtype.Int8{}
+	}
+	return pgtype.Int8{Int64: *v, Valid: true}
+}
+
+// firstNonEmpty returns a when it is non-empty, else b. Used so a caller may
+// supply its own event id (tests do) while the store generates one otherwise.
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
 // titleToRow converts a models.Title into the params for InsertTitle. The
 // query columns (primary_title, type, start_year, ...) are denormalized
 // copies used for filtering/sorting/indexing; metadata holds the complete
