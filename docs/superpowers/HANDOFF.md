@@ -12,23 +12,37 @@ where we stopped and what to do next.
 
 ## Where this stopped
 
-Two of the plan's seven tasks are committed. **The next job is a fix to Task 3,
-not Task 2** — see "Next work" below. Nothing is wired to HTTP yet, so the
-feature is invisible at runtime and all of this is safe to iterate on.
+**The design changed on 2026-08-13.** The activity feed no longer shares a
+transaction with the business write. Events are buffered per request and handed
+to a pluggable `activity.Sink` **after** the write has committed, and the whole
+feature sits behind `ACTIVITY_FEED_ENABLED` (default off). The reasoning is in
+the spec under "Capture — recorder, sink, flush-after-commit" and "Why not the
+atomic design"; the trade accepted is best-effort delivery — an event can be lost
+if the process dies between the commit and the flush.
+
+Two consequences for whoever picks this up:
+
+- **Task 3's committed work is being removed, not fixed.** The critical hole the
+  review found (thirteen writes whose atomicity depended on statement order) and
+  the aborted-transaction interaction in `internal/services/titles` both
+  disappear with the mechanism. Nothing needs a savepoint.
+- **The next job is the unwind**, then Task 2. Nothing is wired to HTTP yet, so
+  the feature is invisible at runtime and all of this is safe to iterate on.
 
 | Task | State | Commit |
 |---|---|---|
 | 1 — migration 005 (`activity_events`, `activity_reads`) | done, reviewed clean | `dd5df5b` |
-| 3 — unit of work + store seam | **done, review found a critical hole** | `90e5740` |
+| 3 — ~~unit of work + store seam~~ → **unwind it** | built, then superseded by the redesign | `90e5740` (to be reverted) |
 | 2 — activity model / queries / store methods | not started | |
-| 4 — recorder + flush middleware | not started | |
-| 5 — the eleven emit sites | not started | |
-| 6 — feed / unread / read endpoints | not started | |
-| 7 — frontend bell + polling | not started | |
+| 4 — recorder + sink + flag-gated flush | not started, rescoped | |
+| 5 — the eleven emit sites | not started, unchanged | |
+| 6 — feed / unread / read endpoints | not started, routes now flag-gated | |
+| 7 — frontend bell + polling | not started, unchanged | |
 
-**Execution order is 1, 3, 2, 4, 5, 6, 7** — not the plan's numeric order.
-Task 3 builds the `s.qq(ctx)` / `s.inTx(ctx, …)` seam that Task 2's store code
-calls, so it has to land first. The plan text has been corrected to match.
+**Execution order is 1, 3, 2, 4, 5, 6, 7** — not the plan's numeric order. Task 3
+now runs first among the remainder so that Task 2's store code is written against
+the final shape (plain `s.q` for reads, `s.inTx` for its one write) instead of
+against a seam that is about to be deleted.
 
 Everything currently passes: `go build ./...`, `go vet ./...`, `gofmt -l .`
 clean, and the full `go test -count=1 ./...` green including the
@@ -36,112 +50,64 @@ testcontainer-backed `internal/postgres` and `tests/` suites.
 
 ---
 
-## Next work: fix Task 3's transaction hole
+## Next work: Task 3 — unwind the unit of work
 
-The Task 3 review found a **critical, latent** defect. The implementer wrote
-exactly what the plan specified; the plan was wrong. It is latent only because
-nothing wires the middleware yet — Task 4 makes it live, so it must be fixed
-first.
+Full steps are in the plan (`### Task 3`). In short:
 
-### The bug
+1. `rm -r internal/uow` and `rm internal/postgres/store_test.go` (the latter holds
+   only `TestNoDirectQueryUse`, which guards a rule that no longer exists — with
+   no ambient transaction, a direct `s.q.Foo(…)` write is correct because a single
+   statement commits on its own).
+2. In `internal/postgres/store.go`, delete `qq` and reduce `inTx` to its
+   standalone branch (begin / defer rollback / fn / commit), dropping the `uow`
+   import. `inTx` is worth keeping: it removes the `pool.Begin` boilerplate the
+   twelve genuinely multi-statement writes used to repeat by hand.
+3. `sed -i 's/s\.qq(ctx)\./s.q./g'` across
+   `internal/postgres/{groups,ratings,comments,titles,users}.go` (50 sites), then
+   `gofmt -w internal/postgres`.
+4. Sweep: `grep -rn "qq(ctx)" internal/` and
+   `grep -rn "internal/uow\|uow\." internal/ --include='*.go'` must both be
+   silent; `grep -c 'inTx(ctx' internal/postgres/*.go` must still total twelve.
+5. `go build ./... && go vet ./... && gofmt -l .`, then the
+   `internal/postgres` and `tests/` suites.
 
-`qq(ctx)` only **joins** a transaction. It never begins one — `u.Active()`
-returns nil until something calls `u.Tx(ctx)`, and only `inTx` does that.
+Then continue with Task 2 as written.
 
-So when a request's **first** write goes through `qq`, that write runs on the
-pool and commits immediately, outside the unit of work. A later `inTx` then
-begins the request transaction. If the activity-event insert fails, the
-middleware rolls back — and the business write is already committed, with no
-event recorded.
+### What to watch for in Task 4 (rescoped)
 
-The result is that atomicity silently depends on the order of statements within
-a request. That is exactly the guarantee this whole mechanism exists to provide.
+The parts that carry the design's weight now, all specified in the plan:
 
-Concrete example once Task 4 lands: `DELETE /groups/{g}/titles/{t}/comments/{id}`
-calls `Store.DeleteComment`, which uses `qq` → commits on the pool. The
-"comment deleted" event is then recorded through `inTx`, which begins the
-transaction. Any later failure rolls that back: the comment is gone, the feed
-never mentions it.
-
-### The fix (decided — do both parts)
-
-**Part 1 — convert the writes.** The rule is **reads → `qq`, every write →
-`inTx`**, regardless of statement count. Thirteen methods currently use `qq`
-for a write and must move to `inTx`:
-
-| File | Methods |
-|---|---|
-| `internal/postgres/titles.go` | `AddTitle`, `DeleteTitle`, `UpdateTitle` |
-| `internal/postgres/users.go` | `AddUser`, `DeleteUserById`, `UpdateUserInfo`, `UpdateUserLastLoginAt`, `UpdateUserGroup`, `RemoveGroupFromUser` |
-| `internal/postgres/groups.go` | `UpdateGroupInfo`, `SoftDeleteGroup` |
-| `internal/postgres/comments.go` | `DeleteComment` |
-| `internal/postgres/ratings.go` | `DeleteRating` |
-
-Verify the list against the code rather than trusting this table — it came from
-a review, and methods may have moved.
-
-**Part 2 — handle the aborted-transaction interaction.** Inside an ambient
-transaction, a SQL error aborts the *entire* transaction: every subsequent
-statement fails with `current transaction is aborted, commands ignored until
-end of transaction block`. Standalone mode did not behave that way.
-
-One existing caller depends on the old behaviour:
-`internal/services/titles/titles.go:75-83` calls `AddTitle`, and on a
-duplicate-key error swallows it and does a `GetTitleById` read-back. Once
-`AddTitle` uses `inTx`, that read-back executes inside an aborted transaction
-and fails. Today it is accidentally safe *only* because `AddTitle` uses `qq` —
-so Part 1 turns this live. Two acceptable fixes:
-
-- wrap the `inTx` body in a savepoint so a failed statement rolls back to the
-  savepoint rather than poisoning the whole transaction; or
-- change that caller to check existence first instead of writing and swallowing
-  the conflict.
-
-Prefer the savepoint if other swallow-and-continue callers turn up; prefer
-fixing the caller if this is the only one. Grep for services that ignore a
-store error and keep going before choosing.
-
-**Part 3 — widen the guard test.** `TestNoDirectQueryUse` in
-`internal/postgres/store_test.go` greps only for `s.q.`. `Store` also holds
-`pool *pgxpool.Pool`, so a new method calling `s.pool.Begin(...)` bypasses the
-unit of work just as completely while passing the guard. Every pre-refactor
-write in this package was written as `s.pool.Begin`, so it is the likelier
-regression. Widen the regex to `\bs\.(q|pool)\.[A-Z]`, keeping `store.go`
-exempt.
-
-### How to verify the fix
-
-A test that fails before and passes after, not just a green suite:
-
-1. Seed a request context with a unit of work.
-2. Call one of the 13 methods (e.g. `DeleteComment`).
-3. Roll the unit of work back **without** committing.
-4. Assert the row is still there.
-
-Before the fix it is gone (committed on the pool); after, it survives. Mutation
-check it: revert the method to `qq`, confirm the test fails, restore.
+- The flush runs **after** the response, so the request context may already be
+  cancelled — it needs `context.WithoutCancel` plus its own timeout, or events
+  vanish whenever a client disconnects.
+- A sink error is **logged and swallowed**. Propagating it would fail a request
+  whose write already committed, which is precisely the failure mode the redesign
+  exists to remove. There is a test for it; keep it.
+- Reuse `responseRecorder` from `internal/server/middleware.go` for the status
+  gate rather than adding a second wrapper.
+- The middleware sits **inside** `AuthMiddleware` so the actor is in context and
+  no emit site has to pass it.
+- The flag must be read **once** and used for both the middleware and (Task 6)
+  the routes. Half-on — events recorded with no endpoint to read them, or
+  endpoints with nothing feeding them — is the one state to make unreachable.
 
 ---
 
 ## Deferred findings (from the Task 3 review)
 
-None of these block progress; the final whole-branch review should triage them.
+Four of the five are **moot** once Task 3 is unwound, and are recorded here only
+so the final review does not re-derive them:
 
-- **`store.go` is allowlisted whole-file** in the guard test, so any future
-  method added to that file may use `s.q.` freely. Scoping the exemption to the
-  two lines inside `qq`/`inTx` would be tighter.
-- **The guard regex depends on the receiver being named `s`.** A method written
-  as `func (st *Store) …` using `st.q.` passes. Convention-dependent, not a live
-  hole.
-- **`Commit`/`Rollback` do not clear `u.tx`** (`internal/uow/uow.go`). After a
-  commit, `Active()` still returns the closed transaction, so a later store call
-  on the same context gets `pgx: tx is closed` instead of falling back to the
-  pool — and the natural middleware shape (`defer u.Rollback(ctx)` plus
-  `u.Commit(ctx)`) yields `ErrTxClosed` from the deferred call instead of a
-  clean no-op. Setting `u.tx = nil` under the lock makes both idempotent.
-- **The shared `pgx.Tx` is not serialized across goroutines.** A pgx connection
-  is not goroutine-safe. Not reachable today (the only goroutines are in
-  `cmd/routines`, which has no unit of work), but Task 4 should document it.
+- ~~`store.go` allowlisted whole-file in the guard test~~ — the guard test is
+  deleted.
+- ~~The guard regex depends on the receiver being named `s`~~ — same.
+- ~~`Commit`/`Rollback` do not clear `u.tx`~~ — the package is deleted.
+- ~~The shared `pgx.Tx` is not serialized across goroutines~~ — no shared
+  transaction exists any more. (Worth remembering if anyone ever revisits
+  atomicity: a pgx connection is not goroutine-safe.)
+
+Still live:
+
 - **`internal/postgres/testharness_test.go:144`** — the comment above
   `tableNames` still says it lists "every table `001_init.sql` creates", which
   stopped being true when migration 005 added two more.

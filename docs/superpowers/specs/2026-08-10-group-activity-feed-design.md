@@ -163,49 +163,101 @@ so the data is in hand at the right moment.
 column is nullable so member/group events can be added later without a
 migration.
 
-## Capture — unit of work + recorder
+## Capture — recorder, sink, flush-after-commit
 
-Two pieces, both generic:
+**Revised 2026-08-13.** The original design shared one transaction between the
+business write and its events, so the two committed or vanished together. That
+is dropped. The reasons are in "Delivery guarantee" below; the short version is
+that atomicity welded the feature to Postgres and to every write path in the
+store, and the feature is meant to be pluggable and switchable instead.
+
+Three pieces:
 
 **`internal/activity` — the recorder.** `activity.Record(ctx, event)` appends to
 a buffer held in the request context. One line per emit site: no store handle, no
-error path, no knowledge of transactions. Constructors per kind
+error path, no knowledge of transactions or transports. Constructors per kind
 (`activity.RatingAdded(groupId, title, note)`) keep call sites readable and make
-a malformed event a compile error.
+a malformed event a compile error. `Record` on a context with no recorder is a
+no-op, which is what makes the feature switchable without touching emit sites.
 
-**`internal/uow` — the unit of work.** Middleware seeds a unit of work into the
-request context for mutating methods. It does **not** begin a transaction
-eagerly: the transaction starts lazily on the first store write. After the
-handler returns, on a 2xx the buffered events are inserted into that same
-transaction and it commits; on anything else it rolls back, so the business
-write and its events vanish together.
+**`activity.Sink` — the pluggable destination.** One method:
 
-The store gains one helper — `s.qq(ctx)` returns `s.q.WithTx(tx)` when a unit of
-work has an active transaction and `s.q` otherwise. Handlers and services are
-otherwise untouched.
+```go
+type Sink interface { Append(ctx context.Context, events []Event) error }
+```
 
-**Why lazy.** `AddTitleToGroup` calls the external metadata provider
-(`internal/api/groups_handler.go`, `titles.AddNewTitle(api.Db, api.Provider, …)`)
-*before* its group write. Beginning the transaction at request start would hold a
-Postgres connection open across that network call — a pool-exhaustion risk on the
-Pi. Lazy begin means the provider call completes before the transaction exists.
+Phase 1 ships one implementation, backed by `store.Store.InsertActivityEvents`.
+Redis, RabbitMQ, a log-only sink for debugging, or a fan-out to several are
+implementations of the same interface, and none of them touch the recorder, the
+eleven emit sites, or the read model. The `Event` type is plain data (`map[string]any`
+payload) precisely so it can be serialized to any of them.
 
-**The footgun, stated plainly.** The transaction spans everything the handler
-does after its first write. Today no handler writes, calls out, then writes
-again. A future one that did would hold a transaction across the network. This
-needs a comment at the seam and a test asserting the ordering, not just
-intentions.
+**The flush — after commit, never inside it.** Middleware seeds a recorder into
+the request context for mutating methods. After the handler returns, on a 2xx,
+the buffered events go to the sink in one call. A sink failure is **logged and
+swallowed**: the user's rating already committed, and the feed missing a line is
+not a reason to fail their request. This inverts the original design's failure
+mode, where a broken event insert would have rolled back a legitimate action.
 
-**The second cost.** Every `s.q.Foo(…)` becomes `s.qq(ctx).Foo(…)` — roughly 60
-mechanical edits, where a missed one silently writes outside the transaction:
-exactly the bug the mechanism exists to prevent. Mitigated by a test that fails
-on any direct `s.q.` use outside the helper.
+Two details the implementation must get right: the flush runs after the response
+is written, so the request context may already be cancelled — it needs
+`context.WithoutCancel` plus its own timeout; and it is inline (not a goroutine),
+which keeps event order within a request and avoids leaking work past the
+process's lifetime at zero benefit for this traffic.
 
-Rejected alternatives: a pure middleware wrapper cannot see group ids that arrive
-in a request body (`POST /ratings`, `POST /comments`, `POST /groups/titles`) nor
-the title's name, so it yields access-log entries rather than feed lines; a
-direct write per handler multiplies eleven error paths that each have to be
-remembered.
+**The feature flag.** `ACTIVITY_FEED_ENABLED`, default **off**. When off, no
+recorder is seeded (so `Record` no-ops), no sink is constructed, and the
+`/activity*` routes are not registered. Merging the feature therefore changes
+nothing in production until it is switched on per environment. The eleven emit
+sites stay compiled in either way — they are one inert line each.
+
+### Delivery guarantee
+
+**Best-effort (at-most-once).** An event is lost if the process dies between the
+business commit and the flush, or if the sink is down. Accepted for a
+family-scale movie tracker: a missing "maria rated *Dune* 9" in the feed is a
+cosmetic gap, not a data-integrity incident, and nothing downstream reconciles
+against the log.
+
+If at-least-once is ever wanted, the upgrade path does **not** require
+revisiting this design: `activity_events` is already shaped like a transactional
+outbox. Write the row in the business transaction, and have a relay
+(`cmd/routines` is where it would live) publish committed rows to the broker and
+track its position. That is strictly additive — the recorder, the emit sites and
+the API are unchanged, and phase 2's `pg_notify` is a miniature of the same idea.
+
+### Why not the atomic design
+
+Rejected after building it (commit `90e5740`, reverted):
+
+- It welded the feature to Postgres. A shared transaction is unavailable across
+  Postgres and a broker, so "same convention, different provider" was impossible
+  by construction rather than by omission.
+- It entangled every write in the store. Fifty read sites and twelve write sites
+  routed through an ambient-transaction seam, and the review found that a request
+  whose first write joined no transaction committed outside the unit of work —
+  making atomicity depend on statement order. The mechanism that existed to
+  guarantee atomicity had a hole in exactly that guarantee.
+- Its lazy-begin escape (needed because `AddTitleToGroup` calls the metadata
+  provider before writing) left a documented footgun: any future handler that
+  wrote, called out, then wrote again would hold a transaction across a network
+  call.
+- It made a failed event insert reject the user's action.
+
+Dropping it also removes two problems outright: the thirteen-method ordering bug
+above, and the aborted-transaction interaction where `internal/services/titles`
+swallows a duplicate-key error and reads back (a savepoint would have been
+needed only because of the ambient transaction).
+
+Store writes keep the atomicity they had before this work: single statements
+auto-commit, and the twelve genuinely multi-statement writes keep their own
+explicit transaction via the store's `inTx` helper.
+
+Also rejected: a pure middleware wrapper cannot see group ids that arrive in a
+request body (`POST /ratings`, `POST /comments`, `POST /groups/titles`) nor the
+title's name, so it yields access-log entries rather than feed lines; a direct
+sink write per handler multiplies eleven error paths that each have to be
+remembered, and puts transport knowledge in the handlers.
 
 ## Read model and API
 
@@ -268,8 +320,12 @@ carries no payload — the client re-reads from its cursor. Consequently:
   makes this scale without Redis or NATS.
 
 `pg_notify` is transactional: fired inside the transaction, it is delivered only
-if the commit succeeds, so no one is ever notified about a rating that rolled
-back.
+if the commit succeeds, so no one is ever notified about an event row that never
+landed. The transaction meant here is the **sink's own** insert (phase 1 flushes
+after the business commit, not inside it) — a rating that rolled back produces no
+event to notify about, because the flush is status-gated and never runs. The
+notify therefore belongs in the Postgres sink implementation, alongside the
+insert, and a non-Postgres sink would carry its own push mechanism instead.
 
 ### Endpoints
 
@@ -308,23 +364,30 @@ Phase 1:
 
 1. Each of the eleven kinds is emitted exactly once by its endpoint, with the
    right actor, group, title name and payload.
-2. **A failed request emits nothing** — force a service error after a partial
-   write and assert both the business row and the event are absent.
-   Mutation-checked; this is the core claim of the unit of work.
-3. Own actions are excluded from the actor's feed and badge, and visible to
+2. **A non-2xx response emits nothing** — the flush is status-gated, so a
+   rejected or failed request leaves no event behind. Mutation-checked.
+   Note what is deliberately *not* claimed: a handler that commits its write and
+   then fails leaves the row with no event. That is the accepted consequence of
+   best-effort delivery, not a defect.
+3. **A sink failure does not fail the request** — inject a sink that always
+   errors and assert the business write still returns its normal 2xx and its row
+   is present. This is the inverted failure mode and the reason the atomic
+   design was dropped; it needs a test, not a comment.
+4. Own actions are excluded from the actor's feed and badge, and visible to
    other members.
-4. A non-member sees nothing from that group; a departed member stops seeing it.
-5. Delete events carry the title name and previous value captured pre-delete.
-6. Keyset pagination returns every event exactly once with no duplicates or gaps.
-7. Watermark: unread count falls to zero after `POST /activity/read`, and new
+5. A non-member sees nothing from that group; a departed member stops seeing it.
+6. Delete events carry the title name and previous value captured pre-delete.
+7. Keyset pagination returns every event exactly once with no duplicates or gaps.
+8. Watermark: unread count falls to zero after `POST /activity/read`, and new
    events raise it again.
-8. A store write that bypasses `s.qq(ctx)` fails a guard test.
+9. **With the feature off**, a mutating request writes no event and the
+   `/activity*` routes are absent — the plug-out path is asserted, not assumed.
 
 Phase 2:
 
-9. `pg_notify` fires on commit and does **not** fire on rollback.
-10. A client resuming with `Last-Event-ID` receives exactly the events it missed.
-11. Ticket auth: valid once, rejected on reuse and after expiry.
+10. `pg_notify` fires on commit and does **not** fire on rollback.
+11. A client resuming with `Last-Event-ID` receives exactly the events it missed.
+12. Ticket auth: valid once, rejected on reuse and after expiry.
 
 ## Delivery
 

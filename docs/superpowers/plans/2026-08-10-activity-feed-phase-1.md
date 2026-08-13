@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Record every group-scoped write as an append-only activity event, and serve a per-user feed with an unread badge — with the event and the business write committing atomically.
+**Goal:** Record every group-scoped write as an append-only activity event, and serve a per-user feed with an unread badge — as a feature that can be switched off per environment and pointed at a different destination without touching the code that emits.
 
-**Architecture:** A new `activity_events` table is written through a request-scoped unit of work. Middleware seeds a buffer into the request context; each write site adds one line via `activity.Record(ctx, …)`; the middleware inserts the buffered events into the same transaction as the business write and commits only on a 2xx. Visibility is computed at read time — one row per action, filtered per reader — so no fan-out on write.
+**Architecture:** Middleware seeds an event buffer into the request context; each write site adds one line via `activity.Record(ctx, …)`; after the handler returns, on a 2xx, the middleware stamps the actor and hands the buffer to an `activity.Sink`. Phase 1's sink writes `activity_events` through `store.Store`; a broker or a fan-out is another implementation of the same one-method interface. Delivery is **best-effort**: the flush happens after the business write has committed, and a sink failure is logged, never propagated — a lost feed line must not fail a user's rating. Visibility is computed at read time — one row per action, filtered per reader — so no fan-out on write.
+
+**Rescoped 2026-08-13.** This plan originally had the event and the business write share one transaction. That is dropped in favour of pluggability and an on/off switch; the reasoning and the trade accepted (an event can be lost if the process dies between commit and flush) are in the spec under "Capture" and "Delivery guarantee". Task 3 now *removes* the unit of work it used to build, and Task 4 replaces the transactional flush with a sink. Everything else stands.
 
 **Tech Stack:** Go 1.24, pgx/v5 + pgxpool, sqlc v1.30 (`sql_package: pgx/v5`), goose migrations embedded via `sql/embed.go`, testcontainers-go (postgres:16), testify. Frontend: React 18 + TypeScript + Vite, TanStack Query v5, Tailwind + shadcn/ui.
 
@@ -44,11 +46,11 @@
 | `internal/models/activity.go` | storage-neutral `ActivityEvent` domain type |
 | `internal/postgres/activity.go` | store implementation |
 | `internal/postgres/activity_test.go` | store-level tests |
-| `internal/uow/uow.go` | request-scoped unit of work (lazy transaction) |
-| `internal/uow/uow_test.go` | unit-of-work unit tests |
 | `internal/activity/activity.go` | the recorder + typed event constructors |
 | `internal/activity/activity_test.go` | recorder unit tests |
-| `internal/server/uow_middleware.go` | seeds the UoW, flushes events, commits/rolls back |
+| `internal/activity/sink.go` | the `Sink` interface + the store-backed implementation |
+| `internal/server/activity_middleware.go` | seeds the recorder, flushes to the sink after a 2xx |
+| `internal/server/activity_middleware_test.go` | middleware unit tests (fake sink, no database) |
 | `internal/services/activity/types.go` | JSON DTOs |
 | `internal/services/activity/mapper.go` | `models.ActivityEvent` → DTO |
 | `internal/services/activity/activity.go` | feed / unread-count / mark-read logic |
@@ -62,14 +64,23 @@
 | Path | Change |
 |---|---|
 | `internal/store/store.go` | new `ActivityEvents` method block |
-| `internal/postgres/store.go` | `qq(ctx)` and `inTx(ctx, fn)` seams |
-| `internal/postgres/{groups,ratings,comments,titles,users}.go` | `s.q.` → `s.qq(ctx).`; own-transaction methods → `inTx` |
+| `internal/postgres/store.go` | Task 3 removes `qq`; `inTx(ctx, fn)` stays, standalone-only |
+| `internal/postgres/{groups,ratings,comments,titles,users}.go` | Task 3 reverts the 50 `s.qq(ctx).` sites to `s.q.` |
 | `internal/postgres/mappers.go` | `activityEventRowToModel` |
-| `internal/server/server.go` | three routes + UoW middleware in the chain |
+| `internal/config/config.go` | `ActivityFeedEnabled()` + `envBool` |
+| `env.example` | document `ACTIVITY_FEED_ENABLED` |
+| `internal/server/server.go` | flag-gated: activity middleware inside auth, three routes |
 | `internal/api/{groups_handler,ratings_handlers,comments_handler}.go` | 11 `activity.Record(…)` lines |
 | `internal/postgres/testharness_test.go` | `tableNames` (:145) + two TRUNCATE lists (:75, :267) |
 | `tests/setup_test.go` | TRUNCATE list (:86) |
 | `docs/CHANGELOG.md` | operator-facing entry |
+
+**Deleted (Task 3, added by the superseded atomic design in commit `90e5740`):**
+
+| Path | Why |
+|---|---|
+| `internal/uow/uow.go`, `internal/uow/uow_test.go` | the unit of work has no purpose once events flush after commit |
+| `internal/postgres/store_test.go` | `TestNoDirectQueryUse` guards a rule that no longer exists |
 
 ---
 
@@ -462,9 +473,10 @@ import (
 	"github.com/lealre/movies-backend/internal/models"
 )
 
-// InsertActivityEvents appends events to the log. It is called from the unit of
-// work's flush, inside the same transaction as the business write that produced
-// them, so an event cannot outlive a rolled-back change.
+// InsertActivityEvents appends events to the log. It backs activity.StoreSink
+// and is called after the request's business write has already committed, so it
+// owns its own transaction: either the whole batch of events for a request
+// lands or none of it does.
 //
 // Ids and created_at are generated here, matching every other write in this
 // package. seq is assigned by the database.
@@ -472,31 +484,32 @@ func (s *Store) InsertActivityEvents(ctx context.Context, events []models.Activi
 	if len(events) == 0 {
 		return nil
 	}
-	q := s.qq(ctx)
-	now := time.Now()
-	for _, e := range events {
-		payload, err := json.Marshal(e.Payload)
-		if err != nil {
-			return err
+	return s.inTx(ctx, func(q *database.Queries) error {
+		now := time.Now()
+		for _, e := range events {
+			payload, err := json.Marshal(e.Payload)
+			if err != nil {
+				return err
+			}
+			if e.Payload == nil {
+				payload = []byte(`{}`)
+			}
+			if _, err := q.InsertActivityEventRow(ctx, database.InsertActivityEventRowParams{
+				ID:        firstNonEmpty(e.Id, uuid.NewString()),
+				GroupID:   e.GroupId,
+				ActorID:   e.ActorId,
+				ActorName: e.ActorName,
+				Kind:      e.Kind,
+				TitleID:   ptrToText(e.TitleId),
+				TitleName: ptrToText(e.TitleName),
+				Payload:   payload,
+				CreatedAt: timeToTimestamptz(now),
+			}); err != nil {
+				return err
+			}
 		}
-		if e.Payload == nil {
-			payload = []byte(`{}`)
-		}
-		if _, err := q.InsertActivityEventRow(ctx, database.InsertActivityEventRowParams{
-			ID:        firstNonEmpty(e.Id, uuid.NewString()),
-			GroupID:   e.GroupId,
-			ActorID:   e.ActorId,
-			ActorName: e.ActorName,
-			Kind:      e.Kind,
-			TitleID:   ptrToText(e.TitleId),
-			TitleName: ptrToText(e.TitleName),
-			Payload:   payload,
-			CreatedAt: timeToTimestamptz(now),
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // GetActivityFeed returns the events visible to userId, newest first, excluding
@@ -505,7 +518,7 @@ func (s *Store) GetActivityFeed(ctx context.Context, userId string, before *int6
 	if limit <= 0 {
 		return []models.ActivityEvent{}, nil
 	}
-	rows, err := s.qq(ctx).GetActivityFeedRows(ctx, database.GetActivityFeedRowsParams{
+	rows, err := s.q.GetActivityFeedRows(ctx, database.GetActivityFeedRowsParams{
 		UserID:   userId,
 		Before:   int64PtrToNullable(before),
 		RowLimit: int64(limit),
@@ -525,11 +538,11 @@ func (s *Store) GetActivityFeed(ctx context.Context, userId string, before *int6
 }
 
 func (s *Store) GetActivityUnreadCount(ctx context.Context, userId string) (int64, error) {
-	return s.qq(ctx).CountActivityUnread(ctx, userId)
+	return s.q.CountActivityUnread(ctx, userId)
 }
 
 func (s *Store) MarkActivityRead(ctx context.Context, userId string, seq int64) error {
-	return s.qq(ctx).UpsertActivityRead(ctx, database.UpsertActivityReadParams{
+	return s.q.UpsertActivityRead(ctx, database.UpsertActivityReadParams{
 		UserID:  userId,
 		ReadAt:  timeToTimestamptz(time.Now()),
 		ReadSeq: seq,
@@ -591,7 +604,7 @@ func firstNonEmpty(a, b string) string {
 
 `textToPtr`, `ptrToText` and `timeToTimestamptz` already exist in `mappers.go`. Add `encoding/json` to its imports.
 
-**Note on execution order:** Task 3 (the unit-of-work seam) runs **before** this task, so `s.qq(ctx)` already exists — use it directly. Do not use `s.q`; `TestNoDirectQueryUse` from Task 3 will fail if you do.
+**Note on execution order:** Task 3 (the unwind) runs **before** this task, so by the time you write these methods the store has no ambient-transaction seam: reads call `s.q` directly, and `InsertActivityEvents` — the one write here — wraps its batch in `s.inTx`. There is no `s.qq` and no guard test to satisfy.
 
 - [ ] **Step 8: Run the tests to verify they pass**
 
@@ -609,180 +622,46 @@ git commit -m "feat: activity event storage — model, queries and store methods
 
 ---
 
-### Task 3: Unit of work — the ambient transaction seam
+### Task 3: Unwind the unit of work — every write stands alone
+
+**Rescoped 2026-08-13.** This task originally built a request-scoped unit of work so that a business write and the events describing it shared one transaction. That design is dropped — see the spec's "Why not the atomic design" — so the task now *removes* it. Commit `90e5740` built the seam; this task takes it back out.
+
+Removing it also disposes of two defects the Task 3 review found, without either needing a fix:
+
+- the thirteen write methods whose atomicity silently depended on statement order (there is no ambient transaction left to join, so nothing can miss it);
+- the aborted-transaction interaction at `internal/services/titles/titles.go:75-83`, where a swallowed duplicate-key error would have poisoned the surrounding transaction. No surrounding transaction, no interaction — and no savepoint needed.
+
+What the store is left with is the shape `main` shipped, plus one helper worth keeping: `inTx` in standalone-only form, which replaces the `pool.Begin` / `defer Rollback` / `WithTx` / `Commit` boilerplate the twelve genuinely multi-statement writes used to repeat by hand.
 
 **Files:**
-- Create: `internal/uow/uow.go`, `internal/uow/uow_test.go`
-- Modify: `internal/postgres/store.go`, and every `internal/postgres/*.go` using `s.q.`
+- Delete: `internal/uow/uow.go`, `internal/uow/uow_test.go`, `internal/postgres/store_test.go`
+- Modify: `internal/postgres/store.go` (drop `qq`, drop `inTx`'s ambient branch and the `uow` import), `internal/postgres/{groups,ratings,comments,titles,users}.go` (every `s.qq(ctx).` → `s.q.`)
 
 **Interfaces:**
-- Consumes: nothing from earlier tasks.
-- Produces:
-  - `uow.New(pool *pgxpool.Pool) *UnitOfWork`
-  - `uow.With(ctx context.Context, u *UnitOfWork) context.Context`
-  - `uow.FromContext(ctx context.Context) *UnitOfWork`
-  - `(*UnitOfWork).Tx(ctx context.Context) (pgx.Tx, error)` — begins lazily on first call, returns the same tx after
-  - `(*UnitOfWork).Active() pgx.Tx` — the tx if one was begun, else nil, never begins
-  - `(*UnitOfWork).Commit(ctx) error`, `(*UnitOfWork).Rollback(ctx) error`
-  - `(*Store).qq(ctx) *database.Queries`, `(*Store).inTx(ctx, fn func(*database.Queries) error) error`
+- Produces: `(*Store).inTx(ctx context.Context, fn func(q *database.Queries) error) error` — standalone only: begins its own transaction, rolls back on error, commits on success. Its 12 existing call sites keep compiling untouched.
+- Removes: the `internal/uow` package; `(*Store).qq`; `TestNoDirectQueryUse`.
+- Unaffected: `pageOffset` in `store.go`, and the Task 1 test-harness edits (`tableNames`, the two TRUNCATE lists) — those belong to migration 005, not to the seam.
 
-- [ ] **Step 1: Write the failing unit-of-work test**
+- [ ] **Step 1: Delete the unit of work and the guard test**
 
-Create `internal/uow/uow_test.go`:
-
-```go
-package uow
-
-import (
-	"context"
-	"testing"
-
-	"github.com/stretchr/testify/require"
-)
-
-func TestUnitOfWork_Context(t *testing.T) {
-	t.Run("FromContext returns nil when no unit of work was seeded", func(t *testing.T) {
-		require.Nil(t, FromContext(context.Background()),
-			"a request without a unit of work must report none, so the store falls back to the pool")
-	})
-
-	t.Run("Active is nil until a transaction is actually begun", func(t *testing.T) {
-		u := New(nil)
-		ctx := With(context.Background(), u)
-		require.Same(t, u, FromContext(ctx), "the seeded unit of work must come back out")
-		require.Nil(t, u.Active(),
-			"no transaction may be begun before the first write — a handler that calls an external API before writing must not hold one")
-	})
-}
+```bash
+rm -r internal/uow
+rm internal/postgres/store_test.go
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+`store_test.go` holds nothing but `TestNoDirectQueryUse`, which guards a rule that no longer exists: with no ambient transaction, a direct `s.q.Foo(…)` write is correct — a single statement commits on its own. Verify before deleting: `grep -c '^func Test' internal/postgres/store_test.go` must print `1`.
 
-Run: `go test ./internal/uow/`
-Expected: FAIL to build — package does not exist.
+- [ ] **Step 2: Simplify the store seam**
 
-- [ ] **Step 3: Implement the unit of work**
-
-Create `internal/uow/uow.go`:
+In `internal/postgres/store.go`, delete the `qq` method entirely and reduce `inTx` to its standalone branch. The result — replacing both methods:
 
 ```go
-// Package uow provides a request-scoped unit of work: one database transaction
-// shared by everything a mutating request does, so a business write and the
-// activity event describing it commit or roll back together.
-//
-// The transaction is begun LAZILY, on the first write rather than at the start
-// of the request. That is not an optimization: AddTitleToGroup calls an
-// external metadata provider before its group write, and beginning eagerly
-// would hold a pooled connection open across that network call.
-//
-// Consequence worth knowing: the transaction spans everything the handler does
-// after its first write. No handler today writes, calls out, then writes again.
-// One that did would hold a transaction across the network.
-package uow
-
-import (
-	"context"
-	"sync"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-type ctxKey struct{}
-
-type UnitOfWork struct {
-	pool *pgxpool.Pool
-	mu   sync.Mutex
-	tx   pgx.Tx
-}
-
-func New(pool *pgxpool.Pool) *UnitOfWork { return &UnitOfWork{pool: pool} }
-
-func With(ctx context.Context, u *UnitOfWork) context.Context {
-	return context.WithValue(ctx, ctxKey{}, u)
-}
-
-func FromContext(ctx context.Context) *UnitOfWork {
-	u, _ := ctx.Value(ctxKey{}).(*UnitOfWork)
-	return u
-}
-
-// Tx returns the request's transaction, beginning it on first call.
-func (u *UnitOfWork) Tx(ctx context.Context) (pgx.Tx, error) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if u.tx != nil {
-		return u.tx, nil
-	}
-	tx, err := u.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	u.tx = tx
-	return tx, nil
-}
-
-// Active returns the transaction if one has been begun, without beginning one.
-func (u *UnitOfWork) Active() pgx.Tx {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return u.tx
-}
-
-func (u *UnitOfWork) Commit(ctx context.Context) error {
-	tx := u.Active()
-	if tx == nil {
-		return nil
-	}
-	return tx.Commit(ctx)
-}
-
-func (u *UnitOfWork) Rollback(ctx context.Context) error {
-	tx := u.Active()
-	if tx == nil {
-		return nil
-	}
-	return tx.Rollback(ctx)
-}
-```
-
-- [ ] **Step 4: Run it to verify it passes**
-
-Run: `go test -count=1 ./internal/uow/`
-Expected: PASS.
-
-- [ ] **Step 5: Add the store seams**
-
-In `internal/postgres/store.go`:
-
-```go
-// qq returns the queries to use for this call: bound to the request's unit-of-work
-// transaction when one is active, else straight to the pool.
-//
-// Every query in this package goes through qq or inTx. A direct s.q call would
-// silently run outside the request's transaction — exactly the bug the unit of
-// work exists to prevent — so TestNoDirectQueryUse guards against it.
-func (s *Store) qq(ctx context.Context) *database.Queries {
-	if u := uow.FromContext(ctx); u != nil {
-		if tx := u.Active(); tx != nil {
-			return s.q.WithTx(tx)
-		}
-	}
-	return s.q
-}
-
-// inTx runs fn with queries bound to a transaction. It joins the request's unit
-// of work when there is one — so the caller's writes land in the same
-// transaction as its activity events — and otherwise owns a transaction for the
-// duration of the call.
+// inTx runs fn inside its own transaction, rolling back on error and
+// committing on success. It exists for the writes that genuinely span more
+// than one statement (a rating and its season rows, a group and its members);
+// a single-statement write needs no transaction, since Postgres commits it on
+// its own.
 func (s *Store) inTx(ctx context.Context, fn func(q *database.Queries) error) error {
-	if u := uow.FromContext(ctx); u != nil {
-		tx, err := u.Tx(ctx)
-		if err != nil {
-			return err
-		}
-		return fn(s.q.WithTx(tx))
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -795,101 +674,62 @@ func (s *Store) inTx(ctx context.Context, fn func(q *database.Queries) error) er
 }
 ```
 
-- [ ] **Step 6: Convert every call site**
+Then drop the now-unused `"github.com/lealre/movies-backend/internal/uow"` import. Leave the `Store` struct, `New`, and `pageOffset` alone.
 
-**The rule is by read-vs-write, NOT by statement count.** An earlier revision of
-this plan said "single-statement methods take `qq`", and that was wrong in a way
-that silently defeats the whole mechanism — see the box below. Convert as:
+- [ ] **Step 3: Revert the call sites**
 
-1. **Reads → `s.qq(ctx).Foo(ctx, …)`.** `qq` joins the request transaction when
-   one is already open and otherwise goes to the pool. It never begins one, so a
-   `GET` never holds a transaction.
-2. **Every write → `s.inTx(ctx, func(q *database.Queries) error { … })`**,
-   whether it issues one statement or ten. Only `inTx` begins a transaction.
-   Methods that currently do `tx, err := s.pool.Begin(ctx)` / `defer tx.Rollback(ctx)`
-   / `qtx := s.q.WithTx(tx)` / `tx.Commit(ctx)` replace that scaffolding with
-   `inTx`, using `q` where `qtx` was used; assign results to a variable declared
-   outside the closure and return it after.
-
-> **Why writes cannot use `qq`.** `qq` only *joins* — `u.Active()` returns nil
-> until something calls `u.Tx(ctx)`, and only `inTx` does. So if a request's
-> FIRST write goes through `qq`, it runs on the pool and commits immediately,
-> outside the unit of work. A later `inTx` then begins the transaction, and if
-> the activity-event insert fails the middleware rolls back — leaving the
-> business write committed and no event. Atomicity would be silently dependent
-> on the order of statements within a request. The 13 methods this affects are
-> exactly the feed-relevant mutations: `AddTitle`, `DeleteTitle`, `UpdateTitle`,
-> `AddUser`, `DeleteUserById`, `UpdateUserInfo`, `UpdateUserLastLoginAt`,
-> `UpdateUserGroup`, `RemoveGroupFromUser`, `UpdateGroupInfo`, `SoftDeleteGroup`,
-> `DeleteComment`, `DeleteRating`.
-
-There are 59 `s.q.` occurrences across those files. After the pass, `grep -rn 's\.q\.' internal/postgres/*.go | grep -v _test` must return **nothing** except the two uses inside `qq` and `inTx` themselves.
-
-**One interaction this creates.** Inside an ambient transaction, a SQL error
-aborts the *whole* transaction — every later statement fails with `current
-transaction is aborted`. In standalone mode it did not. One existing caller
-swallows a store error and continues: `internal/services/titles/titles.go:75-83`
-turns a duplicate-key error from `AddTitle` into a `GetTitleById` read-back.
-Once `AddTitle` uses `inTx`, that read-back runs in an aborted transaction and
-fails. Fix by wrapping the `inTx` body in a savepoint, or by making that caller
-check existence first instead of writing and swallowing the conflict.
-
-- [ ] **Step 7: Add the guard test**
-
-Append to `internal/postgres/store_test.go` (create it if absent — it holds only `func Test…`):
-
-```go
-// TestNoDirectQueryUse fails if any store method reaches s.q directly instead of
-// going through qq(ctx) or inTx. A direct call runs outside the request's
-// unit-of-work transaction, so its write would commit even when the request
-// fails — silently defeating the atomicity the unit of work exists to provide.
-func TestNoDirectQueryUse(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	require.NoError(t, err)
-
-	allowed := map[string]bool{"store.go": true}
-	// s.pool is the second escape hatch and the likelier regression: every
-	// pre-refactor write in this package was written as s.pool.Begin, so it is
-	// what muscle memory reaches for. A method using it bypasses the unit of
-	// work just as completely as a direct s.q call.
-	re := regexp.MustCompile(`\bs\.(q|pool)\.[A-Z]`)
-
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") || allowed[f] {
-			continue
-		}
-		src, err := os.ReadFile(f)
-		require.NoError(t, err)
-		require.NotRegexp(t, re, string(src),
-			"%s calls s.q directly; use s.qq(ctx) or s.inTx so the write joins the request transaction", f)
-	}
-}
-```
-
-- [ ] **Step 8: Run the full store suite**
-
-Run: `go test -count=1 ./internal/postgres/ ./internal/uow/`
-Expected: PASS. Every pre-existing store test must still pass unchanged — this task changes how queries are dispatched, never what they do.
-
-- [ ] **Step 9: Commit**
+Fifty sites across five files read through the seam. They go back to the generated queries directly:
 
 ```bash
-git add internal/uow internal/postgres
-git commit -m "feat: request-scoped unit of work with a lazy transaction"
+sed -i 's/s\.qq(ctx)\./s.q./g' internal/postgres/{groups,ratings,comments,titles,users}.go
+gofmt -w internal/postgres
 ```
+
+Then confirm nothing was missed and nothing else was hit:
+
+```bash
+grep -rn "qq(ctx)" internal/            # expect: no output
+grep -rn "internal/uow\|uow\." internal/ --include='*.go'   # expect: no output
+```
+
+The twelve `s.inTx(ctx, …)` call sites are deliberately untouched — check the count is still twelve: `grep -c 'inTx(ctx' internal/postgres/*.go`.
+
+- [ ] **Step 4: Verify**
+
+```bash
+go build ./... && go vet ./... && gofmt -l .
+go test ./internal/postgres/ -count=1
+go test ./tests/ -count=1
+```
+
+Expected: build/vet clean, `gofmt -l` silent, both suites green (Docker required — they run postgres:16 testcontainers). `git diff --stat origin/main -- internal/postgres tests` should show only the Task 1 harness edits and no seam left behind.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A internal/uow internal/postgres
+git commit -m "refactor: drop the unit of work — events no longer share the write's transaction"
+```
+
+Include in the commit body why, in one line: the shared transaction is replaced by a pluggable sink flushed after commit, so the feature can be switched off and pointed at another provider.
 
 ---
 
-### Task 4: The recorder and the flush middleware
+### Task 4: The recorder, the pluggable sink, and the flush
+
+**Rescoped 2026-08-13.** Steps 1–4 (the recorder) are unchanged. The rest is rewritten: there is no unit of work to join, so instead of inserting events into the business transaction, the middleware hands them to an `activity.Sink` **after** the request succeeded, and the whole feature sits behind a flag that defaults to off. See the spec's "Capture — recorder, sink, flush-after-commit".
 
 **Files:**
-- Create: `internal/activity/activity.go`, `internal/activity/activity_test.go`, `internal/server/uow_middleware.go`
-- Modify: `internal/server/server.go`
+- Create: `internal/activity/activity.go`, `internal/activity/activity_test.go`, `internal/activity/sink.go`, `internal/server/activity_middleware.go`, `internal/server/activity_middleware_test.go`
+- Modify: `internal/server/server.go`, `internal/config/config.go`, `env.example`
 
 **Interfaces:**
-- Consumes: `uow` (Task 3), `store.Store.InsertActivityEvents` (Task 2).
+- Consumes: `store.Store.InsertActivityEvents` (Task 2), `auth.GetUserFromContext`, `logx.FromContext`, and `responseRecorder` from `internal/server/middleware.go`.
 - Produces:
   - `activity.WithRecorder(ctx) context.Context`, `activity.Record(ctx context.Context, e Event)`, `activity.Recorded(ctx) []Event`
+  - `activity.Sink` (`Append(ctx, []models.ActivityEvent) error`), `activity.StoreSink`, `activity.NewStoreSink(store.Store)`
+  - `server.ActivityMiddleware(sink activity.Sink) func(http.Handler) http.Handler`
+  - `config.ActivityFeedEnabled() bool` — default **false**
   - `activity.Event{GroupId string; Kind string; TitleId, TitleName *string; Payload map[string]any}`
   - Constructors: `TitleAdded`, `TitleRemoved`, `TitleWatchedChanged`, `RatingAdded`, `RatingUpdated`, `RatingDeleted`, `RatingSeasonDeleted`, `CommentAdded`, `CommentUpdated`, `CommentDeleted`, `CommentSeasonDeleted`
 
@@ -1096,36 +936,89 @@ func commentEvent(kind, groupId, titleId, titleName string, season *int) Event {
 Run: `go test -count=1 ./internal/activity/`
 Expected: PASS.
 
-- [ ] **Step 5: Write the middleware**
+- [ ] **Step 5: Define the sink**
 
-Create `internal/server/uow_middleware.go`:
+The sink is the seam that makes the destination swappable. Create `internal/activity/sink.go`:
+
+```go
+package activity
+
+import (
+	"context"
+
+	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
+)
+
+// Sink is where recorded events go once a request has succeeded. One method, so
+// the destination is a swappable dependency: the store today, a broker or a
+// fan-out to several later, with no change to the recorder, the eleven emit
+// sites, or the read model.
+//
+// It takes models.ActivityEvent rather than Event: by flush time the actor has
+// been resolved from the request, so what reaches a sink is a complete fact
+// rather than the intent to record one. A sink knows about destinations, never
+// about HTTP or auth.
+type Sink interface {
+	Append(ctx context.Context, events []models.ActivityEvent) error
+}
+
+// StoreSink is the phase 1 sink: it appends to activity_events through the
+// store interface, so it inherits the database portability boundary the rest of
+// the app already depends on.
+type StoreSink struct{ store store.Store }
+
+func NewStoreSink(st store.Store) StoreSink { return StoreSink{store: st} }
+
+func (s StoreSink) Append(ctx context.Context, events []models.ActivityEvent) error {
+	return s.store.InsertActivityEvents(ctx, events)
+}
+```
+
+No nop implementation is provided: when the feature is off the middleware is never installed, so nothing calls a sink at all. Tests that need a failing or capturing sink define their own — an interface with one method is cheaper to fake than to configure.
+
+- [ ] **Step 6: Write the flush middleware**
+
+Create `internal/server/activity_middleware.go`:
 
 ```go
 package server
 
 import (
+	"context"
 	"net/http"
-
-	"github.com/jackc/pgx/v5/pgxpool"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/models"
-	"github.com/lealre/movies-backend/internal/store"
-	"github.com/lealre/movies-backend/internal/uow"
 )
 
-// UnitOfWorkMiddleware gives every mutating request one transaction shared by
-// its business write and the activity events describing it, and persists those
-// events only when the request succeeded.
+// flushTimeout bounds the post-response sink call. The request context is
+// already done by then, so this is the only thing standing between a wedged
+// sink and a goroutine parked forever.
+const flushTimeout = 5 * time.Second
+
+// ActivityMiddleware records what a request did, and hands it to the sink after
+// the request has succeeded — never inside the business transaction.
 //
-// It runs INSIDE AuthMiddleware, so the authenticated user is already in the
-// context and every event's actor can be stamped centrally.
+// Three properties, in the order they matter:
 //
-// Read requests are passed straight through: they have nothing to record and no
-// reason to hold a transaction.
-func UnitOfWorkMiddleware(pool *pgxpool.Pool, st store.Store) func(http.Handler) http.Handler {
+//   - A failing sink cannot fail the user's request. The write has already
+//     committed and the response has already gone out; a lost feed line is
+//     logged and swallowed. This is the whole reason the atomic design was
+//     dropped (see the spec), so it is asserted by a test, not just intended.
+//   - Nothing is recorded for a request that did not succeed. The flush is
+//     gated on the response status, so a rejected or failed request leaves no
+//     event behind. What is deliberately NOT promised is the converse: a
+//     handler that commits and then fails leaves a row with no event, which is
+//     what best-effort delivery means.
+//   - The actor is stamped centrally. It runs INSIDE AuthMiddleware, so the
+//     authenticated user is in the context and no emit site has to pass it.
+//
+// Read requests are passed straight through — they have nothing to record.
+func ActivityMiddleware(sink activity.Sink) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !isMutating(r.Method) {
@@ -1133,30 +1026,15 @@ func UnitOfWorkMiddleware(pool *pgxpool.Pool, st store.Store) func(http.Handler)
 				return
 			}
 
-			u := uow.New(pool)
-			ctx := activity.WithRecorder(uow.With(r.Context(), u))
-			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			ctx := activity.WithRecorder(r.Context())
+			rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
 			next.ServeHTTP(rec, r.WithContext(ctx))
 
-			logger := logx.FromContext(ctx)
-			if rec.status >= http.StatusBadRequest {
-				if err := u.Rollback(ctx); err != nil {
-					logger.Printf("ERROR: rollback failed: %v", err)
-				}
+			if rec.statusCode >= http.StatusBadRequest {
 				return
 			}
-
-			if err := flushEvents(ctx, st, activity.Recorded(ctx)); err != nil {
-				logger.Printf("ERROR: recording activity failed: %v", err)
-				if rbErr := u.Rollback(ctx); rbErr != nil {
-					logger.Printf("ERROR: rollback failed: %v", rbErr)
-				}
-				return
-			}
-			if err := u.Commit(ctx); err != nil {
-				logger.Printf("ERROR: commit failed: %v", err)
-			}
+			flush(ctx, sink, activity.Recorded(ctx))
 		})
 	}
 }
@@ -1170,23 +1048,41 @@ func isMutating(method string) bool {
 	}
 }
 
-// flushEvents stamps the actor onto each buffered event and appends them to the
-// log, inside the request's transaction.
-func flushEvents(ctx context.Context, st store.Store, events []activity.Event) error {
+// flush stamps the actor onto each buffered event and appends them to the sink.
+// It never returns an error: the response is already written, so the only
+// honest thing left to do with a failure is log it.
+//
+// The context is detached from the request. The client may already have
+// disconnected — cancelling the flush for that reason would drop events for the
+// people the feed is actually for.
+func flush(ctx context.Context, sink activity.Sink, events []activity.Event) {
 	if len(events) == 0 {
-		return nil
+		return
 	}
+
+	logger := logx.FromContext(ctx)
+
 	actor := auth.GetUserFromContext(ctx)
 	if actor == nil {
 		// Only the two public routes have no actor, and neither records
-		// anything. Recording without one would produce an unattributable row.
-		return nil
+		// anything. An unattributable row would be worse than no row.
+		logger.Printf("WARN: %d activity event(s) dropped: no actor in context", len(events))
+		return
 	}
-	models := make([]models.ActivityEvent, 0, len(events))
+
+	stamped := make([]models.ActivityEvent, 0, len(events))
 	for _, e := range events {
-		models = append(models, toModel(*actor, e))
+		stamped = append(stamped, toModel(*actor, e))
 	}
-	return st.InsertActivityEvents(ctx, models)
+
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flushTimeout)
+	defer cancel()
+
+	if err := sink.Append(flushCtx, stamped); err != nil {
+		// Deliberately not propagated: the business write is committed and the
+		// response is sent. Best-effort delivery, stated in the spec.
+		logger.Printf("ERROR: recording %d activity event(s) failed: %v", len(stamped), err)
+	}
 }
 
 func toModel(actor models.User, e activity.Event) models.ActivityEvent {
@@ -1202,64 +1098,180 @@ func toModel(actor models.User, e activity.Event) models.ActivityEvent {
 }
 
 // actorDisplayName prefers the user's name and falls back to the username, so a
-// feed line always has something to show.
+// feed line always has something to call the actor.
 func actorDisplayName(u models.User) string {
 	if u.Name != "" {
 		return u.Name
 	}
 	return u.Username
 }
+```
 
-// statusRecorder captures the response status so the middleware can tell a
-// successful request from a failed one. The existing responseRecorder in
-// middleware.go is unexported and status-only; this mirrors it locally rather
-// than widening that one's contract.
-type statusRecorder struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
+`responseRecorder` already exists in `internal/server/middleware.go` (the request-id logger uses it to report the status) — reuse it rather than adding a second status wrapper.
+
+- [ ] **Step 7: Write the middleware test**
+
+Create `internal/server/activity_middleware_test.go`. It needs no database: a stub handler that records an event, and a fake sink. Cover exactly the properties the doc comment claims:
+
+```go
+package server
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/lealre/movies-backend/internal/activity"
+	"github.com/lealre/movies-backend/internal/auth"
+	"github.com/lealre/movies-backend/internal/models"
+)
+
+type fakeSink struct {
+	got  []models.ActivityEvent
+	err  error
+	call int
 }
 
-func (s *statusRecorder) WriteHeader(code int) {
-	if !s.wroteHeader {
-		s.status = code
-		s.wroteHeader = true
-	}
-	s.ResponseWriter.WriteHeader(code)
+func (f *fakeSink) Append(_ context.Context, events []models.ActivityEvent) error {
+	f.call++
+	f.got = append(f.got, events...)
+	return f.err
 }
 
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	if !s.wroteHeader {
-		s.wroteHeader = true
+// handlerRecording returns a handler that records one event and responds with
+// the given status, standing in for a real mutating endpoint.
+func handlerRecording(status int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		activity.Record(r.Context(), activity.TitleAdded("g1", "tt1", "Dune"))
+		w.WriteHeader(status)
+	})
+}
+
+func requestAs(method string, actor *models.User) *http.Request {
+	r := httptest.NewRequest(method, "/anything", nil)
+	if actor != nil {
+		r = r.WithContext(auth.WithUser(r.Context(), *actor))
 	}
-	return s.ResponseWriter.Write(b)
+	return r
+}
+
+func TestActivityMiddleware(t *testing.T) {
+	actor := models.User{Id: "u1", Name: "Maria", Username: "maria"}
+
+	t.Run("a successful mutating request flushes its events with the actor stamped", func(t *testing.T) {
+		sink := &fakeSink{}
+		ActivityMiddleware(sink)(handlerRecording(http.StatusCreated)).
+			ServeHTTP(httptest.NewRecorder(), requestAs(http.MethodPost, &actor))
+
+		require.Len(t, sink.got, 1)
+		require.Equal(t, "u1", sink.got[0].ActorId)
+		require.Equal(t, "Maria", sink.got[0].ActorName, "the display name comes from the authenticated user, not the emit site")
+		require.Equal(t, "title_added", sink.got[0].Kind)
+	})
+
+	t.Run("a failed request records nothing", func(t *testing.T) {
+		sink := &fakeSink{}
+		ActivityMiddleware(sink)(handlerRecording(http.StatusConflict)).
+			ServeHTTP(httptest.NewRecorder(), requestAs(http.MethodPost, &actor))
+
+		require.Zero(t, sink.call, "the flush is gated on the response status")
+	})
+
+	t.Run("a failing sink does not change the response", func(t *testing.T) {
+		sink := &fakeSink{err: errors.New("sink is down")}
+		w := httptest.NewRecorder()
+		ActivityMiddleware(sink)(handlerRecording(http.StatusCreated)).
+			ServeHTTP(w, requestAs(http.MethodPost, &actor))
+
+		require.Equal(t, http.StatusCreated, w.Code,
+			"the write already committed; a lost feed line must not fail the user's request")
+	})
+
+	t.Run("a read request is passed through untouched", func(t *testing.T) {
+		sink := &fakeSink{}
+		reached := false
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reached = true
+			require.Empty(t, activity.Recorded(r.Context()), "no recorder is seeded for a read")
+		})
+		ActivityMiddleware(sink)(h).
+			ServeHTTP(httptest.NewRecorder(), requestAs(http.MethodGet, &actor))
+
+		require.True(t, reached)
+		require.Zero(t, sink.call)
+	})
+
+	t.Run("events without an actor are dropped rather than written unattributed", func(t *testing.T) {
+		sink := &fakeSink{}
+		ActivityMiddleware(sink)(handlerRecording(http.StatusCreated)).
+			ServeHTTP(httptest.NewRecorder(), requestAs(http.MethodPost, nil))
+
+		require.Zero(t, sink.call)
+	})
 }
 ```
 
-Resolve the `models` name collision (the package and the local slice variable) by naming the slice `rows`. Add `"context"` to the imports.
+Run: `go test ./internal/server/ -count=1 -v` — all five subtests pass. Mutation-check the second and third: make the flush unconditional and the "failed request" subtest must fail; propagate the sink error as a 500 and the third must fail.
 
-- [ ] **Step 6: Wire it into the chain**
+- [ ] **Step 8: Add the feature flag and wire it in**
 
-`internal/server/server.go` builds the chain at the bottom of `NewServerWithProvider`. `NewServer` must pass the pool through — check how the pool reaches the server and thread it, or expose it from the concrete store at the composition root only.
+The flag is what makes the feature pluggable in the operational sense: off means no middleware and (Task 6) no routes.
+
+In `internal/config/config.go`, alongside `envInt`:
 
 ```go
-	handler := UnitOfWorkMiddleware(pool, st)(mux)
+// ActivityFeedEnabled reports whether the activity feed is switched on for this
+// environment. It defaults to OFF: the feature ships inert, so merging it
+// changes nothing in production until it is deliberately enabled.
+func ActivityFeedEnabled() bool { return envBool("ACTIVITY_FEED_ENABLED", false) }
+
+func envBool(key string, def bool) bool {
+	v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key)))
+	if err != nil {
+		return def
+	}
+	return v
+}
+```
+
+In `internal/server/server.go`, inside `NewServerWithProvider`, the activity middleware goes **inside** `AuthMiddleware` so the actor is already in the context — the existing chain is `RequestIdMiddleware(AuthMiddleware(secret, st)(mux))`, so wrap the mux first:
+
+```go
+	var handler http.Handler = mux
+	if config.ActivityFeedEnabled() {
+		handler = ActivityMiddleware(activity.NewStoreSink(st))(handler)
+	}
 	handler = AuthMiddleware(*a.Secret, st)(handler)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
 ```
 
-Order matters: `RequestId` → `Auth` → `UnitOfWork` → mux, so the actor is in context when the unit of work flushes.
+Add to `env.example`, under a new heading:
 
-- [ ] **Step 7: Verify the build and the whole suite**
+```
+# Activity feed (group activity events + unread badge).
+# Off unless set: no events are recorded and the /activity routes are absent.
+ACTIVITY_FEED_ENABLED=false
+```
 
-Run: `go build ./... && go vet ./... && go test -count=1 ./...`
-Expected: PASS throughout. No behaviour has changed yet — nothing records.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Verify the build and the whole suite**
 
 ```bash
-git add internal/activity internal/server
-git commit -m "feat: activity recorder and unit-of-work middleware"
+go build ./... && go vet ./... && gofmt -l .
+go test ./internal/... -count=1
+go test ./tests/ -count=1
+```
+
+Expected: all green. The `tests/` suite runs with the flag unset, i.e. the feature off — which is itself the plug-out assertion, and it must not have changed a single existing expectation.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add internal/activity internal/server internal/config env.example
+git commit -m "feat: activity recorder, pluggable sink, and a flag-gated flush after commit"
 ```
 
 ---
@@ -1402,9 +1414,11 @@ Expected: PASS, 2 subtests.
 
 Add a subtest per remaining kind to `TestActivityIsRecorded`, each starting with `resetDB(t)`, asserting the kind, actor, group and payload. Follow the two existing subtests exactly.
 
-- [ ] **Step 6: Mutation-check the atomicity claim**
+- [ ] **Step 6: Mutation-check the status gate**
 
-This is the core claim of the whole design. Temporarily change `UnitOfWorkMiddleware` to flush events regardless of status (drop the `rec.status >= 400` branch), run `go test -count=1 -run TestActivityIsRecorded/a_failed_request ./tests/`, and confirm it **FAILS**. Restore the branch and confirm it passes. Record the observed failure output in the PR.
+The gate is what keeps a rejected request out of the feed. Temporarily change `ActivityMiddleware` to flush regardless of status (drop the `rec.statusCode >= http.StatusBadRequest` branch), run `go test -count=1 -run TestActivityIsRecorded/a_failed_request ./tests/`, and confirm it **FAILS**. Restore the branch and confirm it passes. Record the observed failure output in the PR.
+
+Note what this does *not* claim, so the PR does not overstate it: the gate keeps events out when the response is an error, but delivery is best-effort — a handler that commits and then fails leaves a row with no event, by design. The atomicity claim the original plan made here no longer exists.
 
 - [ ] **Step 7: Commit**
 
@@ -1664,15 +1678,46 @@ func (api *API) MarkActivityRead(w http.ResponseWriter, r *http.Request) {
 
 - [ ] **Step 4: Register the routes**
 
-In `internal/server/server.go`, after the comments block:
+In `internal/server/server.go`, after the comments block — **gated on the same flag as the middleware**, so "off" means the endpoints are absent (404), not present-and-empty:
 
 ```go
-	mux.HandleFunc("GET /activity", a.GetActivityFeed)
-	mux.HandleFunc("GET /activity/unread-count", a.GetActivityUnreadCount)
-	mux.HandleFunc("POST /activity/read", a.MarkActivityRead)
+	if config.ActivityFeedEnabled() {
+		mux.HandleFunc("GET /activity", a.GetActivityFeed)
+		mux.HandleFunc("GET /activity/unread-count", a.GetActivityUnreadCount)
+		mux.HandleFunc("POST /activity/read", a.MarkActivityRead)
+	}
 ```
 
+Read the flag **once** into a local at the top of the constructor and use it for both the middleware (Task 4) and these routes — two independent `config.ActivityFeedEnabled()` calls could disagree if the environment changed mid-process, leaving events recorded with no way to read them.
+
 Do **not** add these to `api.PublicPaths`.
+
+The integration tests need the feature on. `tests/setup_test.go` builds the server once in `TestMain`, so set it there — `t.Setenv` is per-test and cannot reach a server constructed in `TestMain`:
+
+```go
+	os.Setenv("ACTIVITY_FEED_ENABLED", "true")
+```
+
+before `server.NewServerWithProvider(…)`. That makes the suite exercise the feature as deployed-on, and Task 4's Step 9 note (the suite passing with the flag unset) applies only until this task lands.
+
+**The plug-out path still needs asserting** (spec test 9). Because the shared `testServer` is now flag-on, that test builds its own server rather than reusing the helpers — the flag is read during construction, so `t.Setenv` reaches it:
+
+```go
+func TestActivityFeedDisabled(t *testing.T) {
+	resetDB(t)
+	t.Setenv("ACTIVITY_FEED_ENABLED", "false")
+
+	off := httptest.NewServer(server.NewServerWithProvider(testStore, newFakeTitleProvider(), "test-secret"))
+	defer off.Close()
+
+	// … create a user and a group against `off`, add a title (a mutating,
+	// event-emitting request), then assert both halves of "off":
+	//   - GET /activity on `off` returns 404 (the routes are absent)
+	//   - activity_events is empty (no recorder was seeded, so Record no-oped)
+}
+```
+
+Keep it to that one test: it is the switch, not the feature, that is under test.
 
 - [ ] **Step 5: Write the API tests**
 
@@ -1915,10 +1960,12 @@ Open one PR per repo. Neither is merged.
 
 ## Self-Review
 
-**Spec coverage:** append-only log → Task 1; record-once/fan-out-on-read → Task 2 (query) and Task 6 (service); `seq` cursor → Tasks 1, 2, 6; watermark → Tasks 1, 2, 6; all eleven kinds → Tasks 4, 5; unit of work with lazy begin → Task 3; recorder + flush-on-2xx → Task 4; feed/unread/read endpoints → Task 6; polling frontend → Task 7; retention (keep everything) → no task needed, by design; no collapsing → satisfied by emitting per request.
+**Spec coverage:** append-only log → Task 1; record-once/fan-out-on-read → Task 2 (query) and Task 6 (service); `seq` cursor → Tasks 1, 2, 6; watermark → Tasks 1, 2, 6; all eleven kinds → Tasks 4, 5; unwinding the superseded unit of work → Task 3; recorder + pluggable sink + flush-after-commit + the on/off flag → Task 4; delivery guarantee (best-effort, sink failure swallowed) → Task 4 Steps 6–7; feed/unread/read endpoints → Task 6; polling frontend → Task 7; retention (keep everything) → no task needed, by design; no collapsing → satisfied by emitting per request.
 
 **Not covered here, by design:** everything in the spec's Phase 2 section (SSE, `pg_notify`, `LISTEN`, ticket auth, nginx changes) is a separate plan.
 
-**Type consistency:** `models.ActivityEvent` gains `GroupName` in Task 6 Step 1 — the field is introduced there and used only in `MapDbEventToApiEvent`; Task 2's struct definition must be amended at that point rather than duplicated. `s.qq(ctx)` is referenced in Task 2 but defined in Task 3, flagged explicitly in Task 2 Step 7.
+**Type consistency:** `models.ActivityEvent` gains `GroupName` in Task 6 Step 1 — the field is introduced there and used only in `MapDbEventToApiEvent`; Task 2's struct definition must be amended at that point rather than duplicated. `activity.Event` (the emit-site intent, no actor) and `models.ActivityEvent` (the stored fact, actor stamped) are deliberately distinct types; the middleware's `toModel` in Task 4 is the only place they meet, and `activity.Sink` speaks the latter so a sink never touches auth.
 
-**Known ordering hazard:** Task 2 writes store code that uses a seam Task 3 introduces. Implementing in order requires the temporary `s.q` noted in Task 2 Step 7; the Task 3 mechanical pass converts it, and `TestNoDirectQueryUse` will fail until it does.
+**Execution order:** **1, 3, 2, 4, 5, 6, 7.** Task 3 (the unwind) precedes Task 2 so that Task 2's store code is written against the final shape — plain `s.q` for reads, `s.inTx` for the one write — rather than against a seam that is about to be deleted. The original ordering hazard (Task 2 depending on a seam Task 3 introduced) is gone with the seam itself.
+
+**Flag consistency:** the middleware (Task 4 Step 8) and the routes (Task 6 Step 4) must be gated by the *same* read of `config.ActivityFeedEnabled()` — noted in both places. Half-on (events recorded, no way to read them; or routes present with nothing feeding them) is the one configuration this plan must make unreachable.
