@@ -2,8 +2,11 @@ package tests
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/lealre/movies-backend/internal/server"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/ratings"
 	"github.com/lealre/movies-backend/internal/services/users"
@@ -341,4 +344,169 @@ func TestActivityIsRecorded(t *testing.T) {
 		require.NotNil(t, rows[2].TitleName)
 		require.Equal(t, show.PrimaryTitle, *rows[2].TitleName)
 	})
+}
+
+func TestActivityFeedEndpoints(t *testing.T) {
+	t.Run("the feed excludes the caller's own actions", func(t *testing.T) {
+		resetDB(t)
+		testTitleId, _ := seedTwoActivityTitles(t)
+
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", testTitleId),
+			GroupId: group.Id,
+		}, actorToken)
+
+		readerFeed := getActivityFeed(t, readerToken, "")
+		require.Len(t, readerFeed.Events, 1, "the reader must see the actor's event")
+		require.Equal(t, "title_added", readerFeed.Events[0].Kind)
+		require.Equal(t, group.Name, readerFeed.Events[0].GroupName,
+			"each row carries its group's name for the label")
+
+		actorFeed := getActivityFeed(t, actorToken, "")
+		require.Empty(t, actorFeed.Events,
+			"the actor must not be notified about their own action")
+	})
+
+	t.Run("an empty feed serializes events as [] not null", func(t *testing.T) {
+		resetDB(t)
+		_, token := addUser(t, users.NewUserRequest{Username: "lonely", Password: "pass"})
+
+		body := getActivityFeedRawBody(t, token, "")
+		require.Contains(t, body, `"events":[]`,
+			"an empty feed must serialize as [], not null — a decoded struct cannot tell them apart, so this is asserted on the raw body")
+		require.Contains(t, body, `"nextBefore":null`)
+		require.Contains(t, body, `"hasMore":false`)
+	})
+
+	t.Run("unread count drops to zero after marking read and rises again", func(t *testing.T) {
+		resetDB(t)
+		testTitleId, secondTestTitleId := seedTwoActivityTitles(t)
+
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", testTitleId),
+			GroupId: group.Id,
+		}, actorToken)
+
+		require.EqualValues(t, 1, getActivityUnreadCount(t, readerToken),
+			"the actor's event is unread for the reader")
+		require.EqualValues(t, 0, getActivityUnreadCount(t, actorToken),
+			"your own action is never unread for you")
+
+		feed := getActivityFeed(t, readerToken, "")
+		markActivityRead(t, readerToken, feed.Events[0].Seq)
+		require.EqualValues(t, 0, getActivityUnreadCount(t, readerToken),
+			"marking the newest seq read clears the badge")
+
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", secondTestTitleId),
+			GroupId: group.Id,
+		}, actorToken)
+		require.EqualValues(t, 1, getActivityUnreadCount(t, readerToken),
+			"a new event after the watermark is unread again")
+	})
+
+	t.Run("the cursor walks every event exactly once", func(t *testing.T) {
+		resetDB(t)
+
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
+
+		titleIds := seededTitleIds(t, 12)
+		for _, id := range titleIds {
+			addTitleToGroup(t, groups.AddTitleToGroupRequest{
+				URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", id),
+				GroupId: group.Id,
+			}, actorToken)
+		}
+
+		seen := map[string]int{}
+		query := "?limit=5"
+		for {
+			page := getActivityFeed(t, readerToken, query)
+			for _, e := range page.Events {
+				seen[e.Id]++
+			}
+			if !page.HasMore || page.NextBefore == nil {
+				break
+			}
+			query = fmt.Sprintf("?limit=5&before=%d", *page.NextBefore)
+		}
+
+		require.Len(t, seen, len(titleIds),
+			"walking the cursor must return every event exactly once")
+		for id, n := range seen {
+			require.Equal(t, 1, n, "event %s was returned %d times across pages", id, n)
+		}
+	})
+
+	t.Run("a non-member never sees another group's events", func(t *testing.T) {
+		resetDB(t)
+		testTitleId, _ := seedTwoActivityTitles(t)
+
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		_, outsiderToken := addUser(t, users.NewUserRequest{Username: "outsider", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "private"}, actorToken)
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", testTitleId),
+			GroupId: group.Id,
+		}, actorToken)
+
+		feed := getActivityFeed(t, outsiderToken, "")
+		require.Empty(t, feed.Events, "a non-member must see none of the group's activity")
+		require.EqualValues(t, 0, getActivityUnreadCount(t, outsiderToken))
+	})
+
+	t.Run("seq zero or negative is rejected with 400", func(t *testing.T) {
+		resetDB(t)
+		_, token := addUser(t, users.NewUserRequest{Username: "marker", Password: "pass"})
+
+		for _, seq := range []int64{0, -1} {
+			resp := markActivityReadResponse(t, token, seq)
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode,
+				"seq=%d must be rejected rather than silently accepted", seq)
+			resp.Body.Close()
+		}
+	})
+}
+
+// TestActivityFeedDisabled is the plug-out test (spec test 9): it is the
+// switch under test, not the feature, so it stays to this one case. The
+// shared testServer is flag-on for the whole suite (TestMain sets
+// ACTIVITY_FEED_ENABLED=true before building it), so this test builds its own
+// server after t.Setenv("ACTIVITY_FEED_ENABLED", "false") — the flag is read
+// once at construction time in NewServerWithProvider, so t.Setenv only reaches
+// it if the server is built after the env var is set.
+func TestActivityFeedDisabled(t *testing.T) {
+	resetDB(t)
+	t.Setenv("ACTIVITY_FEED_ENABLED", "false")
+
+	off := httptest.NewServer(server.NewServerWithProvider(testStore, newFakeTitleProvider(), "test-secret"))
+	defer off.Close()
+
+	// A mutating, event-emitting request (adding a title to a group) against
+	// the flag-off server: the underlying write still succeeds, but with the
+	// recording middleware absent, activity.Record has nothing to buffer into.
+	_, token := buildGroupWithTitleAgainst(t, off.URL)
+
+	req, err := http.NewRequest(http.MethodGet, off.URL+"/activity", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp.StatusCode,
+		"the route must be entirely absent when the flag is off, not present-and-empty")
+
+	require.Zero(t, countActivityRows(t),
+		"no recorder was seeded, so activity.Record must have no-oped")
 }

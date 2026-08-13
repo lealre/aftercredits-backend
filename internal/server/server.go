@@ -81,9 +81,18 @@ func NewServerWithProvider(st store.Store, provider titleprovider.Provider, secr
 
 	mux.HandleFunc("POST /comments", a.AddComment)
 
-	// Read once so the middleware below and the (Task 6) route registration
-	// above agree on the same on/off decision for this server instance.
+	// Read once so the middleware below and the route registration just above it
+	// agree on the same on/off decision for this server instance — two
+	// independent config.ActivityFeedEnabled() calls could disagree if the
+	// environment changed mid-process, leaving events recorded with no way to
+	// read them.
 	activityFeedEnabled := config.ActivityFeedEnabled()
+
+	if activityFeedEnabled {
+		mux.HandleFunc("GET /activity", a.GetActivityFeed)
+		mux.HandleFunc("GET /activity/unread-count", a.GetActivityUnreadCount)
+		mux.HandleFunc("POST /activity/read", a.MarkActivityRead)
+	}
 
 	var handler http.Handler = mux
 	if activityFeedEnabled {
