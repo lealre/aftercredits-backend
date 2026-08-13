@@ -36,3 +36,18 @@ VALUES ($1, $2, $3)
 ON CONFLICT (user_id) DO UPDATE
 SET read_at = EXCLUDED.read_at,
     read_seq = GREATEST(activity_reads.read_seq, EXCLUDED.read_seq);
+
+-- name: NotifyActivityEvent :exec
+-- Fired inside the insert's transaction, so it is delivered only if that commit
+-- succeeds. The payload is the event id, not the row: pg_notify caps payloads at
+-- 8000 bytes, and the listener reads the row once and fans it out.
+SELECT pg_notify('activity_events', sqlc.arg('event_id')::text);
+
+-- name: GetActivityEventById :one
+-- Used by the LISTEN loop to turn a notified id into the row it pushes. No
+-- visibility predicate here: the loop has no reader, and the hub filters per
+-- subscriber.
+SELECT e.*, g.name AS group_name
+FROM activity_events e
+JOIN groups g ON g.id = e.group_id
+WHERE e.id = $1;

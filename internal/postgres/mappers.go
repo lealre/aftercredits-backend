@@ -268,6 +268,33 @@ func activityEventRowToModel(row database.GetActivityFeedRowsRow) (models.Activi
 	}, nil
 }
 
+// activityEventByIdRowToModel is activityEventRowToModel's twin for
+// GetActivityEventById. GetActivityEventByIdRow and GetActivityFeedRowsRow
+// carry the same columns (both select e.*, g.name AS group_name), but sqlc
+// mints a distinct Go type per query, so there is no type-level way to share
+// one converter across the two.
+func activityEventByIdRowToModel(row database.GetActivityEventByIdRow) (models.ActivityEvent, error) {
+	var payload map[string]any
+	if len(row.Payload) > 0 {
+		if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			return models.ActivityEvent{}, err
+		}
+	}
+	return models.ActivityEvent{
+		Id:        row.ID,
+		Seq:       row.Seq,
+		GroupId:   row.GroupID,
+		GroupName: row.GroupName,
+		ActorId:   row.ActorID,
+		ActorName: row.ActorName,
+		Kind:      row.Kind,
+		TitleId:   textToPtr(row.TitleID),
+		TitleName: textToPtr(row.TitleName),
+		Payload:   payload,
+		CreatedAt: row.CreatedAt.Time,
+	}, nil
+}
+
 // int64PtrToNullable adapts an optional cursor to the generated nullable param.
 func int64PtrToNullable(v *int64) pgtype.Int8 {
 	if v == nil {

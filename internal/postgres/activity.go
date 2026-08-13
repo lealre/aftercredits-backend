@@ -35,7 +35,7 @@ func (s *Store) InsertActivityEvents(ctx context.Context, events []models.Activi
 					return err
 				}
 			}
-			if _, err := q.InsertActivityEventRow(ctx, database.InsertActivityEventRowParams{
+			row, err := q.InsertActivityEventRow(ctx, database.InsertActivityEventRowParams{
 				ID:        firstNonEmpty(e.Id, uuid.NewString()),
 				GroupID:   e.GroupId,
 				ActorID:   e.ActorId,
@@ -45,7 +45,12 @@ func (s *Store) InsertActivityEvents(ctx context.Context, events []models.Activi
 				TitleName: ptrToText(e.TitleName),
 				Payload:   payload,
 				CreatedAt: timeToTimestamptz(now),
-			}); err != nil {
+			})
+			if err != nil {
+				return err
+			}
+			// Same transaction as the insert: a rolled-back event notifies nobody.
+			if err := q.NotifyActivityEvent(ctx, row.ID); err != nil {
 				return err
 			}
 		}
@@ -76,6 +81,18 @@ func (s *Store) GetActivityFeed(ctx context.Context, userId string, before *int6
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+// GetActivityEventById returns a single event by id, joined with its group's
+// name, matching the shape GetActivityFeed returns. It backs the LISTEN loop:
+// a notification carries only an id, and this turns it into the row that gets
+// fanned out to subscribers.
+func (s *Store) GetActivityEventById(ctx context.Context, id string) (models.ActivityEvent, error) {
+	row, err := s.q.GetActivityEventById(ctx, id)
+	if err != nil {
+		return models.ActivityEvent{}, notFound(err)
+	}
+	return activityEventByIdRowToModel(row)
 }
 
 func (s *Store) GetActivityUnreadCount(ctx context.Context, userId string) (int64, error) {

@@ -28,6 +28,49 @@ func (q *Queries) CountActivityUnread(ctx context.Context, userID string) (int64
 	return count, err
 }
 
+const getActivityEventById = `-- name: GetActivityEventById :one
+SELECT e.id, e.seq, e.group_id, e.actor_id, e.actor_name, e.kind, e.title_id, e.title_name, e.payload, e.created_at, g.name AS group_name
+FROM activity_events e
+JOIN groups g ON g.id = e.group_id
+WHERE e.id = $1
+`
+
+type GetActivityEventByIdRow struct {
+	ID        string
+	Seq       int64
+	GroupID   string
+	ActorID   string
+	ActorName string
+	Kind      string
+	TitleID   pgtype.Text
+	TitleName pgtype.Text
+	Payload   []byte
+	CreatedAt pgtype.Timestamptz
+	GroupName string
+}
+
+// Used by the LISTEN loop to turn a notified id into the row it pushes. No
+// visibility predicate here: the loop has no reader, and the hub filters per
+// subscriber.
+func (q *Queries) GetActivityEventById(ctx context.Context, id string) (GetActivityEventByIdRow, error) {
+	row := q.db.QueryRow(ctx, getActivityEventById, id)
+	var i GetActivityEventByIdRow
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.GroupID,
+		&i.ActorID,
+		&i.ActorName,
+		&i.Kind,
+		&i.TitleID,
+		&i.TitleName,
+		&i.Payload,
+		&i.CreatedAt,
+		&i.GroupName,
+	)
+	return i, err
+}
+
 const getActivityFeedRows = `-- name: GetActivityFeedRows :many
 SELECT e.id, e.seq, e.group_id, e.actor_id, e.actor_name, e.kind, e.title_id, e.title_name, e.payload, e.created_at, g.name AS group_name
 FROM activity_events e
@@ -141,6 +184,18 @@ func (q *Queries) InsertActivityEventRow(ctx context.Context, arg InsertActivity
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const notifyActivityEvent = `-- name: NotifyActivityEvent :exec
+SELECT pg_notify('activity_events', $1::text)
+`
+
+// Fired inside the insert's transaction, so it is delivered only if that commit
+// succeeds. The payload is the event id, not the row: pg_notify caps payloads at
+// 8000 bytes, and the listener reads the row once and fans it out.
+func (q *Queries) NotifyActivityEvent(ctx context.Context, eventID string) error {
+	_, err := q.db.Exec(ctx, notifyActivityEvent, eventID)
+	return err
 }
 
 const upsertActivityRead = `-- name: UpsertActivityRead :exec

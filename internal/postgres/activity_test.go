@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -170,4 +171,38 @@ func TestStore_ActivityEvents(t *testing.T) {
 			require.Equal(t, 1, n, "event %s was returned %d times", id, n)
 		}
 	})
+}
+
+func TestStore_InsertActivityEvents_Notifies(t *testing.T) {
+	resetDB(t)
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	// A dedicated connection: LISTEN is per-connection, and a pooled one may
+	// hand the LISTEN and the later wait to different sessions.
+	conn, err := newTestPool(t).Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, "LISTEN activity_events")
+	require.NoError(t, err)
+
+	actor := addTestUser(t, s)
+	group, err := s.CreateGroup(ctx, newTestGroup(t, "notify", actor))
+	require.NoError(t, err, "failed to seed the group")
+
+	require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{{
+		GroupId: group.Id, ActorId: actor, ActorName: "Maria", Kind: "rating_added",
+	}}))
+
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	n, err := conn.Conn().WaitForNotification(waitCtx)
+	require.NoError(t, err, "the insert must notify; a timeout here means it did not")
+	require.Equal(t, "activity_events", n.Channel)
+	require.NotEmpty(t, n.Payload, "the payload carries the event id")
+
+	// The payload must name a row that exists — the listener will read it.
+	got, err := s.GetActivityEventById(ctx, n.Payload)
+	require.NoError(t, err)
+	require.Equal(t, "rating_added", got.Kind)
 }

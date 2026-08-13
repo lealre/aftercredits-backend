@@ -84,6 +84,7 @@ type Store interface {
 
 	InsertActivityEvents(ctx context.Context, events []models.ActivityEvent) error
 	GetActivityFeed(ctx context.Context, userId string, before *int64, limit int) ([]models.ActivityEvent, error)
+	GetActivityEventById(ctx context.Context, id string) (models.ActivityEvent, error)
 	GetActivityUnreadCount(ctx context.Context, userId string) (int64, error)
 	MarkActivityRead(ctx context.Context, userId string, seq int64) error
 }
