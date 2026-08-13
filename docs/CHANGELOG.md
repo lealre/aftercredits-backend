@@ -28,6 +28,31 @@ API answers but nothing in the app shows it.
   the time, so a feed line stays readable after someone leaves the group or a
   title is removed from the catalogue. Later renames do not change old lines
 * Nothing is pruned; the log keeps everything
+* **Activity now arrives live.** Two new authenticated endpoints —
+  `POST /activity/stream-ticket` (mints a single-use, 60-second ticket) and
+  `GET /activity/stream?ticket=…` (a server-sent-events stream) — push each
+  event to a group's other members as it happens, replacing the unread
+  badge's 10-second poll. Both live behind the same `ACTIVITY_FEED_ENABLED`
+  flag as the rest of the feed: off means no `pg_notify`, no listener process,
+  and the two routes are absent (404), exactly like the three phase 1 routes
+* No new migration. This adds no schema change at all
+* **Delivery stays best-effort, deliberately.** A missed or dropped live
+  update is repaired by the snapshot the client takes on every connect and
+  reconnect, never by retrying the write. This is the same guarantee phase 1
+  already gave the feed itself — your ratings and comments are never put at
+  risk by any of this
+* Each backend process holds one additional, dedicated database connection
+  for `LISTEN`, on top of its normal pool, for as long as the feature is
+  enabled
+* **Operator action if you run your own reverse proxy in front of the API:**
+  a proxy that buffers responses will let the stream connect and then
+  deliver nothing — a failure that looks perfectly healthy from the outside.
+  The backend already sends `X-Accel-Buffering: no` on the stream response
+  and pings the connection roughly every 25 seconds, and the bundled
+  frontend's `nginx.conf` now has a dedicated location for the stream route
+  with buffering off and a raised read timeout. If your proxy isn't that
+  nginx config, give `/activity/stream` the equivalent: buffering disabled
+  and a read timeout longer than 25 seconds
 
 <a name="v0.1.2"></a>
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
