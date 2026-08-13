@@ -47,6 +47,11 @@ func ActivityMiddleware(sink activity.Sink) func(http.Handler) http.Handler {
 
 			next.ServeHTTP(rec, r.WithContext(ctx))
 
+			// >= 400 doesn't record; nothing in this API returns a 1xx or 3xx
+			// today, so gating on "not an error" rather than "is 2xx" is
+			// equivalent for now — a redirect showing up later should be a
+			// deliberate call about whether it counts as success, not one this
+			// gate makes silently.
 			if rec.statusCode >= http.StatusBadRequest {
 				return
 			}

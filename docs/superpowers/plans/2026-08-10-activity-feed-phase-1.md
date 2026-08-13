@@ -782,10 +782,22 @@ Create `internal/activity/activity.go`:
 // Package activity records what a request did, for the group activity feed.
 //
 // A write site calls Record(ctx, …) with one line: no store handle, no error
-// path, no knowledge of transactions. The middleware that seeded the recorder
-// persists the buffer into the request's unit-of-work transaction, and only
-// when the response was a success — so "an event exists only if the change
-// happened" is structural rather than something each call site remembers.
+// path, no knowledge of transactions. Record buffers the event in a
+// per-request recorder that the middleware seeds; after the handler returns,
+// and only if the response was not an error, the middleware stamps the actor
+// onto each buffered event and hands them to a Sink.
+//
+// Delivery is best-effort, not atomic with the business write: the flush
+// happens after the write has already committed, on its own context detached
+// from the request. So a Record call is not a promise that the event will be
+// stored — the process can die, or the sink can be down, between commit and
+// flush (see the spec's "Delivery guarantee").
+//
+// Record on a context with no recorder is a silent no-op — no panic, nothing
+// buffered. That is also how the feature turns off: when the flag is
+// disabled the middleware is never installed, no recorder is ever seeded, and
+// every one of the eleven call sites becomes a no-op without any of them
+// having to know it.
 package activity
 
 import (

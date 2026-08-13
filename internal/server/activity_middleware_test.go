@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/auth"
+	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/models"
 )
 
@@ -67,12 +70,24 @@ func TestActivityMiddleware(t *testing.T) {
 
 	t.Run("a failing sink does not change the response", func(t *testing.T) {
 		sink := &fakeSink{err: errors.New("sink is down")}
+
+		// A logger that writes into a buffer we can inspect, standing in for
+		// the real one so the "logged, not propagated" half of the property
+		// is asserted rather than only readable by eye in `-v` output.
+		var logs bytes.Buffer
+		ctx := logx.WithLogger(auth.WithUser(context.Background(), actor), log.New(&logs, "", 0))
+		r := httptest.NewRequest(http.MethodPost, "/anything", nil).WithContext(ctx)
+
 		w := httptest.NewRecorder()
 		ActivityMiddleware(sink)(handlerRecording(http.StatusCreated)).
-			ServeHTTP(w, requestAs(http.MethodPost, &actor))
+			ServeHTTP(w, r)
 
 		require.Equal(t, http.StatusCreated, w.Code,
 			"the write already committed; a lost feed line must not fail the user's request")
+		require.Empty(t, w.Body.String(),
+			"a lost feed line must not surface into the response body either")
+		require.Contains(t, logs.String(), "sink is down",
+			"the failure must at least be logged, since it is nowhere else")
 	})
 
 	t.Run("a read request is passed through untouched", func(t *testing.T) {
