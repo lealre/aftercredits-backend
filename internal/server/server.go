@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/config"
+	activityservice "github.com/lealre/movies-backend/internal/services/activity"
 	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 	"github.com/lealre/movies-backend/internal/titleprovider/factory"
@@ -16,7 +18,11 @@ import (
 
 // NewServer builds the production server, selecting the title provider from env
 // and requiring the JWT signing secret (JWT_SECRET) to be set.
-func NewServer(st store.Store) (http.Handler, error) {
+//
+// ctx bounds the background work the server starts — today the activity
+// LISTEN loop. Cancelling it stops that loop and closes its database
+// connection; it is not the context of any request.
+func NewServer(ctx context.Context, st store.Store) (http.Handler, error) {
 	provider, err := factory.NewFromEnv()
 	if err != nil {
 		return nil, err
@@ -26,13 +32,14 @@ func NewServer(st store.Store) (http.Handler, error) {
 		return nil, fmt.Errorf("JWT_SECRET must be set")
 	}
 	log.Printf("Using title provider: %s", provider.Name())
-	return NewServerWithProvider(st, provider, secret), nil
+	return NewServerWithProvider(ctx, st, provider, secret), nil
 }
 
 // NewServerWithProvider builds the server with an explicit title provider and
 // JWT secret. Tests use this to inject a fixture-backed fake provider (no
-// network) and a test secret.
-func NewServerWithProvider(st store.Store, provider titleprovider.Provider, secret string) http.Handler {
+// network) and a test secret. ctx bounds the background work it starts — see
+// NewServer.
+func NewServerWithProvider(ctx context.Context, st store.Store, provider titleprovider.Provider, secret string) http.Handler {
 	mux := http.NewServeMux()
 
 	a := api.NewAPI(st, provider)
@@ -92,6 +99,17 @@ func NewServerWithProvider(st store.Store, provider titleprovider.Provider, secr
 		mux.HandleFunc("GET /activity", a.GetActivityFeed)
 		mux.HandleFunc("GET /activity/unread-count", a.GetActivityUnreadCount)
 		mux.HandleFunc("POST /activity/read", a.MarkActivityRead)
+
+		// Everything live is built here and nowhere else: with the flag off
+		// there is no hub, no ticket store, no listener goroutine, no
+		// dedicated LISTEN connection, and neither route exists to be called.
+		hub := activity.NewHub()
+		a.Stream = activityservice.NewStreamer(hub, activity.NewTicketStore())
+
+		mux.HandleFunc("POST /activity/stream-ticket", a.IssueActivityStreamTicket)
+		mux.HandleFunc("GET /activity/stream", a.StreamActivity)
+
+		startActivityListener(ctx, st, hub)
 	}
 
 	var handler http.Handler = mux
@@ -104,8 +122,38 @@ func NewServerWithProvider(st store.Store, provider titleprovider.Provider, secr
 	return handler
 }
 
+// startActivityListener starts the one LISTEN loop that feeds hub, if this
+// store can push at all. It is only ever called with the feature on.
+//
+// The loop runs until ctx is cancelled, at which point it closes its dedicated
+// database connection and returns; it reconnects with backoff on its own for
+// anything short of that, so an error coming back out of it means it has given
+// up for good.
+func startActivityListener(ctx context.Context, st store.Store, hub *activity.Hub) {
+	listener, ok := st.(store.ActivityListener)
+	if !ok {
+		// Not a failure worth refusing to boot over: the feed and the stream
+		// both still work, the stream just stays silent until the client's
+		// next snapshot. Said once, loudly, rather than swallowed.
+		log.Printf("WARN: %T cannot push activity events; the stream will not deliver live updates", st)
+		return
+	}
+
+	go func() {
+		if err := listener.ListenActivity(ctx, hub.Publish); err != nil {
+			log.Printf("ERROR: the activity listener stopped: %v", err)
+		}
+	}()
+}
+
 func ListenAndServe(st store.Store) error {
-	handler, err := NewServer(st)
+	// Cancelled when this function returns — i.e. when the HTTP server has
+	// stopped — so the LISTEN loop and its connection go away with it instead
+	// of outliving the thing they were started for.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handler, err := NewServer(ctx, st)
 	if err != nil {
 		return fmt.Errorf("failed to build server: %w", err)
 	}

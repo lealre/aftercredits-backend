@@ -72,6 +72,17 @@ func (h *Hub) Unsubscribe(s *Subscriber) {
 	s.closeOnce.Do(func() { close(s.Events) })
 }
 
+// SubscriberCount reports how many subscribers are currently registered. It
+// exists so a dropped connection can be shown to actually unsubscribe: a
+// handler that forgets leaks one entry — and one channel — per lost client,
+// which is invisible until the process runs out of memory.
+func (h *Hub) SubscriberCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return len(h.subscribers)
+}
+
 // Publish fans event out to every subscriber for whom it is visible, and never
 // blocks: it runs on the single LISTEN goroutine that serves every connected
 // client, so one slow or stalled subscriber must not delay delivery to

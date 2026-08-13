@@ -27,7 +27,7 @@ func TestNewServer_RequiresJWTSecret(t *testing.T) {
 	t.Setenv("TITLE_PROVIDER", "imdbapi")
 	t.Setenv("JWT_SECRET", "")
 
-	_, err := server.NewServer(nil)
+	_, err := server.NewServer(t.Context(), nil)
 	if err == nil {
 		t.Fatal("expected NewServer to error when JWT_SECRET is unset")
 	}

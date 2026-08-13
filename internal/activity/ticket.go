@@ -75,6 +75,10 @@ func (s *TicketStore) Issue(userId string) string {
 	return ticket
 }
 
+// TTL reports how long an issued ticket stays redeemable, so the endpoint that
+// mints one can tell the client when it dies without restating the number.
+func (s *TicketStore) TTL() time.Duration { return ticketTTL }
+
 // Redeem consumes ticket exactly once: a lookup and delete happen under the
 // same lock, so of any number of goroutines redeeming the same ticket
 // concurrently, exactly one observes it present and the rest see it already

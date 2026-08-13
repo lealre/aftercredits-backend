@@ -88,3 +88,19 @@ type Store interface {
 	GetActivityUnreadCount(ctx context.Context, userId string) (int64, error)
 	MarkActivityRead(ctx context.Context, userId string, seq int64) error
 }
+
+// ActivityListener is the optional push half of the storage contract: a store
+// that can tell this process about events as they are committed, instead of
+// only answering reads. ListenActivity blocks until ctx is cancelled, calling
+// publish once per committed event.
+//
+// It is kept out of Store on purpose. Every method there is one that
+// services/api call on every store; this one is called once at startup, by the
+// server, and only when the activity feed is switched on. A store that cannot
+// push is not broken — the feed still works and clients still see every event
+// on their next snapshot — so the server type-asserts for this and carries on
+// without it, rather than the interface forcing every implementation to have
+// one.
+type ActivityListener interface {
+	ListenActivity(ctx context.Context, publish func(models.ActivityEvent)) error
+}

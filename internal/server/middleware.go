@@ -42,6 +42,18 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	rr.ResponseWriter.WriteHeader(statusCode)
 }
 
+// Unwrap exposes the writer underneath, so capabilities this recorder does not
+// implement — http.Flusher above all — stay reachable through it. Embedding an
+// interface promotes only that interface's methods, so without this a wrapped
+// ResponseWriter silently stops being flushable, and the SSE handler either
+// refuses to serve or serves a stream that never reaches the client.
+//
+// This is the chain http.ResponseController walks, and the one
+// api.flusherFor walks.
+func (rr *responseRecorder) Unwrap() http.ResponseWriter {
+	return rr.ResponseWriter
+}
+
 /*
 RequestIdMiddleware creates a unique request ID for each request and stores it in the context.
 Creates a logger with the request ID prefixed to all log messages and stores it in the context.

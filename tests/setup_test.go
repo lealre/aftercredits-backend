@@ -63,12 +63,18 @@ func TestMain(m *testing.M) {
 	// flag is set here, before the server is constructed, for the whole suite.
 	os.Setenv("ACTIVITY_FEED_ENABLED", "true")
 
-	handler := server.NewServerWithProvider(testStore, newFakeTitleProvider(), "test-secret")
+	// Bounds the background work the server starts (the activity LISTEN loop),
+	// so it and its dedicated connection go away with the suite instead of
+	// outliving the pool they are using.
+	serverCtx, stopServerWork := context.WithCancel(ctx)
+
+	handler := server.NewServerWithProvider(serverCtx, testStore, newFakeTitleProvider(), "test-secret")
 	testServer = httptest.NewServer(handler)
 
 	code := m.Run()
 
 	testServer.Close()
+	stopServerWork()
 	testPool.Close()
 	_ = pgC.Terminate(ctx)
 
