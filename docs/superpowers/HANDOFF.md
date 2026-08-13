@@ -1,116 +1,170 @@
-# Activity feed — handoff
+# Activity feed phase 2 (real-time) — handoff
 
-**Branch:** `feat/activity-events` (draft PR, do not merge)
+**Branch:** `feat/activity-stream`, off `feat/activity-events` (phase 1, draft PR #32, **unmerged**)
+**No PR.** Pushed for safekeeping and review only. Phase 1 has to merge first.
 **Last updated:** 2026-08-13
-**Plan:** `docs/superpowers/plans/2026-08-10-activity-feed-phase-1.md`
-**Spec:** `docs/superpowers/specs/2026-08-10-group-activity-feed-design.md`
+**Spec:** `docs/superpowers/specs/2026-08-10-group-activity-feed-design.md` — Phase 2 section
+**Plan:** `docs/superpowers/plans/2026-08-13-activity-feed-phase-2.md`
 
-Read the spec first for *why*, then the plan for *what*. This file is only
-where we stopped and what to do next.
+---
+
+## What phase 2 is
+
+Phase 1 shipped a working feed whose badge **polls** every 10s. Phase 2 replaces
+the polling with a live server push, so activity appears as it happens.
+
+## The design changed before any of it was built
+
+The spec originally pushed a *signal* — a payload-free `NOTIFY` — and had the
+client re-read from its cursor on every event. Revised 2026-08-13 (`553ab45`) to
+**push the event data**, after the argument for signalling turned out to be
+weaker than stated:
+
+- The claim that a dropped message would permanently lose a feed row was
+  **wrong**. `EventSource` reconnects automatically and resends `Last-Event-ID`,
+  and the server can replay from it, so completeness was never the difference.
+- What genuinely needs a read is the case that is *not* a reconnect: a fresh page
+  load or a new tab has no `Last-Event-ID` to resume from.
+
+So the shape is **snapshot, then stream**, in that order:
+
+```
+open the stream → on `open`, read the newest page + unread count → merge, dedupe by event id
+```
+
+The order is load-bearing. Reading *first* leaves a window where an event lands
+after the read but before the stream exists, and is lost with nothing to notice.
+Connecting first means every event is either in the snapshot (committed before
+its query ran) or on the stream (committed after). They legitimately overlap,
+hence the dedupe by `id`.
+
+Running that same sequence on **reconnect** is what replaces `Last-Event-ID`
+replay, and it buys three things:
+
+- no replay path in the backend at all — no resume query, no cursor bookkeeping;
+- it sidesteps the documented `seq` caveat: `seq` is assigned at INSERT, not
+  COMMIT, so a `seq > N` resume permanently skips a late-committing lower-`seq`
+  row, while a `seq DESC` page read simply contains it;
+- visibility is re-resolved per connection, so leaving a group takes effect with
+  no cache invalidation.
+
+Costs, accepted and written down: one fact now has **two serializations** (the
+SSE frame and the REST DTO), pinned by a test asserting they are byte-identical;
+and an event older than the snapshot page, committed while disconnected, is only
+seen by paging back.
 
 ---
 
 ## Where this stopped
 
-**The design changed on 2026-08-13.** The activity feed no longer shares a
-transaction with the business write. Events are buffered per request and handed
-to a pluggable `activity.Sink` **after** the write has committed, and the whole
-feature sits behind `ACTIVITY_FEED_ENABLED` (default off). The reasoning is in
-the spec under "Capture — recorder, sink, flush-after-commit" and "Why not the
-atomic design"; the trade accepted is best-effort delivery — an event can be lost
-if the process dies between the commit and the flush.
-
-Two consequences for whoever picks this up:
-
-- **Task 3's committed work is being removed, not fixed.** The critical hole the
-  review found (thirteen writes whose atomicity depended on statement order) and
-  the aborted-transaction interaction in `internal/services/titles` both
-  disappear with the mechanism. Nothing needs a savepoint.
-- **The next job is the unwind**, then Task 2. Nothing is wired to HTTP yet, so
-  the feature is invisible at runtime and all of this is safe to iterate on.
-
 | Task | State | Commit |
 |---|---|---|
-| 1 — migration 005 (`activity_events`, `activity_reads`) | done, reviewed clean | `dd5df5b` |
-| 3 — ~~unit of work + store seam~~ → **unwind it** | built, then superseded by the redesign | `90e5740` (to be reverted) |
-| 2 — activity model / queries / store methods | not started | |
-| 4 — recorder + sink + flag-gated flush | not started, rescoped | |
-| 5 — the eleven emit sites | not started, unchanged | |
-| 6 — feed / unread / read endpoints | not started, routes now flag-gated | |
-| 7 — frontend bell + polling | not started, unchanged | |
-
-**Execution order is 1, 3, 2, 4, 5, 6, 7** — not the plan's numeric order. Task 3
-now runs first among the remainder so that Task 2's store code is written against
-the final shape (plain `s.q` for reads, `s.inTx` for its one write) instead of
-against a seam that is about to be deleted.
+| 1 — notify on insert + read one event by id | **done**, reviewed clean after one fix round | `77663ad`, `87f1a37` |
+| 2 — the fan-out hub (`internal/activity/hub.go`) | not started | |
+| 3 — the `LISTEN` loop (`internal/postgres/listen.go`) | not started | |
+| 4 — single-use stream tickets | not started | |
+| 5 — the two SSE endpoints | not started | |
+| 6 — the contract tests (spec tests 10–15) | not started | |
+| 7 — frontend `useActivityStream` + the nginx fix | not started | |
+| 8 — changelog + final verification | not started | |
 
 Everything currently passes: `go build ./...`, `go vet ./...`, `gofmt -l .`
-clean, and the full `go test -count=1 ./...` green including the
-testcontainer-backed `internal/postgres` and `tests/` suites.
+clean; `internal/postgres` and `tests/` suites green.
+
+### Task 1, in detail
+
+`InsertActivityEvents` now fires `pg_notify('activity_events', <event id>)` for
+each event **inside its existing transaction**, and `GetActivityEventById` reads
+one event (joined to `groups` for the name) for the listener to fan out.
+
+Two things the review verified rather than assumed:
+
+- The notify is bound to the transaction's `q`, not the pool's — so a
+  rolled-back insert notifies nobody. There is now a test for that half too: a
+  batch whose second event carries a bogus `group_id` fails the FK *after* the
+  first event has inserted and notified, and the test asserts no notification
+  arrives and the table is empty. The first event genuinely does notify before
+  the failure, so the negative assertion means something.
+- The payload is the **id**, not the row. `pg_notify` caps payloads at 8000
+  bytes; the listener reads the row once and fans the DTO to its own clients.
+
+Fixed during review: a duplicate row→model mapper had been added on the reasoning
+that sharing one would need an interface or reflection. It doesn't — the two
+generated row types are field-for-field identical, so
+`activityEventRowToModel(database.GetActivityFeedRowsRow(row))` converts
+directly. `mappers.go` now has zero net diff. That mattered beyond tidiness: two
+mappers for one row shape drift by discipline alone, and a feed/stream mismatch
+is exactly what Task 6's contract test exists to catch.
 
 ---
 
-## Next work: Task 3 — unwind the unit of work
+## Next: Task 2, the hub
 
-Full steps are in the plan (`### Task 3`). In short:
+Full steps in the plan. The constraints that carry the design:
 
-1. `rm -r internal/uow` and `rm internal/postgres/store_test.go` (the latter holds
-   only `TestNoDirectQueryUse`, which guards a rule that no longer exists — with
-   no ambient transaction, a direct `s.q.Foo(…)` write is correct because a single
-   statement commits on its own).
-2. In `internal/postgres/store.go`, delete `qq` and reduce `inTx` to its
-   standalone branch (begin / defer rollback / fn / commit), dropping the `uow`
-   import. `inTx` is worth keeping: it removes the `pool.Begin` boilerplate the
-   twelve genuinely multi-statement writes used to repeat by hand.
-3. `sed -i 's/s\.qq(ctx)\./s.q./g'` across
-   `internal/postgres/{groups,ratings,comments,titles,users}.go` (50 sites), then
-   `gofmt -w internal/postgres`.
-4. Sweep: `grep -rn "qq(ctx)" internal/` and
-   `grep -rn "internal/uow\|uow\." internal/ --include='*.go'` must both be
-   silent; `grep -c 'inTx(ctx' internal/postgres/*.go` must still total twelve.
-5. `go build ./... && go vet ./... && gofmt -l .`, then the
-   `internal/postgres` and `tests/` suites.
+- **`Publish` must never block.** It runs on the single `LISTEN` goroutine, so
+  one slow client would stall delivery for everyone. Buffered channel per
+  subscriber (16), and a send to a full channel **drops** rather than waits — a
+  dropped frame is repaired by the client's next snapshot; a stalled listener is
+  not repaired by anything.
+- **The hub applies the same visibility rules as the feed**: the event's group is
+  in the subscriber's groups, and `actorId != userId`. If this diverges from the
+  SQL predicate, the stream shows things the feed does not.
+- Membership is captured **at subscribe time**; joining a group mid-stream takes
+  effect on the next connect. Documented, not solved — the alternative turns
+  every push into a query.
+- `Unsubscribe` closes the channel exactly once and is safe to call twice.
 
-Then continue with Task 2 as written.
-
-### What to watch for in Task 4 (rescoped)
-
-The parts that carry the design's weight now, all specified in the plan:
-
-- The flush runs **after** the response, so the request context may already be
-  cancelled — it needs `context.WithoutCancel` plus its own timeout, or events
-  vanish whenever a client disconnects.
-- A sink error is **logged and swallowed**. Propagating it would fail a request
-  whose write already committed, which is precisely the failure mode the redesign
-  exists to remove. There is a test for it; keep it.
-- Reuse `responseRecorder` from `internal/server/middleware.go` for the status
-  gate rather than adding a second wrapper.
-- The middleware sits **inside** `AuthMiddleware` so the actor is in context and
-  no emit site has to pass it.
-- The flag must be read **once** and used for both the middleware and (Task 6)
-  the routes. Half-on — events recorded with no endpoint to read them, or
-  endpoints with nothing feeding them — is the one state to make unreachable.
+Then Task 3 (the listener) is the piece with the two easy-to-get-wrong details:
+it must hold a **dedicated** connection (a pooled one returned between the
+`LISTEN` and the wait loses the subscription silently) and it must **reconnect
+with backoff** (the Pi's Postgres restarts; a dead listener means pushes stop
+until the process does).
 
 ---
 
-## Deferred findings (from the Task 3 review)
+## Traps worth knowing before touching Tasks 5 and 7
 
-Four of the five are **moot** once Task 3 is unwound, and are recorded here only
-so the final review does not re-derive them:
+- **nginx will break the stream silently.** `nginx.conf` (frontend repo) needs
+  `proxy_buffering off` and `proxy_read_timeout` well beyond the 60s default on
+  the stream route. Without them the stream *connects* and then delivers
+  nothing — everything looks healthy. The handler also sends
+  `X-Accel-Buffering: no` as a second line of defence, and a `:ping` comment
+  every ~25s so an idle stream is not cut.
+- **`GET /activity/stream` must go in `api.PublicPaths`** — it authenticates by
+  ticket, not Bearer token, so `AuthMiddleware` would reject it.
+  `POST /activity/stream-ticket` must **not** be public.
+- **`EventSource` cannot send an `Authorization` header**, and the JWT must not
+  go in a query string (nginx access logs, browser history) — hence the
+  single-use, 60s ticket.
+- **The stream must not go through `authFetch`** on the frontend: its 401 handler
+  navigates away, which is the same trap phase 1's `activityFetch` exists to
+  avoid.
+- **Everything stays behind `ACTIVITY_FEED_ENABLED`.** Flag off must mean no
+  notify, no listener, no stream routes — phase 1's plug-out property has to
+  survive phase 2.
 
-- ~~`store.go` allowlisted whole-file in the guard test~~ — the guard test is
-  deleted.
-- ~~The guard regex depends on the receiver being named `s`~~ — same.
-- ~~`Commit`/`Rollback` do not clear `u.tx`~~ — the package is deleted.
-- ~~The shared `pgx.Tx` is not serialized across goroutines~~ — no shared
-  transaction exists any more. (Worth remembering if anyone ever revisits
-  atomicity: a pgx connection is not goroutine-safe.)
+---
 
-Still live:
+## Related state outside this branch
 
-- **`internal/postgres/testharness_test.go:144`** — the comment above
-  `tableNames` still says it lists "every table `001_init.sql` creates", which
-  stopped being true when migration 005 added two more.
+- **Phase 1 backend** — `feat/activity-events`, draft PR #32, complete and
+  reviewed (tasks 1–6 of that plan). Its PR body needs replacing; the text is at
+  `.superpowers/sdd/2026-08-10-activity-feed-phase-1/pr-body.md`.
+- **Phase 1 frontend** — branch `feat/activity-feed-bell` in
+  `/home/lealre/personal/aftercredits`, **uncommitted by instruction**. Bell,
+  badge, panel, per-row read state, toast, 10s poll. Had **no independent
+  review** (three subagent dispatches died to API 529s, so it was written
+  inline). PR body ready at
+  `.superpowers/sdd/2026-08-10-activity-feed-phase-1/frontend-pr-body.md`.
+- **Local test stack**: container `aftercredits-postgres` on port **5433**, real
+  migrated data at migration 005; backend on `:8080` with the flag on; frontend
+  dev server on `:8081`. Test accounts `afmaria` / `afjoao` (password
+  `pw-<username>-123`) share "Feed Test Group".
+- **Open product question** carried from phase 1: for a season-scoped rating
+  update, `previousNote` is the rating's overall pre-update note, so an event can
+  pair a per-season new value with an overall previous one. Faithful to the plan;
+  worth deciding before the feed UI leans on it.
 
 ---
 
