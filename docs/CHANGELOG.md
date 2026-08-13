@@ -1,3 +1,34 @@
+<a name="unreleased"></a>
+## Unreleased
+
+The group activity feed — a log of what everyone in your groups has been doing,
+plus an unread badge. **Off by default**, so deploying this changes nothing until
+you switch it on. The frontend for it is not here yet, so with the flag on the
+API answers but nothing in the app shows it.
+
+* **New feature: the group activity feed.** Every group-scoped write — adding or
+  removing a title, marking one watched, rating, commenting, and the deletions of
+  each — records an event naming who did it, in which group, and to which title.
+  Three new authenticated endpoints serve it: `GET /activity` (newest first,
+  cursor-paginated), `GET /activity/unread-count` (the badge), and
+  `POST /activity/read` (mark everything read)
+* You see other members' actions, never your own, and only for groups you are
+  currently in — leaving a group hides its history from you immediately
+* **Enable it with `ACTIVITY_FEED_ENABLED=true`.** Unset or false means no events
+  are recorded at all and the three routes are absent (404), so the feature can be
+  switched off again without a rollback
+* **Requires migration 005**, which adds two tables (`activity_events`,
+  `activity_reads`). Unlike 003 and 004 it is additive DDL on new tables only, so
+  it needs no stop-the-backend step — `database -migrate` can run with the app up
+* Event delivery is deliberately best-effort: events are written after the change
+  they describe has already been saved, so a crash at the wrong moment can lose a
+  feed line, and a failure to record one can never fail the action itself. Your
+  ratings and comments are never at risk from the feed
+* A member's name and the title's name are stored on each event as they were at
+  the time, so a feed line stays readable after someone leaves the group or a
+  title is removed from the catalogue. Later renames do not change old lines
+* Nothing is pruned; the log keeps everything
+
 <a name="v0.1.2"></a>
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
 
