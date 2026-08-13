@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/api"
+	"github.com/lealre/movies-backend/internal/config"
 	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
 	"github.com/lealre/movies-backend/internal/titleprovider/factory"
@@ -79,7 +81,15 @@ func NewServerWithProvider(st store.Store, provider titleprovider.Provider, secr
 
 	mux.HandleFunc("POST /comments", a.AddComment)
 
-	handler := AuthMiddleware(*a.Secret, st)(mux)
+	// Read once so the middleware below and the (Task 6) route registration
+	// above agree on the same on/off decision for this server instance.
+	activityFeedEnabled := config.ActivityFeedEnabled()
+
+	var handler http.Handler = mux
+	if activityFeedEnabled {
+		handler = ActivityMiddleware(activity.NewStoreSink(st))(handler)
+	}
+	handler = AuthMiddleware(*a.Secret, st)(handler)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
 
 	return handler

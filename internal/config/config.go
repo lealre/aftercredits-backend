@@ -61,3 +61,16 @@ func envInt(key string, def int) int {
 	}
 	return def
 }
+
+// ActivityFeedEnabled reports whether the activity feed is switched on for this
+// environment. It defaults to OFF: the feature ships inert, so merging it
+// changes nothing in production until it is deliberately enabled.
+func ActivityFeedEnabled() bool { return envBool("ACTIVITY_FEED_ENABLED", false) }
+
+func envBool(key string, def bool) bool {
+	v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key)))
+	if err != nil {
+		return def
+	}
+	return v
+}
