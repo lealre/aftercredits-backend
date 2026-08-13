@@ -1297,6 +1297,16 @@ git commit -m "feat: activity recorder, pluggable sink, and a flag-gated flush a
 - Consumes: the constructors from Task 4.
 - Produces: no new symbols — behaviour only.
 
+- [ ] **Step 0: Turn the feature on for the integration suite**
+
+The emit sites are inert while `ACTIVITY_FEED_ENABLED` is unset, so this task's tests cannot observe anything until the suite runs with the feature on. `tests/setup_test.go` builds the server once in `TestMain`, and `t.Setenv` is per-test and cannot reach it, so set it there — before `server.NewServerWithProvider(…)`:
+
+```go
+	os.Setenv("ACTIVITY_FEED_ENABLED", "true")
+```
+
+(Task 6 repeats this instruction for the routes; whichever task lands it first, the other is a no-op. Do **not** also assert the flag-off path here — that test needs its own server instance and belongs with the routes in Task 6.)
+
 - [ ] **Step 1: Write the failing integration test**
 
 Create `tests/activity_setup_test.go` (helpers only, zero `func Test`):
@@ -1704,13 +1714,7 @@ Read the flag **once** into a local at the top of the constructor and use it for
 
 Do **not** add these to `api.PublicPaths`.
 
-The integration tests need the feature on. `tests/setup_test.go` builds the server once in `TestMain`, so set it there — `t.Setenv` is per-test and cannot reach a server constructed in `TestMain`:
-
-```go
-	os.Setenv("ACTIVITY_FEED_ENABLED", "true")
-```
-
-before `server.NewServerWithProvider(…)`. That makes the suite exercise the feature as deployed-on, and Task 4's Step 9 note (the suite passing with the flag unset) applies only until this task lands.
+The integration tests need the feature on. Task 5 Step 0 already sets it in `tests/setup_test.go`'s `TestMain` (`os.Setenv("ACTIVITY_FEED_ENABLED", "true")` before `server.NewServerWithProvider(…)`); if Task 5 landed first this is a no-op — verify rather than duplicate. That makes the suite exercise the feature as deployed-on, and Task 4's Step 9 note (the suite passing with the flag unset) applies only until the first of these two tasks lands.
 
 **The plug-out path still needs asserting** (spec test 9). Because the shared `testServer` is now flag-on, that test builds its own server rather than reusing the helpers — the flag is read during construction, so `t.Setenv` reaches it:
 
