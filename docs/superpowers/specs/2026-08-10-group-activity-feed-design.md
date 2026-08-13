@@ -58,10 +58,11 @@ and are filtered out of that user's own feed and badge.
 ### Ordering and cursors: a `seq BIGSERIAL`
 
 `id TEXT` (uuid, matching the repo's convention) is identity; a separate
-`seq BIGSERIAL NOT NULL UNIQUE` is the ordering and cursor key. One column
-solves three problems: a total order for pagination (CONVENTIONS §6), keyset
-pagination that does not shift as new events arrive at the head, and the SSE
-`Last-Event-ID` resume token in phase 2.
+`seq BIGSERIAL NOT NULL UNIQUE` is the ordering and cursor key. It solves two
+problems: a total order for pagination (CONVENTIONS §6), and keyset pagination
+that does not shift as new events arrive at the head. Phase 2 also tags each SSE
+frame with it, but deliberately does **not** resume from it — see "Snapshot, then
+stream", where the caveat below is the reason.
 
 **Known caveat:** sequence values are assigned at INSERT time, not commit time,
 so a transaction that starts earlier but commits later can carry a lower `seq`
@@ -299,33 +300,108 @@ active-group id from frontend PR #10.
 
 ## Phase 2 — real-time delivery
 
+**Revised 2026-08-13.** The original design pushed a *signal* and had the client
+re-read from its cursor. That is dropped: the stream now carries the **event
+data**, and the client reads exactly once per connection — a snapshot — rather
+than once per event. Rationale and the trade in "Snapshot, then stream" below.
+
 ### Transport: SSE
 
-Chosen over WebSocket and polling because the traffic is strictly server → client
-and because `EventSource` gives reconnect *and* gap-free resume for free: the
-server tags each message with `id: <seq>`, and the browser automatically returns
-it as `Last-Event-ID` after a drop. WebSocket would require hand-rolling both and
-adds a dependency for a bidirectional channel that is never used in reverse.
+Chosen over WebSocket and polling because the traffic is strictly server →
+client, and `EventSource` gives automatic reconnect for free. WebSocket would
+need that hand-rolled and adds a bidirectional channel that is never used in
+reverse.
 
-### The push is a signal, never the source of truth
+Note what is deliberately **not** relied on: `Last-Event-ID`. The browser sends
+it on automatic reconnect, and the server could replay `WHERE seq > <id>` — but
+this design re-reads a snapshot on every (re)connect instead, which subsumes
+replay. See below.
+
+### Snapshot, then stream
+
+Two mechanisms, in a fixed order:
+
+1. **Open the stream.**
+2. **On `open`, fetch the snapshot** — the newest page of `GET /activity` plus
+   `GET /activity/unread-count`. This is the only read per connection.
+3. **Merge**, deduplicating by event `id`: the snapshot is the base, and any
+   pushed events that arrived since `open` are folded in.
+
+The order is the point. Reading *before* connecting leaves a window where an
+event lands after the read but before the stream exists, and is lost with nothing
+to notice it. Connecting first means every event is either already in the
+snapshot (committed before its query ran) or arrives on the stream (committed
+after) — nothing can fall between them. Events can appear in both, which is why
+the merge dedupes by `id`.
+
+The same sequence runs on **reconnect**, which is what replaces `Last-Event-ID`
+replay. That buys three things:
+
+- **No replay path in the backend.** No resume query, no `Last-Event-ID`
+  handling, no server-side cursor bookkeeping.
+- **It sidesteps the `seq` caveat** documented under "Ordering and cursors".
+  `seq` is assigned at INSERT, not COMMIT, so a transaction that starts earlier
+  but commits later can carry a *lower* seq than one already delivered. A strict
+  `seq > N` resume skips it permanently; a snapshot read ordered `seq DESC`
+  includes it, because it is simply inside the newest page.
+- **Visibility is re-resolved on every connect.** Membership is a read-time
+  predicate, so a user who left a group stops seeing its history from the next
+  connection, without any cache invalidation logic.
+
+The cost, stated plainly: an event older than the snapshot page that was
+committed while the client was disconnected is only visible once the user pages
+back through the feed. With a page of 15 and this app's traffic that is a corner
+of a corner, and the feed remains complete on the server either way — the log is
+still the source of truth, the stream is just the fast path to it.
+
+### What the stream carries
+
+The same DTO the REST feed returns, one event per message:
+
+```
+id: <seq>
+event: activity
+data: {"id":"…","seq":42,"groupId":"…","groupName":"…","actorId":"…",
+       "actorName":"…","kind":"rating_added","titleId":"tt…",
+       "titleName":"…","payload":{…},"createdAt":"…"}
+```
+
+`id: <seq>` is kept even though replay is not implemented — it costs nothing and
+leaves the door open.
+
+**One serialization, not two.** The frame's `data` is the *same* JSON shape as
+`GET /activity`'s `events[]` elements, produced by the same mapper. This is the
+main thing pushing data costs you, so it is pinned by a test asserting the two
+are byte-identical for one event: two representations of one fact that drift is
+how a client ends up handling both.
+
+### Fan-out: `pg_notify`
 
 The event row and a `pg_notify` commit together; each backend process `LISTEN`s
-on a dedicated connection and fans out to its own connected clients. The message
-carries no payload — the client re-reads from its cursor. Consequently:
+on a dedicated connection and fans out to its own connected clients.
 
-- a server restart, a closed laptop, or a dropped connection lose nothing, since
-  the client resumes from `seq`;
-- a `NOTIFY` delivered to nobody is harmless, because the row is committed;
-- a second backend instance works with no shared broker — which is the seam that
-  makes this scale without Redis or NATS.
+`pg_notify`'s payload cap is 8000 bytes. An event's JSON is far below that
+(comment bodies are deliberately not copied into payloads), but the cap is a hard
+edge, so the notify carries the event **id** and the listening process reads that
+row once and fans the full DTO out to its clients. One read per event per
+process, not per client.
 
-`pg_notify` is transactional: fired inside the transaction, it is delivered only
-if the commit succeeds, so no one is ever notified about an event row that never
-landed. The transaction meant here is the **sink's own** insert (phase 1 flushes
-after the business commit, not inside it) — a rating that rolled back produces no
-event to notify about, because the flush is status-gated and never runs. The
-notify therefore belongs in the Postgres sink implementation, alongside the
-insert, and a non-Postgres sink would carry its own push mechanism instead.
+Consequences of the row being committed before anyone is notified:
+
+- a `NOTIFY` delivered to nobody is harmless — the row is committed, and the next
+  connect's snapshot picks it up;
+- a second backend instance needs no shared broker, which is the seam that lets
+  this scale without Redis or NATS;
+- a server restart or a closed laptop loses nothing, because reconnect takes a
+  fresh snapshot.
+
+`pg_notify` is transactional: fired inside a transaction, it is delivered only if
+that commit succeeds, so nobody is notified about a row that never landed. The
+transaction meant here is the **sink's own** insert — phase 1 flushes after the
+business commit, not inside it — so a rating that rolled back produces no event
+to notify about, because the flush is status-gated and never runs. The notify
+therefore belongs in the Postgres sink implementation alongside the insert; a
+non-Postgres sink would carry its own push mechanism instead.
 
 ### Endpoints
 
@@ -342,18 +418,32 @@ consumes once.
 
 ### Deployment requirements
 
-Both are currently wrong in `nginx.conf` (frontend repo) and would fail silently:
+Both are currently wrong in `nginx.conf` (frontend repo) and would fail
+**silently** — the stream connects and then simply never delivers, which is the
+worst failure shape:
 
 - `proxy_buffering off` on the stream route — the default buffers the response,
   so nothing reaches the client until the buffer fills.
-- `proxy_read_timeout` raised beyond the 60s default, and a `:ping` comment every
-  ~25s regardless, so an idle stream is not cut.
+- `proxy_read_timeout` raised beyond the 60s default, plus a `:ping` comment
+  every ~25s regardless, so an idle stream is not cut.
 
 ### Phase 2 frontend
 
-A `useActivityStream` hook replaces the polling interval, bumping the badge and
-prepending rows. Polling remains as the reconnect fallback. The stream must not
-go through `authFetch`, whose 401 handler navigates away.
+`useActivityStream` replaces the polling interval: open `EventSource`, take the
+snapshot on `open`, then prepend pushed rows and bump the badge as messages
+arrive.
+
+- The stream must not go through `authFetch`, whose 401 handler navigates away —
+  the same reason phase 1 has `activityFetch`.
+- **The polling interval is removed, not kept as a fallback.** Reconnect is
+  `EventSource`'s job and each reconnect takes a fresh snapshot, so a timer would
+  duplicate that. The one case it covered — a browser or proxy where streaming
+  never works at all — is instead handled by falling back to the phase 1 poll
+  only after the stream has failed to establish repeatedly, so a broken
+  environment degrades to phase 1 behaviour rather than to nothing.
+- Pushed rows are merged by `id`, never appended blindly: the snapshot and the
+  stream legitimately overlap.
+
 
 ## Testing
 
@@ -386,8 +476,19 @@ Phase 1:
 Phase 2:
 
 10. `pg_notify` fires on commit and does **not** fire on rollback.
-11. A client resuming with `Last-Event-ID` receives exactly the events it missed.
-12. Ticket auth: valid once, rejected on reuse and after expiry.
+11. **A pushed frame's `data` is byte-identical to the same event in
+    `GET /activity`** — the one real cost of pushing data rather than signalling
+    is two representations of one fact, so they are pinned rather than trusted.
+12. **The snapshot and the stream overlap without duplicating.** An event
+    committed between the stream opening and the snapshot query appears in both
+    and must render once, deduplicated by `id`.
+13. **A reconnect takes a fresh snapshot** and the client ends up with the same
+    set as a client that never dropped — including an event whose `seq` is lower
+    than one already delivered (the INSERT-vs-COMMIT ordering caveat), which is
+    precisely what a `seq > Last-Event-ID` replay would have missed.
+14. A stream only delivers events from the reader's own groups, excluding their
+    own actions — the same predicate the feed uses, asserted on the stream too.
+15. Ticket auth: valid once, rejected on reuse and after expiry.
 
 ## Delivery
 
