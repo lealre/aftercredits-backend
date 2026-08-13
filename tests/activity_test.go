@@ -35,7 +35,16 @@ func TestActivityIsRecorded(t *testing.T) {
 		require.Equal(t, movie.PrimaryTitle, *rows[0].TitleName)
 	})
 
-	t.Run("a failed request records nothing", func(t *testing.T) {
+	// This proves emit-after-success placement, not the middleware's status
+	// gate: the request below fails before groups.AddTitleToGroup ever runs,
+	// so AddTitleToGroup's activity.Record call is never reached and nothing
+	// is ever buffered — the gate has nothing to do here regardless of
+	// whether it works. The gate itself (a request that *does* buffer an
+	// event but still ends in an error status) is covered separately by
+	// internal/server/activity_middleware_test.go's
+	// TestActivityMiddleware/a_failed_request_records_nothing, which uses a
+	// synthetic handler that records unconditionally before failing.
+	t.Run("a request rejected before its write reaches the emit site records nothing", func(t *testing.T) {
 		resetDB(t)
 
 		_, token := addUser(t, users.NewUserRequest{Username: "failer", Password: "pass"})

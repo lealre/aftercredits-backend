@@ -60,16 +60,10 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetched here (rather than reused from the service) so the title's name is
-	// in hand for the activity event below without changing AddRating's signature.
-	title, err := titles.GetTitleById(api.Db, r.Context(), req.TitleId)
-	if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
-		return
-	}
-
-	newRating, err := ratings.AddRating(api.Db, r.Context(), req, currentuser.Id)
+	// AddRating already has to load the title to route movie vs TV series
+	// logic, so it hands it back here rather than the handler looking it up
+	// again by the same id.
+	newRating, title, err := ratings.AddRating(api.Db, r.Context(), req, currentuser.Id)
 	if err != nil {
 		if statusCode, ok := ratings.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -102,28 +96,10 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read the rating before it is overwritten: UpdateRating returns the
-	// post-update state only, so the previous note has to be captured here.
-	rating, err := ratings.GetRatingById(api.Db, r.Context(), ratingId, currentuser.Id)
-	if err != nil {
-		if statusCode, ok := ratings.ErrorMap[err]; ok {
-			respondWithError(w, statusCode, formatErrorMessage(err))
-			return
-		}
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
-		return
-	}
-	previousNote := rating.Note
-
-	title, err := titles.GetTitleById(api.Db, r.Context(), rating.TitleId)
-	if err != nil {
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
-		return
-	}
-
-	updatedRating, err := ratings.UpdateRating(api.Db, r.Context(), ratingId, currentuser.Id, updateReq)
+	// UpdateRating hands back the rating as it stood immediately before the
+	// update, from the same read that drove the write — not a second,
+	// independently-timed snapshot a concurrent update could race with.
+	updatedRating, previousRating, err := ratings.UpdateRating(api.Db, r.Context(), ratingId, currentuser.Id, updateReq)
 	if err != nil {
 		if statusCode, ok := ratings.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -134,7 +110,16 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity.Record(r.Context(), activity.RatingUpdated(rating.GroupId, rating.TitleId, title.PrimaryTitle, updateReq.Note, previousNote, updateReq.Season))
+	// The title itself carries no race risk (title rows are effectively
+	// immutable), so a plain lookup by id is fine here.
+	title, err := titles.GetTitleById(api.Db, r.Context(), previousRating.TitleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	activity.Record(r.Context(), activity.RatingUpdated(previousRating.GroupId, previousRating.TitleId, title.PrimaryTitle, updateReq.Note, previousRating.Note, updateReq.Season))
 
 	respondWithJSON(w, http.StatusOK, updatedRating)
 }

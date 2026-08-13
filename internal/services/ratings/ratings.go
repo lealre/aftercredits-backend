@@ -70,32 +70,43 @@ func GetRatingsBatch(db store.Store, ctx context.Context, titleIDs []string, gro
 //   - addRatingForTVSeries: If the title is a TV series (tvSeries or tvMiniSeries)
 //   - addRatingForMovie: If the title is a movie (non-TV series)
 //
+// Returns the title alongside the created rating: this call already has to
+// load it to decide which routing branch to take, so handing it back spares
+// the caller a second, purely-redundant lookup by the same id (title rows
+// carry no update-race concern the way a rating's note does).
+//
 // Returns:
 //   - Rating: The created or updated rating with all fields populated
+//   - titles.Title: The title the rating was added for
 //   - error: Returns various errors based on validation failures from routes handlers
-func AddRating(db store.Store, ctx context.Context, rating NewRating, userId string) (Rating, error) {
+func AddRating(db store.Store, ctx context.Context, rating NewRating, userId string) (created Rating, title titles.Title, err error) {
 	logger := logx.FromContext(ctx)
 
 	if rating.Note < 0 || rating.Note > 10 {
-		return Rating{}, ErrInvalidNoteValue
+		return Rating{}, titles.Title{}, ErrInvalidNoteValue
 	}
 	if rating.Season != nil && *rating.Season <= 0 {
-		return Rating{}, ErrInvalidSeasonValue
+		return Rating{}, titles.Title{}, ErrInvalidSeasonValue
 	}
 
-	title, err := titles.GetTitleById(db, ctx, rating.TitleId)
+	title, err = titles.GetTitleById(db, ctx, rating.TitleId)
 	if err != nil {
-		return Rating{}, err
+		return Rating{}, titles.Title{}, err
 	}
 
 	// Split logic for TV series and non-TV series
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
 		logger.Printf("Adding rating for TV series %s", rating.TitleId)
-		return addRatingForTVSeries(db, ctx, rating, userId, title)
+		created, err = addRatingForTVSeries(db, ctx, rating, userId, title)
 	} else {
 		logger.Printf("Adding rating for movie %s", rating.TitleId)
-		return addRatingForMovie(db, ctx, rating, userId)
+		created, err = addRatingForMovie(db, ctx, rating, userId)
 	}
+	if err != nil {
+		return Rating{}, titles.Title{}, err
+	}
+
+	return created, title, nil
 }
 
 // addRatingForTVSeries handles rating creation/update for TV series (tvSeries or tvMiniSeries).
@@ -278,33 +289,48 @@ func addRatingForMovie(db store.Store, ctx context.Context, rating NewRating, us
 	return MapDbRatingDbToApiRating(ratingDb), nil
 }
 
-func UpdateRating(db store.Store, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
+// UpdateRating updates an existing rating and returns both the updated rating
+// and the rating as it stood immediately before the update.
+//
+// previous is not a separate, independently-timed read: it is the exact
+// snapshot this call already has to load to decide how to perform the
+// update (movie vs TV series, and — for TV series — which season slot to
+// touch), so returning it costs nothing extra and gives the caller a
+// previous value that is guaranteed to be the one this update actually
+// overwrote, rather than a value read from a second, uncoordinated query
+// that a concurrent update could have raced with.
+func UpdateRating(db store.Store, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (updated Rating, previous Rating, err error) {
 	logger := logx.FromContext(ctx)
 
 	if updateReq.Note < 0 || updateReq.Note > 10 {
-		return Rating{}, ErrInvalidNoteValue
+		return Rating{}, Rating{}, ErrInvalidNoteValue
 	}
 
-	rating, err := GetRatingById(db, ctx, ratingId, userId)
+	previous, err = GetRatingById(db, ctx, ratingId, userId)
 	if err != nil {
 		if err == store.ErrRecordNotFound {
-			return Rating{}, ErrRatingNotFound
+			return Rating{}, Rating{}, ErrRatingNotFound
 		}
-		return Rating{}, err
+		return Rating{}, Rating{}, err
 	}
 
-	title, err := titles.GetTitleById(db, ctx, rating.TitleId)
+	title, err := titles.GetTitleById(db, ctx, previous.TitleId)
 	if err != nil {
-		return Rating{}, err
+		return Rating{}, Rating{}, err
 	}
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Updating rating for TV series %s", rating.TitleId)
-		return updateRatingForTVSeries(db, ctx, rating, userId, updateReq, title)
+		logger.Printf("Updating rating for TV series %s", previous.TitleId)
+		updated, err = updateRatingForTVSeries(db, ctx, previous, userId, updateReq, title)
 	} else {
-		logger.Printf("Updating rating for movie %s", rating.TitleId)
-		return updateRatingForMovie(db, ctx, ratingId, userId, updateReq)
+		logger.Printf("Updating rating for movie %s", previous.TitleId)
+		updated, err = updateRatingForMovie(db, ctx, ratingId, userId, updateReq)
 	}
+	if err != nil {
+		return Rating{}, Rating{}, err
+	}
+
+	return updated, previous, nil
 }
 
 func updateRatingForMovie(db store.Store, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (Rating, error) {
