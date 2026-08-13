@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lealre/movies-backend/internal/models"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 func TestStore_ActivityEvents(t *testing.T) {
@@ -174,35 +175,85 @@ func TestStore_ActivityEvents(t *testing.T) {
 }
 
 func TestStore_InsertActivityEvents_Notifies(t *testing.T) {
-	resetDB(t)
-	ctx := context.Background()
-	s := newTestStore(t)
+	t.Run("a successful insert notifies with the event id", func(t *testing.T) {
+		resetDB(t)
+		ctx := context.Background()
+		s := newTestStore(t)
 
-	// A dedicated connection: LISTEN is per-connection, and a pooled one may
-	// hand the LISTEN and the later wait to different sessions.
-	conn, err := newTestPool(t).Acquire(ctx)
-	require.NoError(t, err)
-	defer conn.Release()
-	_, err = conn.Exec(ctx, "LISTEN activity_events")
-	require.NoError(t, err)
+		// A dedicated connection: LISTEN is per-connection, and a pooled one may
+		// hand the LISTEN and the later wait to different sessions.
+		conn, err := newTestPool(t).Acquire(ctx)
+		require.NoError(t, err)
+		defer conn.Release()
+		_, err = conn.Exec(ctx, "LISTEN activity_events")
+		require.NoError(t, err)
 
-	actor := addTestUser(t, s)
-	group, err := s.CreateGroup(ctx, newTestGroup(t, "notify", actor))
-	require.NoError(t, err, "failed to seed the group")
+		actor := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "notify", actor))
+		require.NoError(t, err, "failed to seed the group")
 
-	require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{{
-		GroupId: group.Id, ActorId: actor, ActorName: "Maria", Kind: "rating_added",
-	}}))
+		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{{
+			GroupId: group.Id, ActorId: actor, ActorName: "Maria", Kind: "rating_added",
+		}}))
 
-	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	n, err := conn.Conn().WaitForNotification(waitCtx)
-	require.NoError(t, err, "the insert must notify; a timeout here means it did not")
-	require.Equal(t, "activity_events", n.Channel)
-	require.NotEmpty(t, n.Payload, "the payload carries the event id")
+		waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		n, err := conn.Conn().WaitForNotification(waitCtx)
+		require.NoError(t, err, "the insert must notify; a timeout here means it did not")
+		require.Equal(t, "activity_events", n.Channel)
+		require.NotEmpty(t, n.Payload, "the payload carries the event id")
 
-	// The payload must name a row that exists — the listener will read it.
-	got, err := s.GetActivityEventById(ctx, n.Payload)
-	require.NoError(t, err)
-	require.Equal(t, "rating_added", got.Kind)
+		// The payload must name a row that exists — the listener will read it.
+		got, err := s.GetActivityEventById(ctx, n.Payload)
+		require.NoError(t, err)
+		require.Equal(t, "rating_added", got.Kind)
+	})
+
+	t.Run("a rolled-back insert notifies nobody", func(t *testing.T) {
+		// activity_events.group_id has a FK to groups(id), so a batch whose
+		// second event carries a bogus group id fails after the first event
+		// has already been inserted (and notified) inside the same
+		// transaction — pinning that pg_notify's transactional delivery
+		// really does suppress the notification on rollback, not just that
+		// the doc comment says so.
+		resetDB(t)
+		ctx := context.Background()
+		s := newTestStore(t)
+
+		conn, err := newTestPool(t).Acquire(ctx)
+		require.NoError(t, err)
+		defer conn.Release()
+		_, err = conn.Exec(ctx, "LISTEN activity_events")
+		require.NoError(t, err)
+
+		actor := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "rollback", actor))
+		require.NoError(t, err, "failed to seed the group")
+
+		err = s.InsertActivityEvents(ctx, []models.ActivityEvent{
+			{GroupId: group.Id, ActorId: actor, ActorName: "Maria", Kind: "rating_added"},
+			{GroupId: "no-such-group", ActorId: actor, ActorName: "Maria", Kind: "rating_added"},
+		})
+		require.Error(t, err, "the second event's bogus group id must fail the whole batch")
+
+		waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		_, err = conn.Conn().WaitForNotification(waitCtx)
+		require.Error(t, err, "a rolled-back insert must notify nobody; receiving a notification here means the first event's NOTIFY survived the rollback")
+
+		var count int64
+		require.NoError(t, newTestPool(t).QueryRow(ctx, "SELECT count(*) FROM activity_events").Scan(&count))
+		require.Zero(t, count, "the rolled-back batch must leave no rows behind either")
+	})
+}
+
+func TestStore_GetActivityEventById(t *testing.T) {
+	t.Run("returns ErrRecordNotFound for a missing id", func(t *testing.T) {
+		resetDB(t)
+		ctx := context.Background()
+		s := newTestStore(t)
+
+		_, err := s.GetActivityEventById(ctx, "no-such-id")
+		require.ErrorIs(t, err, store.ErrRecordNotFound)
+	})
 }

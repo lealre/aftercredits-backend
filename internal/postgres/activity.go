@@ -92,7 +92,11 @@ func (s *Store) GetActivityEventById(ctx context.Context, id string) (models.Act
 	if err != nil {
 		return models.ActivityEvent{}, notFound(err)
 	}
-	return activityEventByIdRowToModel(row)
+	// GetActivityEventById selects the same columns as GetActivityFeedRows
+	// (e.*, g.name AS group_name), so the two generated row structs are
+	// field-for-field identical and Go permits converting directly between
+	// the named types — no second mapper needed.
+	return activityEventRowToModel(database.GetActivityFeedRowsRow(row))
 }
 
 func (s *Store) GetActivityUnreadCount(ctx context.Context, userId string) (int64, error) {
