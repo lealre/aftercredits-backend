@@ -1,10 +1,13 @@
 package tests
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/server"
 	"github.com/lealre/movies-backend/internal/services/groups"
@@ -509,4 +512,215 @@ func TestActivityFeedDisabled(t *testing.T) {
 
 	require.Zero(t, countActivityRows(t),
 		"no recorder was seeded, so activity.Record must have no-oped")
+}
+
+// TestActivityStreamEndToEnd is Phase 2 of the activity feed: spec tests
+// 10-15 (docs/superpowers/specs/2026-08-10-group-activity-feed-design.md,
+// "Testing"). Every subtest opens at least one SSE connection; every read off
+// one is bounded (activityStreamTestTimeout, or the explicit short window in
+// noActivityMessageWithin), and every stream is closed by its own cleanup, so
+// nothing here can hang the suite.
+//
+// Two spec tests are deliberately NOT re-proven here, because a real database
+// or a real HTTP server already pins them and duplicating would only add
+// drift risk:
+//
+//   - Test 10 (pg_notify fires on commit, not on rollback):
+//     internal/postgres/activity_test.go's TestStore_InsertActivityEvents_Notifies,
+//     already against a real Postgres container.
+//   - Ticket expiry, half of test 15: internal/activity/ticket_test.go, with a
+//     clock the test injects. Re-proving expiry here would mean actually
+//     waiting out the real 60s TTL — ticketTTL is an unexported const with no
+//     hook to shorten it from outside the package — trading a slow suite for
+//     a property already pinned exactly.
+func TestActivityStreamEndToEnd(t *testing.T) {
+	t.Run("a pushed frame is byte-identical to the same event from GET /activity", func(t *testing.T) {
+		// Spec test 11. internal/api/activity_stream_handler_test.go already
+		// pins this at the handler layer against a stubbed feed; this proves
+		// the same property through the real chain end to end: a real insert
+		// notifies a real LISTEN loop, which fans out through a real hub,
+		// compared against a real GET /activity read of the same row.
+		resetDB(t)
+		movieTitles := loadTitlesFixture(t)
+		seedTitles(t, movieTitles)
+		movie := movieTitles[0]
+
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
+
+		stream := openActivityStream(t, readerToken)
+
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", movie.ID),
+			GroupId: group.Id,
+		}, actorToken)
+
+		pushed := activityFrameData(t, readActivityFrame(t, stream.r))
+
+		feedResp := getActivityFeedResponse(t, readerToken, "")
+		defer feedResp.Body.Close()
+		require.Equal(t, http.StatusOK, feedResp.StatusCode)
+
+		var feed struct {
+			Events []json.RawMessage `json:"events"`
+		}
+		require.NoError(t, json.NewDecoder(feedResp.Body).Decode(&feed), "the feed response must be JSON")
+		require.Len(t, feed.Events, 1, "the reader's feed must carry exactly the pushed event")
+
+		require.Equal(t, string(feed.Events[0]), pushed,
+			"one fact, one serialization: the pushed frame and the feed element must match byte-for-byte")
+	})
+
+	t.Run("the stream only delivers events from the reader's own groups, excluding their own actions", func(t *testing.T) {
+		// Spec test 14. internal/activity/hub_test.go already pins the
+		// visibility predicate itself in isolation; this proves the real
+		// server enforces it end to end, over three real connections.
+		resetDB(t)
+		movieTitles := loadTitlesFixture(t)
+		seedTitles(t, movieTitles)
+		movie := movieTitles[0]
+
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		_, outsiderToken := addUser(t, users.NewUserRequest{Username: "outsider", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
+
+		actorStream := openActivityStream(t, actorToken)
+		readerStream := openActivityStream(t, readerToken)
+		outsiderStream := openActivityStream(t, outsiderToken)
+
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", movie.ID),
+			GroupId: group.Id,
+		}, actorToken)
+
+		got := activityFrameEvent(t, readActivityFrame(t, readerStream.r))
+		require.Equal(t, "title_added", got.Kind, "a fellow member must see the actor's event live")
+		require.Equal(t, group.Id, got.GroupId)
+
+		require.True(t, noActivityMessageWithin(t, actorStream.r, time.Second),
+			"the actor must never see their own action on their own stream")
+		require.True(t, noActivityMessageWithin(t, outsiderStream.r, time.Second),
+			"a non-member's stream must receive nothing from a group they do not belong to")
+	})
+
+	t.Run("the snapshot and the stream overlap and merge to one event by id", func(t *testing.T) {
+		// Spec test 12. The event is committed (and so already in the
+		// snapshot's reach) before this test ever reads the snapshot, and it
+		// was also pushed live because the stream connected first — the
+		// overlap the design doc calls out as legitimate.
+		resetDB(t)
+		movieTitles := loadTitlesFixture(t)
+		seedTitles(t, movieTitles)
+		movie := movieTitles[0]
+
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
+
+		stream := openActivityStream(t, readerToken)
+
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", movie.ID),
+			GroupId: group.Id,
+		}, actorToken)
+
+		pushed := activityFrameEvent(t, readActivityFrame(t, stream.r))
+
+		feed := getActivityFeed(t, readerToken, "")
+		require.Len(t, feed.Events, 1, "the already-committed event must also appear in the snapshot")
+		require.Equal(t, pushed.Id, feed.Events[0].Id,
+			"the snapshot and the stream must describe the same event")
+
+		merged := map[string]bool{pushed.Id: true}
+		for _, e := range feed.Events {
+			merged[e.Id] = true
+		}
+		require.Len(t, merged, 1, "deduplicating by id must render the overlapping event exactly once")
+	})
+
+	t.Run("a reconnect ends with the same set as a client that never dropped, including a late low-seq commit", func(t *testing.T) {
+		// Spec test 13. seq is assigned when INSERT executes, not when its
+		// transaction commits, so a transaction that inserts first but
+		// commits last can still notify last, carrying a seq lower than an
+		// event already delivered. A resume query like `seq > lastDelivered`
+		// would miss it forever; taking a fresh snapshot on every (re)connect
+		// — this design's actual choice — does not.
+		resetDB(t)
+		movieTitles := loadTitlesFixture(t)
+		seedTitles(t, movieTitles)
+		require.GreaterOrEqual(t, len(movieTitles), 2, "the fixture must carry at least two titles")
+		movieB := movieTitles[1]
+
+		actor, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
+
+		// A client that never drops: connected before either event exists.
+		liveStream := openActivityStream(t, readerToken)
+
+		ctx := context.Background()
+		// The late event's transaction: its INSERT (and same-transaction
+		// NOTIFY) run now, so its seq is allocated now — but it is held open,
+		// uncommitted, until later.
+		heldTx, lateEventId := insertHeldActivityEvent(t, ctx, group.Id, actor.Id, actor.Username, "title_added")
+
+		// A normal event, through the real path: its INSERT runs after the
+		// held one above, so it gets a HIGHER seq, but it commits (and
+		// notifies) immediately — before the held transaction does.
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", movieB.ID),
+			GroupId: group.Id,
+		}, actorToken)
+
+		firstLive := activityFrameEvent(t, readActivityFrame(t, liveStream.r))
+		require.NotEqual(t, lateEventId, firstLive.Id,
+			"the higher-seq event must arrive first: the held transaction has not committed yet")
+
+		// Now let the late, lower-seq event commit — after the higher-seq one.
+		require.NoError(t, heldTx.Commit(ctx), "failed to commit the held transaction")
+
+		secondLive := activityFrameEvent(t, readActivityFrame(t, liveStream.r))
+		require.Equal(t, lateEventId, secondLive.Id,
+			"the never-dropped client must still receive the late, lower-seq event once it commits")
+
+		liveSeen := map[string]bool{firstLive.Id: true, secondLive.Id: true}
+		require.Len(t, liveSeen, 2, "the never-dropped client must have seen both events, live")
+
+		// A reconnect takes a fresh snapshot rather than resuming from
+		// Last-Event-ID — precisely what catches the late, lower-seq event a
+		// `seq > lastDelivered` resume would have missed permanently.
+		reconnectFeed := getActivityFeed(t, readerToken, "")
+		reconnectSeen := map[string]bool{}
+		for _, e := range reconnectFeed.Events {
+			reconnectSeen[e.Id] = true
+		}
+		require.Equal(t, liveSeen, reconnectSeen,
+			"a reconnecting client's fresh snapshot must end up with exactly the same set the never-dropped client saw live")
+	})
+
+	t.Run("a ticket redeemed over the real server cannot be reused", func(t *testing.T) {
+		// Spec test 15 (single-use half). internal/api/activity_stream_handler_test.go
+		// already pins reuse against a stub store; this proves the same
+		// property composed with the real chain — real JWT auth, a real user,
+		// group membership resolved from the real database.
+		resetDB(t)
+		_, token := addUser(t, users.NewUserRequest{Username: "streamer", Password: "pass"})
+
+		ticket := mintStreamTicket(t, token)
+
+		first := openActivityStreamWithTicket(t, ticket.Ticket)
+		require.Equal(t, http.StatusOK, first.StatusCode,
+			"the first use of a freshly minted ticket must open the stream")
+		first.Body.Close()
+
+		second := openActivityStreamWithTicket(t, ticket.Ticket)
+		require.Equal(t, http.StatusUnauthorized, second.StatusCode,
+			"a ticket is single-use: replaying it against the real server must not open a second stream")
+	})
 }

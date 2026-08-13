@@ -1,14 +1,19 @@
 package tests
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/activity"
@@ -16,6 +21,11 @@ import (
 	"github.com/lealre/movies-backend/internal/services/users"
 	"github.com/stretchr/testify/require"
 )
+
+// activityStreamTestTimeout bounds every stream connection opened in this
+// file: a stream that never responds, or a read that never delivers, fails
+// the subtest it belongs to instead of hanging the whole suite.
+const activityStreamTestTimeout = 10 * time.Second
 
 // activityRow is one row of the activity log, read straight from the database
 // so emit-site tests do not depend on the feed API existing yet.
@@ -253,4 +263,193 @@ func buildGroupWithTitleAgainst(t *testing.T, baseURL string) (groupId, token st
 		"the mutating request under test must actually succeed, or the empty log proves nothing")
 
 	return group.Id, login.AccessToken
+}
+
+// mintStreamTicket calls POST /activity/stream-ticket for token and returns
+// the decoded ticket, asserting the mint succeeded.
+func mintStreamTicket(t *testing.T, token string) activity.StreamTicket {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/activity/stream-ticket", nil)
+	require.NoError(t, err, "failed to build the ticket request")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err, "the ticket request failed")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "minting a ticket must succeed for an authenticated caller")
+
+	var ticket activity.StreamTicket
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&ticket), "the ticket response must be JSON")
+	return ticket
+}
+
+// openActivityStreamWithTicket connects GET /activity/stream with an
+// already-minted ticket and returns the raw response for the caller to assert
+// on. The request carries a bounded context deadline, cancelled by cleanup —
+// which also tears down the connection — so a stream that never responds
+// fails the subtest instead of hanging the suite, and no stream goroutine
+// outlives it.
+func openActivityStreamWithTicket(t *testing.T, ticket string) *http.Response {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), activityStreamTestTimeout)
+	t.Cleanup(cancel)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		testServer.URL+"/activity/stream?ticket="+ticket, nil)
+	require.NoError(t, err, "failed to build the stream request")
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err, "the stream request failed")
+	t.Cleanup(func() { resp.Body.Close() })
+
+	return resp
+}
+
+// activityStream is one open, successfully-authenticated SSE connection: its
+// response (for header assertions) and a buffered reader over its body (for
+// reading frames).
+type activityStream struct {
+	resp *http.Response
+	r    *bufio.Reader
+}
+
+// openActivityStream mints a ticket for token via the real endpoint and opens
+// the stream with it, asserting the connection succeeded.
+//
+// Because StreamActivity registers the subscriber with the hub before it
+// writes and flushes the response headers (internal/api/activity_stream_handler.go),
+// by the time this call returns — the client's Do only returns once headers
+// arrive — the caller is already subscribed. Any insert performed after this
+// point is therefore guaranteed visible to it, with no extra synchronization.
+func openActivityStream(t *testing.T, token string) *activityStream {
+	t.Helper()
+
+	ticket := mintStreamTicket(t, token)
+	resp := openActivityStreamWithTicket(t, ticket.Ticket)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "a freshly minted ticket must open the stream")
+
+	return &activityStream{resp: resp, r: bufio.NewReader(resp.Body)}
+}
+
+// readActivitySSEMessage reads one SSE message — everything up to the blank
+// line that terminates it — as raw text, comments included. Bounded by the
+// stream's own request context deadline (activityStreamTestTimeout), so a
+// message that never arrives fails the test rather than hanging it.
+func readActivitySSEMessage(t *testing.T, r *bufio.Reader) string {
+	t.Helper()
+
+	var message strings.Builder
+	for {
+		line, err := r.ReadString('\n')
+		require.NoError(t, err, "the stream ended or timed out before a complete message arrived")
+		if line == "\n" {
+			return message.String()
+		}
+		message.WriteString(line)
+	}
+}
+
+// readActivityFrame reads the next activity event, skipping the ":ping"
+// keep-alive comments a live stream interleaves with real events (the
+// production ping interval is 25s, well outside any bound used in this file,
+// so none are expected — but skipping them costs nothing and removes the
+// dependency on that timing).
+func readActivityFrame(t *testing.T, r *bufio.Reader) string {
+	t.Helper()
+
+	for {
+		message := readActivitySSEMessage(t, r)
+		if !strings.HasPrefix(message, ":") {
+			return message
+		}
+	}
+}
+
+// activityFrameData extracts an activity frame's data: line, still as raw
+// JSON text — used for the byte-identical comparison against the feed, which
+// must not go through a decode/re-encode round trip that could hide a
+// difference.
+func activityFrameData(t *testing.T, frame string) string {
+	t.Helper()
+
+	for line := range strings.SplitSeq(strings.TrimRight(frame, "\n"), "\n") {
+		if after, found := strings.CutPrefix(line, "data: "); found {
+			return after
+		}
+	}
+	t.Fatalf("no data line in frame %q", frame)
+	return ""
+}
+
+// activityFrameEvent decodes a frame's data: line into the typed DTO.
+func activityFrameEvent(t *testing.T, frame string) activity.Event {
+	t.Helper()
+
+	var event activity.Event
+	require.NoError(t, json.Unmarshal([]byte(activityFrameData(t, frame)), &event),
+		"the data line must be the event DTO as JSON")
+	return event
+}
+
+// noActivityMessageWithin reports whether nothing arrives on r within d — used
+// to assert absence (the actor's own stream, or a non-member's, must receive
+// nothing). The read runs on its own goroutine so a negative result never
+// blocks past d; if something does arrive after the caller has moved on, the
+// goroutine still exits on its own — the buffered channel absorbs the send —
+// once the stream's cleanup closes the connection, so nothing here outlives
+// its subtest.
+func noActivityMessageWithin(t *testing.T, r *bufio.Reader, d time.Duration) bool {
+	t.Helper()
+
+	type result struct {
+		line string
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		line, err := r.ReadString('\n')
+		ch <- result{line, err}
+	}()
+
+	select {
+	case <-time.After(d):
+		return true
+	case res := <-ch:
+		return res.err != nil
+	}
+}
+
+// insertHeldActivityEvent inserts one activity event exactly the way
+// InsertActivityEvents does it (a row, then a same-transaction pg_notify), but
+// through a transaction the caller holds open rather than one that commits
+// immediately.
+//
+// It exists to reproduce the design doc's INSERT-vs-COMMIT ordering caveat
+// ("Ordering and cursors"): seq is assigned when the INSERT statement
+// executes, not when its transaction commits, so a transaction that inserts
+// earlier than another can still commit — and therefore notify and become
+// visible — after it. The caller must Commit or Rollback the returned
+// transaction.
+func insertHeldActivityEvent(t *testing.T, ctx context.Context, groupId, actorId, actorName, kind string) (tx pgx.Tx, eventId string) {
+	t.Helper()
+
+	tx, err := testPool.Begin(ctx)
+	require.NoError(t, err, "failed to begin the held transaction")
+
+	eventId = uuid.NewString()
+	_, err = tx.Exec(ctx,
+		`INSERT INTO activity_events (id, group_id, actor_id, actor_name, kind, payload, created_at)
+		 VALUES ($1, $2, $3, $4, $5, '{}', now())`,
+		eventId, groupId, actorId, actorName, kind)
+	require.NoError(t, err, "failed to insert the held event")
+
+	// Same transaction as the insert, matching InsertActivityEvents: the
+	// notification is only ever delivered if this transaction's commit
+	// succeeds.
+	_, err = tx.Exec(ctx, "SELECT pg_notify('activity_events', $1)", eventId)
+	require.NoError(t, err, "failed to notify for the held event")
+
+	return tx, eventId
 }
