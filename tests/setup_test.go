@@ -57,6 +57,12 @@ func TestMain(m *testing.M) {
 	testStore = pgstore.New(testPool)
 	testQueries = database.New(testPool)
 
+	// The activity-feed emit sites (Task 5) and routes (Task 6) are inert
+	// while this flag is unset. TestMain builds the server once, and
+	// t.Setenv is per-test and cannot reach a server already built, so the
+	// flag is set here, before the server is constructed, for the whole suite.
+	os.Setenv("ACTIVITY_FEED_ENABLED", "true")
+
 	handler := server.NewServerWithProvider(testStore, newFakeTitleProvider(), "test-secret")
 	testServer = httptest.NewServer(handler)
 

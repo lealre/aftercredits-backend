@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/comments"
@@ -89,6 +90,8 @@ func (api *API) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	activity.Record(r.Context(), activity.CommentAdded(newComment.GroupId, newComment.TitleId, title.PrimaryTitle, newComment.Season))
+
 	respondWithJSON(w, http.StatusCreated, createdComment)
 }
 
@@ -149,6 +152,8 @@ func (api *API) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	activity.Record(r.Context(), activity.CommentUpdated(groupId, titleId, title.PrimaryTitle, updateReq.Season))
+
 	respondWithJSON(w, http.StatusOK, updatedComment)
 
 }
@@ -186,6 +191,15 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetched here so the title's name is in hand for the activity event below;
+	// a deleted comment carries no name to read back afterwards.
+	title, err := titles.GetTitleById(api.Db, r.Context(), titleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
 	if deletedCount, err := comments.DeleteComment(api.Db, r.Context(), commentId, currentUser.Id, groupId); err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting comment")
@@ -194,6 +208,8 @@ func (api *API) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Comment with id %s not found", commentId))
 		return
 	}
+
+	activity.Record(r.Context(), activity.CommentDeleted(groupId, titleId, title.PrimaryTitle))
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Comment with id %s deleted successfully", commentId)})
 }
@@ -258,6 +274,8 @@ func (api *API) DeleteCommentSeason(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting season comment")
 		return
 	}
+
+	activity.Record(r.Context(), activity.CommentSeasonDeleted(groupId, titleId, title.PrimaryTitle, season))
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Season %d from comment %s deleted successfully", season, commentId)})
 }

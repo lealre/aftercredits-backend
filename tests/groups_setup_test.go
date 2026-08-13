@@ -145,6 +145,45 @@ func addTitleToGroup(t *testing.T, newTitle groups.AddTitleToGroupRequest, token
 
 }
 
+// addTitleToGroupResponse calls POST /groups/titles and returns the raw
+// response, for callers that need to assert on a failing request (addTitleToGroup
+// asserts 200 and decodes the body, so it cannot be reused for that).
+func addTitleToGroupResponse(t *testing.T, newTitle groups.AddTitleToGroupRequest, token string) *http.Response {
+	t.Helper()
+
+	jsonData, err := json.Marshal(newTitle)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost,
+		testServer.URL+"/groups/titles",
+		bytes.NewBuffer(jsonData),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// deleteTitleFromGroupResponse calls DELETE /groups/{groupId}/titles/{titleId}
+// and returns the raw response for the caller to assert on.
+func deleteTitleFromGroupResponse(t *testing.T, groupId, titleId, token string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodDelete,
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId,
+		nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
 func patchGroupTitleWatched(t *testing.T, groupId string, pathBody []byte, token string) groups.GroupTitle {
 	req, err := http.NewRequest(http.MethodPatch,
 		testServer.URL+"/groups/"+groupId+"/titles",
