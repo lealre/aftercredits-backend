@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Store) GetTitleById(ctx context.Context, id string) (models.Title, error) {
-	row, err := s.qq(ctx).GetTitleById(ctx, id)
+	row, err := s.q.GetTitleById(ctx, id)
 	if err != nil {
 		return models.Title{}, notFound(err)
 	}
@@ -23,7 +23,7 @@ func (s *Store) AddTitle(ctx context.Context, title models.Title) error {
 	if err != nil {
 		return err
 	}
-	if err := s.qq(ctx).InsertTitle(ctx, params); err != nil {
+	if err := s.q.InsertTitle(ctx, params); err != nil {
 		if isUniqueViolation(err) {
 			return store.ErrDuplicatedRecord
 		}
@@ -33,7 +33,7 @@ func (s *Store) AddTitle(ctx context.Context, title models.Title) error {
 }
 
 func (s *Store) DeleteTitle(ctx context.Context, id string) (bool, error) {
-	n, err := s.qq(ctx).DeleteTitle(ctx, id)
+	n, err := s.q.DeleteTitle(ctx, id)
 	if err != nil {
 		return false, err
 	}
@@ -41,7 +41,7 @@ func (s *Store) DeleteTitle(ctx context.Context, id string) (bool, error) {
 }
 
 func (s *Store) TitleExists(ctx context.Context, id string) (bool, error) {
-	return s.qq(ctx).TitleExists(ctx, id)
+	return s.q.TitleExists(ctx, id)
 }
 
 // titleOrderKeys is the sort-key whitelist for GetTitlesPage. Unknown keys
@@ -93,7 +93,7 @@ func (s *Store) GetTitlesPage(
 	}
 	descending := ascending != nil && !*ascending
 
-	total, err := s.qq(ctx).CountTitles(ctx)
+	total, err := s.q.CountTitles(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -106,7 +106,7 @@ func (s *Store) GetTitlesPage(
 		return []models.Title{}, total, nil
 	}
 
-	rows, err := s.qq(ctx).GetTitlesPage(ctx, database.GetTitlesPageParams{
+	rows, err := s.q.GetTitlesPage(ctx, database.GetTitlesPageParams{
 		OrderBy:    orderBy,
 		Descending: descending,
 		PageSize:   int64(size),
@@ -131,7 +131,7 @@ func (s *Store) GetTitlesPage(
 // ListTitleIds returns every title id, ordered. Not part of store.Store —
 // used by internal tools (cmd/routines).
 func (s *Store) ListTitleIds(ctx context.Context) ([]string, error) {
-	ids, err := s.qq(ctx).ListTitleIds(ctx)
+	ids, err := s.q.ListTitleIds(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (s *Store) UpdateTitle(ctx context.Context, title models.Title) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.qq(ctx).UpdateTitle(ctx, database.UpdateTitleParams{
+	n, err := s.q.UpdateTitle(ctx, database.UpdateTitleParams{
 		ID:              params.ID,
 		PrimaryTitle:    params.PrimaryTitle,
 		Type:            params.Type,

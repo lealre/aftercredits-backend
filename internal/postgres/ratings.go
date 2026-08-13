@@ -46,7 +46,7 @@ func (s *Store) assembleRatingRows(ctx context.Context, rows []database.Rating) 
 		ids[i] = r.ID
 	}
 
-	seasonRows, err := s.qq(ctx).GetRatingSeasonsByRatingIds(ctx, ids)
+	seasonRows, err := s.q.GetRatingSeasonsByRatingIds(ctx, ids)
 	if err != nil {
 		return []models.UserRating{}, err
 	}
@@ -105,7 +105,7 @@ func (s *Store) AddRating(ctx context.Context, rating models.UserRating) (models
 // seasons assembled. Ratings are group-scoped, so a title's ratings are only
 // ever read through the group they belong to.
 func (s *Store) GetRatingsByTitleId(ctx context.Context, titleId, groupId string) ([]models.UserRating, error) {
-	rows, err := s.qq(ctx).GetRatingRowsByTitleId(ctx, database.GetRatingRowsByTitleIdParams{
+	rows, err := s.q.GetRatingRowsByTitleId(ctx, database.GetRatingRowsByTitleIdParams{
 		TitleID: titleId,
 		GroupID: groupId,
 	})
@@ -117,12 +117,12 @@ func (s *Store) GetRatingsByTitleId(ctx context.Context, titleId, groupId string
 
 // GetRatingById fetches a single rating owned by userId, seasons assembled.
 func (s *Store) GetRatingById(ctx context.Context, ratingId, userId string) (models.UserRating, error) {
-	row, err := s.qq(ctx).GetRatingRowById(ctx, database.GetRatingRowByIdParams{ID: ratingId, UserID: userId})
+	row, err := s.q.GetRatingRowById(ctx, database.GetRatingRowByIdParams{ID: ratingId, UserID: userId})
 	if err != nil {
 		return models.UserRating{}, notFound(err)
 	}
 
-	seasonRows, err := s.qq(ctx).GetRatingSeasons(ctx, row.ID)
+	seasonRows, err := s.q.GetRatingSeasons(ctx, row.ID)
 	if err != nil {
 		return models.UserRating{}, err
 	}
@@ -134,7 +134,7 @@ func (s *Store) GetRatingById(ctx context.Context, ratingId, userId string) (mod
 // titleId within groupId, seasons assembled. groupId completes the key: the
 // same user may hold a separate rating of the same title in another group.
 func (s *Store) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId, groupId string) (models.UserRating, error) {
-	row, err := s.qq(ctx).GetRatingRowByUserTitle(ctx, database.GetRatingRowByUserTitleParams{
+	row, err := s.q.GetRatingRowByUserTitle(ctx, database.GetRatingRowByUserTitleParams{
 		UserID:  userId,
 		TitleID: titleId,
 		GroupID: groupId,
@@ -143,7 +143,7 @@ func (s *Store) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId
 		return models.UserRating{}, notFound(err)
 	}
 
-	seasonRows, err := s.qq(ctx).GetRatingSeasons(ctx, row.ID)
+	seasonRows, err := s.q.GetRatingSeasons(ctx, row.ID)
 	if err != nil {
 		return models.UserRating{}, err
 	}
@@ -189,7 +189,7 @@ func (s *Store) UpdateRating(ctx context.Context, rating models.UserRating, user
 // groupId filter is load-bearing: without it this read serves one group's
 // title detail every other group's ratings.
 func (s *Store) GetRatingsByTitleIds(ctx context.Context, titleIds []string, groupId string) ([]models.UserRating, error) {
-	rows, err := s.qq(ctx).GetRatingRowsByTitleIds(ctx, database.GetRatingRowsByTitleIdsParams{
+	rows, err := s.q.GetRatingRowsByTitleIds(ctx, database.GetRatingRowsByTitleIdsParams{
 		Column1: titleIds,
 		GroupID: groupId,
 	})
@@ -203,7 +203,7 @@ func (s *Store) GetRatingsByTitleIds(ctx context.Context, titleIds []string, gro
 // cascade): no rows affected is reported as
 // store.ErrRecordNotFound rather than (0, nil).
 func (s *Store) DeleteRating(ctx context.Context, ratingId, userId string) (int64, error) {
-	n, err := s.qq(ctx).DeleteRatingRow(ctx, database.DeleteRatingRowParams{ID: ratingId, UserID: userId})
+	n, err := s.q.DeleteRatingRow(ctx, database.DeleteRatingRowParams{ID: ratingId, UserID: userId})
 	if err != nil {
 		return 0, err
 	}

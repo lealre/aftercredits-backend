@@ -20,12 +20,12 @@ import (
 // always reports a titles map, even when it holds none; each item's
 // SeasonsWatched is nil when it has no season rows.
 func (s *Store) assembleGroupTitles(ctx context.Context, groupId string) (models.GroupTitles, error) {
-	titleRows, err := s.qq(ctx).GetGroupTitleRows(ctx, groupId)
+	titleRows, err := s.q.GetGroupTitleRows(ctx, groupId)
 	if err != nil {
 		return nil, err
 	}
 
-	seasonRows, err := s.qq(ctx).GetGroupTitleSeasonRows(ctx, groupId)
+	seasonRows, err := s.q.GetGroupTitleSeasonRows(ctx, groupId)
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +91,13 @@ func (s *Store) CreateGroup(ctx context.Context, group models.Group) (models.Gro
 // GroupExists reports whether a non-deleted group with the given id exists and
 // has userId as a member.
 func (s *Store) GroupExists(ctx context.Context, groupId, userId string) (bool, error) {
-	return s.qq(ctx).GroupExists(ctx, database.GroupExistsParams{ID: groupId, UserID: userId})
+	return s.q.GroupExists(ctx, database.GroupExistsParams{ID: groupId, UserID: userId})
 }
 
 // GroupContainsTitle reports whether a non-deleted group with the given id has
 // userId as a member and contains titleId.
 func (s *Store) GroupContainsTitle(ctx context.Context, groupId, titleId, userId string) (bool, error) {
-	return s.qq(ctx).GroupContainsTitle(ctx, database.GroupContainsTitleParams{
+	return s.q.GroupContainsTitle(ctx, database.GroupContainsTitleParams{
 		ID:      groupId,
 		TitleID: titleId,
 		UserID:  userId,
@@ -109,12 +109,12 @@ func (s *Store) GroupContainsTitle(ctx context.Context, groupId, titleId, userId
 // group, or one userId is not a member of, is reported as
 // store.ErrRecordNotFound.
 func (s *Store) GetGroupById(ctx context.Context, groupId, userId string) (models.Group, error) {
-	row, err := s.qq(ctx).GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId})
+	row, err := s.q.GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId})
 	if err != nil {
 		return models.Group{}, notFound(err)
 	}
 
-	users, err := s.qq(ctx).GetGroupMemberIds(ctx, groupId)
+	users, err := s.q.GetGroupMemberIds(ctx, groupId)
 	if err != nil {
 		return models.Group{}, err
 	}
@@ -158,11 +158,11 @@ func (s *Store) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddI
 // group, or one userId is not a member of, is reported as
 // store.ErrRecordNotFound.
 func (s *Store) GetUsersFromGroup(ctx context.Context, groupId, userId string) ([]models.User, error) {
-	if _, err := s.qq(ctx).GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId}); err != nil {
+	if _, err := s.q.GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId}); err != nil {
 		return []models.User{}, notFound(err)
 	}
 
-	rows, err := s.qq(ctx).GetGroupMemberUsers(ctx, groupId)
+	rows, err := s.q.GetGroupMemberUsers(ctx, groupId)
 	if err != nil {
 		return []models.User{}, err
 	}
@@ -378,7 +378,7 @@ func (s *Store) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId 
 // index is reported as store.ErrDuplicatedRecord; a missing/deleted group as
 // store.ErrRecordNotFound.
 func (s *Store) UpdateGroupInfo(ctx context.Context, groupId, name, description string) error {
-	n, err := s.qq(ctx).UpdateGroupInfoRow(ctx, database.UpdateGroupInfoRowParams{
+	n, err := s.q.UpdateGroupInfoRow(ctx, database.UpdateGroupInfoRowParams{
 		ID:          groupId,
 		Name:        name,
 		Description: description,
@@ -399,7 +399,7 @@ func (s *Store) UpdateGroupInfo(ctx context.Context, groupId, name, description 
 // An already-deleted or missing group is reported as
 // store.ErrRecordNotFound.
 func (s *Store) SoftDeleteGroup(ctx context.Context, groupId string) error {
-	n, err := s.qq(ctx).SoftDeleteGroupRow(ctx, groupId)
+	n, err := s.q.SoftDeleteGroupRow(ctx, groupId)
 	if err != nil {
 		return err
 	}
@@ -453,7 +453,7 @@ func (s *Store) GroupHasTitleEntries(ctx context.Context, groupId string, watche
 	if watched != nil {
 		watchedArg = pgtype.Bool{Bool: *watched, Valid: true}
 	}
-	return s.qq(ctx).GroupHasTitleEntries(ctx, database.GroupHasTitleEntriesParams{
+	return s.q.GroupHasTitleEntries(ctx, database.GroupHasTitleEntriesParams{
 		GroupID:    groupId,
 		Watched:    watchedArg,
 		TitleTypes: titleTypes, // nil slice -> SQL NULL -> filter off
@@ -478,7 +478,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 	// them, so the total has to come from the companion count over the same
 	// WHERE. Every such exit uses this.
 	emptyPage := func() ([]models.GroupPagedTitle, int64, error) {
-		total, err := s.qq(ctx).CountGroupTitles(ctx, database.CountGroupTitlesParams{
+		total, err := s.q.CountGroupTitles(ctx, database.CountGroupTitlesParams{
 			GroupID: groupId, Watched: watchedArg, TitleTypes: titleTypes,
 		})
 		if err != nil {
@@ -495,7 +495,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		return emptyPage()
 	}
 
-	rows, err := s.qq(ctx).GetGroupTitlesPage(ctx, database.GetGroupTitlesPageParams{
+	rows, err := s.q.GetGroupTitlesPage(ctx, database.GetGroupTitlesPageParams{
 		GroupID:    groupId,
 		Watched:    watchedArg,
 		TitleTypes: titleTypes, // nil slice -> SQL NULL -> filter off
@@ -540,7 +540,7 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 		for _, r := range rows {
 			titleIds = append(titleIds, r.ID)
 		}
-		seasonRows, err := s.qq(ctx).GetGroupTitleSeasonRowsForTitles(ctx, database.GetGroupTitleSeasonRowsForTitlesParams{
+		seasonRows, err := s.q.GetGroupTitleSeasonRowsForTitles(ctx, database.GetGroupTitleSeasonRowsForTitlesParams{
 			GroupID: groupId, TitleIds: titleIds,
 		})
 		if err != nil {

@@ -11,7 +11,7 @@ import (
 // loadUser resolves a database.User row's group ids and maps the pair into
 // a models.User.
 func (s *Store) loadUser(ctx context.Context, row database.User) (models.User, error) {
-	groups, err := s.qq(ctx).GetUserGroupIds(ctx, row.ID)
+	groups, err := s.q.GetUserGroupIds(ctx, row.ID)
 	if err != nil {
 		return models.User{}, err
 	}
@@ -19,7 +19,7 @@ func (s *Store) loadUser(ctx context.Context, row database.User) (models.User, e
 }
 
 func (s *Store) GetUserById(ctx context.Context, id string) (models.User, error) {
-	row, err := s.qq(ctx).GetUserById(ctx, id)
+	row, err := s.q.GetUserById(ctx, id)
 	if err != nil {
 		return models.User{}, notFound(err)
 	}
@@ -27,7 +27,7 @@ func (s *Store) GetUserById(ctx context.Context, id string) (models.User, error)
 }
 
 func (s *Store) GetUserByUsernameOrEmail(ctx context.Context, username, email string) (models.User, error) {
-	row, err := s.qq(ctx).GetUserByUsernameOrEmail(ctx, database.GetUserByUsernameOrEmailParams{
+	row, err := s.q.GetUserByUsernameOrEmail(ctx, database.GetUserByUsernameOrEmailParams{
 		Username: username,
 		Email:    email,
 	})
@@ -38,7 +38,7 @@ func (s *Store) GetUserByUsernameOrEmail(ctx context.Context, username, email st
 }
 
 func (s *Store) GetAllUsers(ctx context.Context) ([]models.User, error) {
-	rows, err := s.qq(ctx).GetAllUsers(ctx)
+	rows, err := s.q.GetAllUsers(ctx)
 	if err != nil {
 		return []models.User{}, err
 	}
@@ -55,11 +55,11 @@ func (s *Store) GetAllUsers(ctx context.Context) ([]models.User, error) {
 }
 
 func (s *Store) UserExists(ctx context.Context, id string) (bool, error) {
-	return s.qq(ctx).UserExists(ctx, id)
+	return s.q.UserExists(ctx, id)
 }
 
 func (s *Store) AddUser(ctx context.Context, user models.User) error {
-	err := s.qq(ctx).CreateUser(ctx, database.CreateUserParams{
+	err := s.q.CreateUser(ctx, database.CreateUserParams{
 		ID:           user.Id,
 		Name:         user.Name,
 		Email:        user.Email,
@@ -82,11 +82,11 @@ func (s *Store) AddUser(ctx context.Context, user models.User) error {
 }
 
 func (s *Store) DeleteUserById(ctx context.Context, id string) error {
-	return s.qq(ctx).DeleteUserById(ctx, id)
+	return s.q.DeleteUserById(ctx, id)
 }
 
 func (s *Store) UpdateUserInfo(ctx context.Context, id string, user models.User) (models.User, error) {
-	row, err := s.qq(ctx).UpdateUserInfo(ctx, database.UpdateUserInfoParams{
+	row, err := s.q.UpdateUserInfo(ctx, database.UpdateUserInfoParams{
 		ID:       id,
 		Name:     user.Name,
 		Email:    user.Email,
@@ -102,7 +102,7 @@ func (s *Store) UpdateUserInfo(ctx context.Context, id string, user models.User)
 }
 
 func (s *Store) UpdateUserLastLoginAt(ctx context.Context, userId string) (models.User, error) {
-	row, err := s.qq(ctx).UpdateUserLastLoginAt(ctx, userId)
+	row, err := s.q.UpdateUserLastLoginAt(ctx, userId)
 	if err != nil {
 		return models.User{}, notFound(err)
 	}
@@ -110,7 +110,7 @@ func (s *Store) UpdateUserLastLoginAt(ctx context.Context, userId string) (model
 }
 
 func (s *Store) UpdateUserGroup(ctx context.Context, userId string, groupId string) (models.User, error) {
-	if err := s.qq(ctx).AddGroupMember(ctx, database.AddGroupMemberParams{
+	if err := s.q.AddGroupMember(ctx, database.AddGroupMemberParams{
 		GroupID: groupId,
 		UserID:  userId,
 	}); err != nil {
@@ -120,7 +120,7 @@ func (s *Store) UpdateUserGroup(ctx context.Context, userId string, groupId stri
 }
 
 func (s *Store) RemoveGroupFromUser(ctx context.Context, userId, groupId string) error {
-	return s.qq(ctx).RemoveGroupMember(ctx, database.RemoveGroupMemberParams{
+	return s.q.RemoveGroupMember(ctx, database.RemoveGroupMemberParams{
 		GroupID: groupId,
 		UserID:  userId,
 	})

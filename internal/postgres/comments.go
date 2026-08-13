@@ -46,7 +46,7 @@ func (s *Store) assembleCommentRows(ctx context.Context, rows []database.Comment
 		ids[i] = r.ID
 	}
 
-	seasonRows, err := s.qq(ctx).GetCommentSeasonsByCommentIds(ctx, ids)
+	seasonRows, err := s.q.GetCommentSeasonsByCommentIds(ctx, ids)
 	if err != nil {
 		return []models.Comment{}, err
 	}
@@ -105,7 +105,7 @@ func (s *Store) AddComment(ctx context.Context, comment models.Comment) (models.
 // seasons assembled. The comment row carries its group, so this filters on
 // group_id directly rather than on the group's member list.
 func (s *Store) GetCommentsByTitleId(ctx context.Context, titleId, groupId string) ([]models.Comment, error) {
-	rows, err := s.qq(ctx).GetCommentRowsByTitleId(ctx, database.GetCommentRowsByTitleIdParams{
+	rows, err := s.q.GetCommentRowsByTitleId(ctx, database.GetCommentRowsByTitleIdParams{
 		TitleID: titleId,
 		GroupID: groupId,
 	})
@@ -119,7 +119,7 @@ func (s *Store) GetCommentsByTitleId(ctx context.Context, titleId, groupId strin
 // titleId within groupId, seasons assembled. groupId completes the key: the
 // same user may hold a separate comment on the same title in another group.
 func (s *Store) GetUserCommentByTitleId(ctx context.Context, titleId, userId, groupId string) (models.Comment, error) {
-	row, err := s.qq(ctx).GetUserCommentRowByTitle(ctx, database.GetUserCommentRowByTitleParams{
+	row, err := s.q.GetUserCommentRowByTitle(ctx, database.GetUserCommentRowByTitleParams{
 		TitleID: titleId,
 		UserID:  userId,
 		GroupID: groupId,
@@ -128,7 +128,7 @@ func (s *Store) GetUserCommentByTitleId(ctx context.Context, titleId, userId, gr
 		return models.Comment{}, notFound(err)
 	}
 
-	seasonRows, err := s.qq(ctx).GetCommentSeasons(ctx, row.ID)
+	seasonRows, err := s.q.GetCommentSeasons(ctx, row.ID)
 	if err != nil {
 		return models.Comment{}, err
 	}
@@ -138,12 +138,12 @@ func (s *Store) GetUserCommentByTitleId(ctx context.Context, titleId, userId, gr
 
 // GetCommentById fetches a single comment owned by userId, seasons assembled.
 func (s *Store) GetCommentById(ctx context.Context, commentId string, userId string) (models.Comment, error) {
-	row, err := s.qq(ctx).GetCommentRowById(ctx, database.GetCommentRowByIdParams{ID: commentId, UserID: userId})
+	row, err := s.q.GetCommentRowById(ctx, database.GetCommentRowByIdParams{ID: commentId, UserID: userId})
 	if err != nil {
 		return models.Comment{}, notFound(err)
 	}
 
-	seasonRows, err := s.qq(ctx).GetCommentSeasons(ctx, row.ID)
+	seasonRows, err := s.q.GetCommentSeasons(ctx, row.ID)
 	if err != nil {
 		return models.Comment{}, err
 	}
@@ -190,7 +190,7 @@ func (s *Store) UpdateComment(ctx context.Context, comment models.Comment, userI
 // belongs to one of the user's comments in a different group matches nothing
 // here, so a group-scoped route can never delete another group's comment.
 func (s *Store) DeleteComment(ctx context.Context, commentId, userId, groupId string) (int64, error) {
-	n, err := s.qq(ctx).DeleteCommentRow(ctx, database.DeleteCommentRowParams{ID: commentId, UserID: userId, GroupID: groupId})
+	n, err := s.q.DeleteCommentRow(ctx, database.DeleteCommentRowParams{ID: commentId, UserID: userId, GroupID: groupId})
 	if err != nil {
 		return 0, err
 	}
