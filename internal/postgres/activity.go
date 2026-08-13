@@ -25,12 +25,15 @@ func (s *Store) InsertActivityEvents(ctx context.Context, events []models.Activi
 	return s.inTx(ctx, func(q *database.Queries) error {
 		now := time.Now()
 		for _, e := range events {
-			payload, err := json.Marshal(e.Payload)
-			if err != nil {
-				return err
-			}
+			var payload []byte
 			if e.Payload == nil {
 				payload = []byte(`{}`)
+			} else {
+				var err error
+				payload, err = json.Marshal(e.Payload)
+				if err != nil {
+					return err
+				}
 			}
 			if _, err := q.InsertActivityEventRow(ctx, database.InsertActivityEventRowParams{
 				ID:        firstNonEmpty(e.Id, uuid.NewString()),

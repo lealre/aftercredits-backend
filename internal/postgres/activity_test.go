@@ -53,6 +53,40 @@ func TestStore_ActivityEvents(t *testing.T) {
 		require.NotNil(t, feed, "read-many must return an empty slice, never nil")
 	})
 
+	t.Run("a departed member loses the group's history immediately", func(t *testing.T) {
+		// Membership is joined at read time (sql/queries/activity.sql's own
+		// doc comment claims this): a member who leaves must lose visibility
+		// into the group's feed and badge on their very next read, with no
+		// separate cleanup step.
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		actor := addTestUser(t, s)
+		reader := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "departed", actor))
+		require.NoError(t, err)
+		require.NoError(t, s.AddUserToGroup(ctx, group.Id, actor, reader))
+		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
+			{Id: "e1", GroupId: group.Id, ActorId: actor, ActorName: "actor", Kind: "title_added"},
+		}))
+
+		feed, err := s.GetActivityFeed(ctx, reader, nil, 50)
+		require.NoError(t, err)
+		require.Len(t, feed, 1, "while still a member, the reader must see the actor's event")
+
+		require.NoError(t, s.RemoveUserFromGroup(ctx, group.Id, reader))
+
+		feed, err = s.GetActivityFeed(ctx, reader, nil, 50)
+		require.NoError(t, err)
+		require.Empty(t, feed, "a departed member must lose the group's history immediately")
+		require.NotNil(t, feed, "read-many must return an empty slice, never nil")
+
+		n, err := s.GetActivityUnreadCount(ctx, reader)
+		require.NoError(t, err)
+		require.Zero(t, n, "a departed member's badge must not count events from a group they left")
+	})
+
 	t.Run("the unread count respects the watermark", func(t *testing.T) {
 		resetDB(t)
 		s := newTestStore(t)
@@ -72,6 +106,10 @@ func TestStore_ActivityEvents(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, 2, n, "both of the actor's events are unread")
 
+		actorUnread, err := s.GetActivityUnreadCount(ctx, actor)
+		require.NoError(t, err)
+		require.Zero(t, actorUnread, "an actor's own events must never count toward their own badge")
+
 		feed, err := s.GetActivityFeed(ctx, reader, nil, 50)
 		require.NoError(t, err)
 		require.NoError(t, s.MarkActivityRead(ctx, reader, feed[0].Seq))
@@ -84,6 +122,13 @@ func TestStore_ActivityEvents(t *testing.T) {
 		n, err = s.GetActivityUnreadCount(ctx, reader)
 		require.NoError(t, err)
 		require.Zero(t, n, "the watermark is monotonic — an older seq must not un-read anything")
+
+		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
+			{Id: "e3", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_added"},
+		}))
+		n, err = s.GetActivityUnreadCount(ctx, reader)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, n, "a new event past the watermark must raise the badge again")
 	})
 
 	t.Run("the cursor pages without duplicates or gaps", func(t *testing.T) {
