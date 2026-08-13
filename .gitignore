@@ -34,11 +34,19 @@ go.work.sum
 backups/
 
 *.log
-# Design/planning docs and superpowers artifacts stay local. Only the
-# maintained docs listed below are committed.
+# Design/planning docs stay local by default. Only the maintained docs and the
+# specs/plans listed below are committed — git cannot re-include a file inside
+# an ignored directory, so each parent directory has to be un-ignored first.
 docs/*
 !docs/CHANGELOG.md
 !docs/CONVENTIONS.md
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/specs/
+!docs/superpowers/plans/
+!docs/superpowers/HANDOFF.md
+
+# Subagent-driven-development scratch (ledgers, briefs, review packages).
 .superpowers/
 
 # Compiled binaries (the Dockerfile builds these names at the repo root)
