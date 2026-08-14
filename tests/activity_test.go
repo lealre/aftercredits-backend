@@ -349,6 +349,221 @@ func TestActivityIsRecorded(t *testing.T) {
 	})
 }
 
+// TestActivityWatchedPayload pins the payload of title_watched_changed, which
+// is one kind covering several different sentences: marked watched, marked not
+// watched, a date added where there was none, a date moved from one day to
+// another, and each of those again for a single season. The kind alone cannot
+// say which happened — only the before/after pair in the payload can, so this
+// asserts the keys and values a frontend will actually receive.
+func TestActivityWatchedPayload(t *testing.T) {
+	firstWatch := time.Date(2025, 3, 4, 0, 0, 0, 0, time.UTC)
+	secondWatch := time.Date(2025, 5, 6, 0, 0, 0, 0, time.UTC)
+
+	t.Run("marking a title watched carries no date and a false previousWatched", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "watchmarker", false)
+
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: titleId,
+			Watched: watchedFlag(true),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.Equal(t, true, payload["watched"], "the resulting state must be watched")
+		require.Equal(t, false, payload["previousWatched"], "it was not watched before, which is what makes this 'marked as watched'")
+		require.NotContains(t, payload, "watchedAt", "no date was given, so none may be claimed")
+		require.NotContains(t, payload, "previousWatchedAt", "there was no date before either")
+		require.NotContains(t, payload, "season", "a title-scoped change must not look season-scoped")
+	})
+
+	t.Run("marking a title watched with a date carries the date and no previous one", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "watchdater", false)
+
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.Equal(t, true, payload["watched"])
+		require.Equal(t, false, payload["previousWatched"])
+		require.True(t, firstWatch.Equal(activityPayloadTime(t, payload, "watchedAt")),
+			"the date the request set must reach the feed")
+		require.NotContains(t, payload, "previousWatchedAt", "nothing was overwritten")
+	})
+
+	t.Run("adding a date to an already watched title keeps previousWatched true and carries no previous date", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "dateadder", false)
+
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: titleId,
+			Watched: watchedFlag(true),
+		}, token)
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.Equal(t, true, payload["watched"])
+		require.Equal(t, true, payload["previousWatched"],
+			"it was already watched, so this is not a 'marked as watched'")
+		require.True(t, firstWatch.Equal(activityPayloadTime(t, payload, "watchedAt")))
+		require.NotContains(t, payload, "previousWatchedAt",
+			"an absent previous date is what makes this 'added a date' rather than 'changed' it")
+	})
+
+	t.Run("changing an existing date carries both dates", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "datechanger", false)
+
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			WatchedAt: watchedDate(secondWatch),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.Equal(t, true, payload["watched"])
+		require.Equal(t, true, payload["previousWatched"])
+		require.True(t, secondWatch.Equal(activityPayloadTime(t, payload, "watchedAt")),
+			"the date it moved to")
+		require.True(t, firstWatch.Equal(activityPayloadTime(t, payload, "previousWatchedAt")),
+			"the date it moved from — the whole point of the fix, since without it this event was indistinguishable from marking the title watched")
+	})
+
+	t.Run("marking a title not watched carries the date it lost", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "unwatcher", false)
+
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: titleId,
+			Watched: watchedFlag(false),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.Equal(t, false, payload["watched"], "the resulting state must be not watched")
+		require.Equal(t, true, payload["previousWatched"], "it was watched before")
+		require.NotContains(t, payload, "watchedAt", "unmarking clears the date, so the result carries none")
+		require.True(t, firstWatch.Equal(activityPayloadTime(t, payload, "previousWatchedAt")))
+	})
+
+	t.Run("marking a season watched is scoped by the season key", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "seasonwatcher", true)
+
+		season := 1
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Season:    &season,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.EqualValues(t, season, payload["season"], "a season-scoped change must say which season")
+		require.Equal(t, true, payload["watched"])
+		require.Equal(t, false, payload["previousWatched"])
+		require.True(t, firstWatch.Equal(activityPayloadTime(t, payload, "watchedAt")))
+		require.NotContains(t, payload, "previousWatchedAt")
+	})
+
+	t.Run("changing a season's date carries both dates and the season", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "seasondatechanger", true)
+
+		season := 2
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Season:    &season,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Season:    &season,
+			WatchedAt: watchedDate(secondWatch),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.EqualValues(t, season, payload["season"])
+		require.Equal(t, true, payload["watched"])
+		require.Equal(t, true, payload["previousWatched"])
+		require.True(t, secondWatch.Equal(activityPayloadTime(t, payload, "watchedAt")))
+		require.True(t, firstWatch.Equal(activityPayloadTime(t, payload, "previousWatchedAt")))
+	})
+
+	t.Run("marking a season not watched carries the season's own date", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "seasonunwatcher", true)
+
+		season := 1
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Season:    &season,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: titleId,
+			Season:  &season,
+			Watched: watchedFlag(false),
+		}, token)
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.EqualValues(t, season, payload["season"])
+		require.Equal(t, false, payload["watched"])
+		require.Equal(t, true, payload["previousWatched"])
+		require.NotContains(t, payload, "watchedAt")
+		require.True(t, firstWatch.Equal(activityPayloadTime(t, payload, "previousWatchedAt")))
+	})
+
+	// The series' own watched flag is a rollup — true as soon as any season is
+	// watched — so reporting it here would say "was already watched" about a
+	// season nobody had ever touched.
+	t.Run("a season's payload describes the season, not the series rollup", func(t *testing.T) {
+		resetDB(t)
+		groupId, titleId, token := activityWatchedFixture(t, "seasonscoper", true)
+
+		firstSeason, secondSeason := 1, 2
+		applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Season:    &firstSeason,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(firstWatch),
+		}, token)
+
+		updated := applyWatchedUpdate(t, groupId, groups.UpdateGroupTitleWatchedRequest{
+			TitleId:   titleId,
+			Season:    &secondSeason,
+			Watched:   watchedFlag(true),
+			WatchedAt: watchedDate(secondWatch),
+		}, token)
+		require.True(t, updated.Watched,
+			"the series must already read as watched, or this proves nothing about the rollup")
+
+		payload := lastActivityPayload(t, "title_watched_changed")
+		require.EqualValues(t, secondSeason, payload["season"])
+		require.Equal(t, false, payload["previousWatched"],
+			"season 2 had never been watched, whatever season 1 says about the series")
+		require.True(t, secondWatch.Equal(activityPayloadTime(t, payload, "watchedAt")),
+			"the season's own date, not the series' latest")
+		require.NotContains(t, payload, "previousWatchedAt", "season 2 carried no date before")
+	})
+}
+
 func TestActivityFeedEndpoints(t *testing.T) {
 	t.Run("the feed excludes the caller's own actions", func(t *testing.T) {
 		resetDB(t)

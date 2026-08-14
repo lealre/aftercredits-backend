@@ -577,3 +577,27 @@ func setGroupTitleWatched(t *testing.T, groupId, titleId string, watched bool, w
 	require.NoError(t, err)
 	patchGroupTitleWatched(t, groupId, body, token)
 }
+
+// applyWatchedUpdate sends one PATCH /groups/{id}/titles carrying exactly the
+// fields set on req.
+//
+// setGroupTitleWatched always sends both watched and watchedAt, which collapses
+// the very distinction the activity payload has to preserve: "mark it watched"
+// and "change the date" are different requests, and only an omitted field says
+// which one the caller meant.
+func applyWatchedUpdate(t *testing.T, groupId string, req groups.UpdateGroupTitleWatchedRequest, token string) groups.GroupTitle {
+	t.Helper()
+
+	body, err := json.Marshal(req)
+	require.NoError(t, err, "failed to encode the watched update for title %s", req.TitleId)
+	return patchGroupTitleWatched(t, groupId, body, token)
+}
+
+// watchedFlag and watchedDate build the optional fields of an update: a nil
+// field means "leave this alone", so tests need a way to set one without
+// setting the other.
+func watchedFlag(watched bool) *bool { return &watched }
+
+func watchedDate(when time.Time) *generics.FlexibleDate {
+	return &generics.FlexibleDate{Time: &when}
+}

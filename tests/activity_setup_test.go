@@ -35,13 +35,14 @@ type activityRow struct {
 	ActorId   string
 	ActorName string
 	TitleName *string
+	Payload   map[string]any
 }
 
 // getActivityRows returns every recorded event, oldest first.
 func getActivityRows(t *testing.T) []activityRow {
 	t.Helper()
 	rows, err := testPool.Query(context.Background(),
-		`SELECT kind, group_id, actor_id, actor_name, title_name
+		`SELECT kind, group_id, actor_id, actor_name, title_name, payload
 		 FROM activity_events ORDER BY seq`)
 	require.NoError(t, err, "failed to read the activity log")
 	defer rows.Close()
@@ -49,11 +50,70 @@ func getActivityRows(t *testing.T) []activityRow {
 	out := []activityRow{}
 	for rows.Next() {
 		var r activityRow
-		require.NoError(t, rows.Scan(&r.Kind, &r.GroupId, &r.ActorId, &r.ActorName, &r.TitleName))
+		require.NoError(t, rows.Scan(&r.Kind, &r.GroupId, &r.ActorId, &r.ActorName, &r.TitleName, &r.Payload))
 		out = append(out, r)
 	}
 	require.NoError(t, rows.Err())
 	return out
+}
+
+// lastActivityPayload returns the payload of the most recently recorded event,
+// asserting its kind first — every watched-payload case ends the same way, in
+// "the PATCH I just sent produced this payload".
+func lastActivityPayload(t *testing.T, kind string) map[string]any {
+	t.Helper()
+
+	rows := getActivityRows(t)
+	require.NotEmpty(t, rows, "expected at least one recorded event")
+	last := rows[len(rows)-1]
+	require.Equal(t, kind, last.Kind, "the last recorded event must be a %s", kind)
+	return last.Payload
+}
+
+// activityPayloadTime reads a timestamp out of an event payload.
+//
+// It insists the value is an RFC 3339 string rather than accepting whatever
+// parses: the payload's whole purpose is to be rendered by a browser, and
+// Date.parse only reliably handles that format. Passing back a time.Time lets
+// callers compare instants instead of text, so a round trip through
+// timestamptz that changes the zone offset but not the moment still passes.
+func activityPayloadTime(t *testing.T, payload map[string]any, key string) time.Time {
+	t.Helper()
+
+	raw, ok := payload[key]
+	require.True(t, ok, "the payload must carry %q, got %v", key, payload)
+	text, ok := raw.(string)
+	require.True(t, ok, "%q must be a string, got %T", key, raw)
+
+	parsed, err := time.Parse(time.RFC3339, text)
+	require.NoError(t, err, "%q must be an RFC 3339 timestamp a browser can parse, got %q", key, text)
+	return parsed
+}
+
+// activityWatchedFixture builds the common ground every watched-payload case
+// starts from: a user, a group, and one title of theirs already in it. It
+// returns the title's id, the group's id and the caller's token, plus the id of
+// the title, so a case can go straight to the transition it is about.
+func activityWatchedFixture(t *testing.T, username string, series bool) (groupId, titleId, token string) {
+	t.Helper()
+
+	_, token = addUser(t, users.NewUserRequest{Username: username, Password: "pass"})
+	group := createGroup(t, groups.CreateGroupRequest{Name: "feed group"}, token)
+
+	fixture := loadTitlesFixture
+	if series {
+		fixture = loadTVSeriesTitlesFixture
+	}
+	catalogue := fixture(t)
+	seedTitles(t, catalogue)
+	title := catalogue[0]
+
+	addTitleToGroup(t, groups.AddTitleToGroupRequest{
+		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
+		GroupId: group.Id,
+	}, token)
+
+	return group.Id, title.ID, token
 }
 
 // countActivityRows reports how many activity_events rows exist, for the
