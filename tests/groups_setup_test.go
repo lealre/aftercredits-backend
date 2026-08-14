@@ -311,6 +311,81 @@ func getGroupTitleDetail(t *testing.T, groupId, titleId, token string) groups.Gr
 	return groups.GroupTitleDetail{}
 }
 
+// getGroupTitleResponse calls GET /groups/{groupId}/titles/{titleId} and
+// returns the raw response for the caller to assert on.
+func getGroupTitleResponse(t *testing.T, groupId, titleId, token string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet,
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// getGroupTitleById decodes a successful single-title response.
+func getGroupTitleById(t *testing.T, groupId, titleId, token string) groups.GroupTitleDetail {
+	t.Helper()
+
+	resp := getGroupTitleResponse(t, groupId, titleId, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var detail groups.GroupTitleDetail
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&detail))
+	return detail
+}
+
+// getGroupTitleRawBody returns the single-title response body as a string, for
+// the assertions a decoded struct cannot make: a `null` and a `[]` both decode
+// into an empty Go slice (CONVENTIONS §5).
+func getGroupTitleRawBody(t *testing.T, groupId, titleId, token string) string {
+	t.Helper()
+
+	resp := getGroupTitleResponse(t, groupId, titleId, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(body)
+}
+
+// groupTitleRawFromList returns the raw JSON of one entry of the group-titles
+// list — the element the single-title endpoint has to reproduce exactly.
+//
+// It is deliberately taken before decoding: the drift worth catching between
+// the two responses includes a field that is `null` in one and `[]` in the
+// other, which no decoded comparison can see.
+func groupTitleRawFromList(t *testing.T, groupId, titleId, token string) string {
+	t.Helper()
+
+	var page struct {
+		Content []json.RawMessage `json:"Content"`
+	}
+	body := getGroupTitlesRawBody(t, groupId, "size=100&page=1", token)
+	require.NoError(t, json.Unmarshal([]byte(body), &page), "failed to decode the group titles page envelope")
+
+	listed := make([]string, 0, len(page.Content))
+	for _, entry := range page.Content {
+		var identified struct {
+			Id string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(entry, &identified), "failed to decode a group titles entry")
+		if identified.Id == titleId {
+			return string(entry)
+		}
+		listed = append(listed, identified.Id)
+	}
+
+	require.FailNowf(t, "title missing from the group titles page",
+		"expected title %s to be listed for group %s, got %v", titleId, groupId, listed)
+	return ""
+}
+
 // twoGroupFixture is the world the group-scoping tests share: one user who
 // belongs to two groups that both carry the same movie and the same TV series,
 // plus a second user who belongs to group B only. Ratings and comments are

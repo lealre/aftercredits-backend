@@ -78,6 +78,7 @@ type Store interface {
 	RemoveUserFromGroup(ctx context.Context, groupId, userId string) error
 	RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error
 	GetGroupTitlesPage(ctx context.Context, groupId string, watched *bool, titleTypes []string, orderBy string, ascending *bool, size, page int) ([]models.GroupPagedTitle, int64, error)
+	GetGroupTitle(ctx context.Context, groupId, titleId string) (models.GroupPagedTitle, error)
 	GroupHasTitleEntries(ctx context.Context, groupId string, watched *bool, titleTypes []string) (bool, error)
 
 	// ----- ActivityEvents -----

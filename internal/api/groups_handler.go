@@ -251,6 +251,57 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, titles)
 }
 
+// GetTitleFromGroup serves GET /groups/{groupId}/titles/{titleId}: the
+// group-scoped detail of exactly one title, in the same shape as one element of
+// the GET /groups/{groupId}/titles Content array.
+//
+// It exists because that list is paginated, so a client holding only a title id
+// — the activity feed, deep-linking a row to the title's modal — has no
+// reliable way to reach the entry it wants.
+func (api *API) GetTitleFromGroup(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	// One EXISTS answers every way this request is not allowed to see the
+	// title — unknown group, deleted group, caller not a member, title not in
+	// the group — and they are all the same 404, so none of them tells an
+	// outsider which one it was. Same guard and same message as the comments
+	// routes under this path.
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, currentUser.Id); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	}
+
+	detail, err := groups.GetGroupTitleDetail(api.Db, r.Context(), groupId, titleId)
+	if err != nil {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, detail)
+}
+
 func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())

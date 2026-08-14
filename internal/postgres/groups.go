@@ -554,28 +554,90 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 
 	out := make([]models.GroupPagedTitle, 0, len(rows))
 	for _, r := range rows {
-		title, err := rowToTitle(database.Title{
+		row, err := groupPagedTitleFromRow(database.Title{
 			ID: r.ID, PrimaryTitle: r.PrimaryTitle, Type: r.Type,
 			StartYear: r.StartYear, RatingAggregate: r.RatingAggregate,
 			VoteCount: r.VoteCount, AddedAt: r.AddedAt, UpdatedAt: r.UpdatedAt,
 			Metadata: r.Metadata,
-		})
+		}, r.GtWatched, r.GtWatchedAt, r.GtAddedAt, r.GtUpdatedAt, seasonsByTitle[r.ID])
 		if err != nil {
 			return nil, 0, err
 		}
-		out = append(out, models.GroupPagedTitle{
-			Title: title,
-			Item: models.GroupTitleItem{
-				TitleId:        r.ID,
-				SeasonsWatched: assembleSeasonsWatched(seasonsByTitle[r.ID]),
-				Watched:        r.GtWatched,
-				AddedAt:        r.GtAddedAt.Time,
-				UpdatedAt:      r.GtUpdatedAt.Time,
-				WatchedAt:      timestamptzToPtr(r.GtWatchedAt),
-			},
-		})
+		out = append(out, row)
 	}
 	return out, total, nil
+}
+
+// groupPagedTitleFromRow assembles one joined title + group_titles row into the
+// domain type. Both readers of that join go through it — the page
+// (GetGroupTitlesPage) and the single-title read (GetGroupTitle) — so the two
+// cannot drift in what they put where, which is the drift a client would see:
+// the single-title endpoint feeds the same UI as a row of the list.
+//
+// seasonRows may be empty; assembleSeasonsWatched turns that into a nil
+// SeasonsWatched, the "no season rows" shape the contract requires
+// (CONVENTIONS §5).
+func groupPagedTitleFromRow(
+	t database.Title,
+	gtWatched bool,
+	gtWatchedAt, gtAddedAt, gtUpdatedAt pgtype.Timestamptz,
+	seasonRows []database.GroupTitleSeason,
+) (models.GroupPagedTitle, error) {
+	title, err := rowToTitle(t)
+	if err != nil {
+		return models.GroupPagedTitle{}, err
+	}
+	return models.GroupPagedTitle{
+		Title: title,
+		Item: models.GroupTitleItem{
+			TitleId:        t.ID,
+			SeasonsWatched: assembleSeasonsWatched(seasonRows),
+			Watched:        gtWatched,
+			AddedAt:        gtAddedAt.Time,
+			UpdatedAt:      gtUpdatedAt.Time,
+			WatchedAt:      timestamptzToPtr(gtWatchedAt),
+		},
+	}, nil
+}
+
+// GetGroupTitle returns one of a group's titles addressed by id, in exactly the
+// shape a page entry carries (same join, same mapper — see
+// groupPagedTitleFromRow).
+//
+// Like GetGroupTitlesPage it applies no membership or deleted-group check; the
+// caller establishes that first (the handler, with GroupContainsTitle). A title
+// the group does not hold — and a group entry whose title has left the
+// catalogue, which the join drops just as it drops it from a page — is reported
+// as store.ErrRecordNotFound.
+func (s *Store) GetGroupTitle(ctx context.Context, groupId, titleId string) (models.GroupPagedTitle, error) {
+	row, err := s.q.GetGroupTitleWithTitle(ctx, database.GetGroupTitleWithTitleParams{
+		GroupID: groupId,
+		TitleID: titleId,
+	})
+	if err != nil {
+		return models.GroupPagedTitle{}, notFound(err)
+	}
+
+	// Season rows only ever exist for a series (the season watched-update
+	// refuses any other type), so a movie's lookup would be a round trip whose
+	// answer is known to be empty — the same decision the page makes.
+	var seasonRows []database.GroupTitleSeason
+	if models.IsSeriesTitleType(row.Type) {
+		seasonRows, err = s.q.GetGroupTitleSeasonRowsForTitle(ctx, database.GetGroupTitleSeasonRowsForTitleParams{
+			GroupID: groupId,
+			TitleID: titleId,
+		})
+		if err != nil {
+			return models.GroupPagedTitle{}, err
+		}
+	}
+
+	return groupPagedTitleFromRow(database.Title{
+		ID: row.ID, PrimaryTitle: row.PrimaryTitle, Type: row.Type,
+		StartYear: row.StartYear, RatingAggregate: row.RatingAggregate,
+		VoteCount: row.VoteCount, AddedAt: row.AddedAt, UpdatedAt: row.UpdatedAt,
+		Metadata: row.Metadata,
+	}, row.GtWatched, row.GtWatchedAt, row.GtAddedAt, row.GtUpdatedAt, seasonRows)
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its

@@ -195,21 +195,50 @@ func GetTitlesFromGroup(
 		}
 	}
 
-	pageTitleIds := make([]string, 0, len(pageRows))
-	for _, row := range pageRows {
-		pageTitleIds = append(pageTitleIds, row.Title.ID)
+	allTitlesDetails, err := buildGroupTitleDetails(db, ctx, groupId, pageRows)
+	if err != nil {
+		return generics.Page[GroupTitleDetail]{}, err
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(querySize)))
+	return generics.Page[GroupTitleDetail]{
+		TotalResults: int(total),
+		Size:         querySize,
+		Page:         queryPage,
+		TotalPages:   totalPages,
+		Content:      allTitlesDetails,
+	}, nil
+}
+
+// buildGroupTitleDetails turns store rows into the group-scoped detail objects
+// the API serves, ratings merged in.
+//
+// This is the one assembly: both the list (GetTitlesFromGroup) and the
+// single-title read (GetGroupTitleDetail) go through it, because the frontend
+// feeds both to the same modal — any difference between them is a bug that only
+// surfaces in the UI, and a second copy of this loop is how that difference
+// would arise.
+//
+// The returned slice is nil for no rows, never an empty one: the list's
+// empty-page envelope distinguishes `"Content":null` from `"Content":[]`
+// (CONVENTIONS §5), and only its caller knows which of the two an empty result
+// means.
+func buildGroupTitleDetails(db store.Store, ctx context.Context, groupId string, rows []models.GroupPagedTitle) ([]GroupTitleDetail, error) {
+	titleIds := make([]string, 0, len(rows))
+	for _, row := range rows {
+		titleIds = append(titleIds, row.Title.ID)
 	}
 
 	// Scoped to this group: GroupRatings must carry only the ratings this
 	// group's own members left in this group, never another group's ratings on
 	// the same title.
-	groupRatings, err := ratings.GetRatingsBatch(db, ctx, pageTitleIds, groupId)
+	groupRatings, err := ratings.GetRatingsBatch(db, ctx, titleIds, groupId)
 	if err != nil {
-		return generics.Page[GroupTitleDetail]{}, err
+		return nil, err
 	}
 
-	var allTitlesDetails []GroupTitleDetail
-	for _, row := range pageRows {
+	var details []GroupTitleDetail
+	for _, row := range rows {
 		detail := GroupTitleDetail{
 			GroupRatings: groupRatings.Titles[row.Title.ID],
 			Watched:      row.Item.Watched,
@@ -236,17 +265,35 @@ func GetTitlesFromGroup(
 		// Episodes are loaded on demand via GET /titles/{id}/episodes;
 		// keep the list payload light. Seasons summary is retained.
 		detail.Title.Episodes = nil
-		allTitlesDetails = append(allTitlesDetails, detail)
+		details = append(details, detail)
+	}
+	return details, nil
+}
+
+// GetGroupTitleDetail returns the group-scoped detail of a single title — the
+// same object GetTitlesFromGroup returns for that title in its Content, built
+// by the same assembly.
+//
+// Like GetTitlesFromGroup it does NOT check that the group exists or that the
+// caller may see it; the handler does that first with GroupContainsTitle, whose
+// single EXISTS also answers "is this title in this group". A title the group
+// does not hold is ErrTitleNotInGroup, which is the 404 that guard would
+// already have produced — this exists for the race where the entry disappears
+// between the two calls, and for an entry whose title has left the catalogue.
+func GetGroupTitleDetail(db store.Store, ctx context.Context, groupId, titleId string) (GroupTitleDetail, error) {
+	row, err := db.GetGroupTitle(ctx, groupId, titleId)
+	if err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return GroupTitleDetail{}, ErrTitleNotInGroup
+		}
+		return GroupTitleDetail{}, err
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(querySize)))
-	return generics.Page[GroupTitleDetail]{
-		TotalResults: int(total),
-		Size:         querySize,
-		Page:         queryPage,
-		TotalPages:   totalPages,
-		Content:      allTitlesDetails,
-	}, nil
+	details, err := buildGroupTitleDetails(db, ctx, groupId, []models.GroupPagedTitle{row})
+	if err != nil {
+		return GroupTitleDetail{}, err
+	}
+	return details[0], nil
 }
 
 func GetUsersFromGroup(db store.Store, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {

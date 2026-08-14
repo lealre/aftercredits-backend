@@ -65,6 +65,11 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 	mux.HandleFunc("POST /groups/{id}/users", a.AddUserToGroup)
 	// Group - Titles
 	mux.HandleFunc("GET /groups/{id}/titles", a.GetTitlesFromGroup)
+	// One title's group-scoped detail, same shape as one element of the list
+	// above. An ordinary group-titles read: the activity feed uses it to
+	// deep-link a row to that title's modal, but nothing about it is
+	// feed-specific, so ACTIVITY_FEED_ENABLED does not gate it.
+	mux.HandleFunc("GET /groups/{groupId}/titles/{titleId}", a.GetTitleFromGroup)
 	mux.HandleFunc("POST /groups/titles", a.AddTitleToGroup)
 	mux.HandleFunc("PATCH /groups/{id}/titles", a.UpdateGroupTitleWatched)
 	mux.HandleFunc("DELETE /groups/{groupId}/titles/{titleId}", a.DeleteTitleFromGroup)
