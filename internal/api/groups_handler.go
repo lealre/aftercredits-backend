@@ -7,12 +7,14 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/generics"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/services/users"
+	"github.com/lealre/movies-backend/internal/store"
 )
 
 func (api *API) CreateGroup(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +251,57 @@ func (api *API) GetTitlesFromGroup(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, titles)
 }
 
+// GetTitleFromGroup serves GET /groups/{groupId}/titles/{titleId}: the
+// group-scoped detail of exactly one title, in the same shape as one element of
+// the GET /groups/{groupId}/titles Content array.
+//
+// It exists because that list is paginated, so a client holding only a title id
+// — the activity feed, deep-linking a row to the title's modal — has no
+// reliable way to reach the entry it wants.
+func (api *API) GetTitleFromGroup(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	groupId := r.PathValue("groupId")
+	if groupId == "" {
+		respondWithError(w, http.StatusBadRequest, "Group id is required")
+		return
+	}
+
+	titleId := r.PathValue("titleId")
+	if titleId == "" {
+		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	// One EXISTS answers every way this request is not allowed to see the
+	// title — unknown group, deleted group, caller not a member, title not in
+	// the group — and they are all the same 404, so none of them tells an
+	// outsider which one it was. Same guard and same message as the comments
+	// routes under this path.
+	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, currentUser.Id); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Group %s do not have title %s or do not exist.", groupId, titleId))
+		return
+	}
+
+	detail, err := groups.GetGroupTitleDetail(api.Db, r.Context(), groupId, titleId)
+	if err != nil {
+		if statusCode, ok := groups.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, detail)
+}
+
 func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 	currentUser := auth.GetUserFromContext(r.Context())
@@ -323,9 +376,10 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var title titles.Title
 	if !titleExists {
 		logger.Printf("Title %s not found in main titles collection, adding it", titleID)
-		_, err = titles.AddNewTitle(api.Db, api.Provider, r.Context(), titleID)
+		title, err = titles.AddNewTitle(api.Db, api.Provider, r.Context(), titleID)
 		if err != nil {
 			if code, ok := titles.ErrorMap[err]; ok {
 				respondWithError(w, code, err.Error())
@@ -337,7 +391,7 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		logger.Printf("Title %s found in main titles collection, getting it", titleID)
-		_, err = titles.GetTitleById(api.Db, r.Context(), titleID)
+		title, err = titles.GetTitleById(api.Db, r.Context(), titleID)
 		if err != nil {
 			logger.Printf("ERROR: getting title %s: %v", titleID, err)
 			respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
@@ -355,6 +409,8 @@ func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
+
+	activity.Record(r.Context(), activity.TitleAdded(groupId, titleID, title.PrimaryTitle))
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Title %s added to group %s", titleID, groupId)})
 }
@@ -396,7 +452,7 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, title, currentUser.Id, req.Watched, req.WatchedAt, req.Season)
+	groupTitle, change, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, title, currentUser.Id, req.Watched, req.WatchedAt, req.Season)
 	if err != nil {
 		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -406,6 +462,14 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
+
+	// The change, not groupTitle: for a season-scoped update the title's own
+	// watched flag is a rollup over every season, and the event has to describe
+	// the season that was actually changed.
+	activity.Record(r.Context(), activity.TitleWatchedChanged(groupId, req.TitleId, title.PrimaryTitle,
+		activity.WatchedState{Watched: change.Current.Watched, WatchedAt: change.Current.WatchedAt},
+		activity.WatchedState{Watched: change.Previous.Watched, WatchedAt: change.Previous.WatchedAt},
+		req.Season))
 
 	respondWithJSON(w, http.StatusOK, groupTitle)
 }
@@ -435,17 +499,21 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok, err := titles.TitleExists(api.Db, r.Context(), titleId); err != nil {
+	// Read the title before the delete: RemoveTitleFromGroup only removes the
+	// group_titles row, but the catalogue title is what carries the name the
+	// activity event needs, so it must be captured here rather than after.
+	title, err := titles.GetTitleById(api.Db, r.Context(), titleId)
+	if err != nil {
+		if err == store.ErrRecordNotFound {
+			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
+			return
+		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
-	} else if !ok {
-		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
-		return
 	}
 
-	err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId, currentUser.Id)
-	if err != nil {
+	if err := groups.RemoveTitleFromGroup(api.Db, r.Context(), groupId, titleId, currentUser.Id); err != nil {
 		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
@@ -454,6 +522,8 @@ func (api *API) DeleteTitleFromGroup(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
+
+	activity.Record(r.Context(), activity.TitleRemoved(groupId, titleId, title.PrimaryTitle))
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Title %s deleted from group %s", titleId, groupId)})
 }

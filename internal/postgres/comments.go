@@ -67,42 +67,38 @@ func (s *Store) assembleCommentRows(ctx context.Context, rows []database.Comment
 // single transaction: the id and timestamps
 // are generated here, not taken from the caller-supplied comment.
 func (s *Store) AddComment(ctx context.Context, comment models.Comment) (models.Comment, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return models.Comment{}, err
-	}
-	defer tx.Rollback(ctx)
+	var result models.Comment
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		id := uuid.NewString()
+		now := time.Now()
 
-	qtx := s.q.WithTx(tx)
+		row, err := q.InsertComment(ctx, database.InsertCommentParams{
+			ID:        id,
+			TitleID:   comment.TitleId,
+			UserID:    comment.UserId,
+			GroupID:   comment.GroupId,
+			Comment:   ptrToText(comment.Comment),
+			CreatedAt: timeToTimestamptz(now),
+			UpdatedAt: timeToTimestamptz(now),
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return store.ErrDuplicatedRecord
+			}
+			return err
+		}
 
-	id := uuid.NewString()
-	now := time.Now()
+		if err := insertCommentSeasons(ctx, q, id, comment.SeasonsComments); err != nil {
+			return err
+		}
 
-	row, err := qtx.InsertComment(ctx, database.InsertCommentParams{
-		ID:        id,
-		TitleID:   comment.TitleId,
-		UserID:    comment.UserId,
-		GroupID:   comment.GroupId,
-		Comment:   ptrToText(comment.Comment),
-		CreatedAt: timeToTimestamptz(now),
-		UpdatedAt: timeToTimestamptz(now),
+		result = commentRowToModel(row, comment.SeasonsComments)
+		return nil
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
-			return models.Comment{}, store.ErrDuplicatedRecord
-		}
 		return models.Comment{}, err
 	}
-
-	if err := insertCommentSeasons(ctx, qtx, id, comment.SeasonsComments); err != nil {
-		return models.Comment{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return models.Comment{}, err
-	}
-
-	return commentRowToModel(row, comment.SeasonsComments), nil
+	return result, nil
 }
 
 // GetCommentsByTitleId fetches every comment left on titleId within groupId,
@@ -159,37 +155,33 @@ func (s *Store) GetCommentById(ctx context.Context, commentId string, userId str
 // (delete-then-reinsert)'s document
 // replace semantics for the seasonsComments field.
 func (s *Store) UpdateComment(ctx context.Context, comment models.Comment, userId string) (models.Comment, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return models.Comment{}, err
-	}
-	defer tx.Rollback(ctx)
+	var result models.Comment
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		row, err := q.UpdateCommentRow(ctx, database.UpdateCommentRowParams{
+			ID:        comment.Id,
+			UserID:    userId,
+			Comment:   ptrToText(comment.Comment),
+			UpdatedAt: timeToTimestamptz(time.Now()),
+		})
+		if err != nil {
+			return notFound(err)
+		}
 
-	qtx := s.q.WithTx(tx)
+		if err := q.DeleteCommentSeasons(ctx, row.ID); err != nil {
+			return err
+		}
 
-	row, err := qtx.UpdateCommentRow(ctx, database.UpdateCommentRowParams{
-		ID:        comment.Id,
-		UserID:    userId,
-		Comment:   ptrToText(comment.Comment),
-		UpdatedAt: timeToTimestamptz(time.Now()),
+		if err := insertCommentSeasons(ctx, q, row.ID, comment.SeasonsComments); err != nil {
+			return err
+		}
+
+		result = commentRowToModel(row, comment.SeasonsComments)
+		return nil
 	})
 	if err != nil {
-		return models.Comment{}, notFound(err)
-	}
-
-	if err := qtx.DeleteCommentSeasons(ctx, row.ID); err != nil {
 		return models.Comment{}, err
 	}
-
-	if err := insertCommentSeasons(ctx, qtx, row.ID, comment.SeasonsComments); err != nil {
-		return models.Comment{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return models.Comment{}, err
-	}
-
-	return commentRowToModel(row, comment.SeasonsComments), nil
+	return result, nil
 }
 
 // DeleteComment deletes the comment row owned by userId inside groupId

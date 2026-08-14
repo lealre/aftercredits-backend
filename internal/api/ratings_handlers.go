@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
+	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/services/groups"
@@ -58,7 +60,10 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newRating, err := ratings.AddRating(api.Db, r.Context(), req, currentuser.Id)
+	// AddRating already has to load the title to route movie vs TV series
+	// logic, so it hands it back here rather than the handler looking it up
+	// again by the same id.
+	newRating, title, err := ratings.AddRating(api.Db, r.Context(), req, currentuser.Id)
 	if err != nil {
 		if statusCode, ok := ratings.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -68,6 +73,8 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
+
+	activity.Record(r.Context(), activity.RatingAdded(req.GroupId, req.TitleId, title.PrimaryTitle, req.Note, req.Season))
 
 	respondWithJSON(w, http.StatusCreated, newRating)
 }
@@ -89,7 +96,10 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedRating, err := ratings.UpdateRating(api.Db, r.Context(), ratingId, currentuser.Id, updateReq)
+	// UpdateRating hands back the rating as it stood immediately before the
+	// update, from the same read that drove the write — not a second,
+	// independently-timed snapshot a concurrent update could race with.
+	updatedRating, previousRating, err := ratings.UpdateRating(api.Db, r.Context(), ratingId, currentuser.Id, updateReq)
 	if err != nil {
 		if statusCode, ok := ratings.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -99,6 +109,17 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update rating")
 		return
 	}
+
+	// The title itself carries no race risk (title rows are effectively
+	// immutable), so a plain lookup by id is fine here.
+	title, err := titles.GetTitleById(api.Db, r.Context(), previousRating.TitleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	activity.Record(r.Context(), activity.RatingUpdated(previousRating.GroupId, previousRating.TitleId, title.PrimaryTitle, updateReq.Note, previousRating.Note, updateReq.Season))
 
 	respondWithJSON(w, http.StatusOK, updatedRating)
 }
@@ -113,7 +134,9 @@ func (api *API) DeleteRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := ratings.DeleteRating(api.Db, r.Context(), ratingId, currentuser.Id)
+	// Read the rating (and its title) before it is gone: DeleteRating only
+	// reports how many rows were removed, not what they were.
+	rating, err := ratings.GetRatingById(api.Db, r.Context(), ratingId, currentuser.Id)
 	if err != nil {
 		if statusCode, ok := ratings.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -123,6 +146,25 @@ func (api *API) DeleteRating(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting rating")
 		return
 	}
+
+	title, err := titles.GetTitleById(api.Db, r.Context(), rating.TitleId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	if _, err := ratings.DeleteRating(api.Db, r.Context(), ratingId, currentuser.Id); err != nil {
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting rating")
+		return
+	}
+
+	activity.Record(r.Context(), activity.RatingDeleted(rating.GroupId, rating.TitleId, title.PrimaryTitle, rating.Note))
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Rating with id %s deleted successfully", ratingId)})
 }
@@ -172,6 +214,26 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting season rating")
 		return
 	}
+
+	// seasonStr is guaranteed to parse here: DeleteRatingSeason above performs
+	// the identical conversion and would have failed already if it did not.
+	season, err := strconv.Atoi(seasonStr)
+	if err != nil {
+		logger.Printf("ERROR: unexpected invalid season %q after a successful delete: %v", seasonStr, err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return
+	}
+
+	// rating was fetched before the delete above, so its SeasonsRatings still
+	// holds the value that is being removed.
+	var previousNote float32
+	if rating.SeasonsRatings != nil {
+		if seasonRating, ok := (*rating.SeasonsRatings)[seasonStr]; ok {
+			previousNote = seasonRating.Rating
+		}
+	}
+
+	activity.Record(r.Context(), activity.RatingSeasonDeleted(rating.GroupId, rating.TitleId, title.PrimaryTitle, season, previousNote))
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Season %s from rating %s deleted successfully", seasonStr, ratingId)})
 }

@@ -8,6 +8,46 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ActivityEvent struct {
+	ID        string
+	Seq       int64
+	GroupID   string
+	ActorID   string
+	ActorName string
+	Kind      string
+	TitleID   pgtype.Text
+	TitleName pgtype.Text
+	Payload   []byte
+	CreatedAt pgtype.Timestamptz
+}
+
+type ActivityEventRead struct {
+	UserID  string
+	EventID string
+	ReadAt  pgtype.Timestamptz
+}
+
+type ActivityReadFloor struct {
+	UserID   string
+	FloorSeq int64
+	ReadAt   pgtype.Timestamptz
+}
+
+type ActivityVisibleEvent struct {
+	ID        string
+	Seq       int64
+	GroupID   string
+	ActorID   string
+	ActorName string
+	Kind      string
+	TitleID   pgtype.Text
+	TitleName pgtype.Text
+	Payload   []byte
+	CreatedAt pgtype.Timestamptz
+	GroupName string
+	ReaderID  string
+}
+
 type Comment struct {
 	ID        string
 	TitleID   string

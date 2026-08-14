@@ -195,21 +195,50 @@ func GetTitlesFromGroup(
 		}
 	}
 
-	pageTitleIds := make([]string, 0, len(pageRows))
-	for _, row := range pageRows {
-		pageTitleIds = append(pageTitleIds, row.Title.ID)
+	allTitlesDetails, err := buildGroupTitleDetails(db, ctx, groupId, pageRows)
+	if err != nil {
+		return generics.Page[GroupTitleDetail]{}, err
+	}
+
+	totalPages := int(math.Ceil(float64(total) / float64(querySize)))
+	return generics.Page[GroupTitleDetail]{
+		TotalResults: int(total),
+		Size:         querySize,
+		Page:         queryPage,
+		TotalPages:   totalPages,
+		Content:      allTitlesDetails,
+	}, nil
+}
+
+// buildGroupTitleDetails turns store rows into the group-scoped detail objects
+// the API serves, ratings merged in.
+//
+// This is the one assembly: both the list (GetTitlesFromGroup) and the
+// single-title read (GetGroupTitleDetail) go through it, because the frontend
+// feeds both to the same modal — any difference between them is a bug that only
+// surfaces in the UI, and a second copy of this loop is how that difference
+// would arise.
+//
+// The returned slice is nil for no rows, never an empty one: the list's
+// empty-page envelope distinguishes `"Content":null` from `"Content":[]`
+// (CONVENTIONS §5), and only its caller knows which of the two an empty result
+// means.
+func buildGroupTitleDetails(db store.Store, ctx context.Context, groupId string, rows []models.GroupPagedTitle) ([]GroupTitleDetail, error) {
+	titleIds := make([]string, 0, len(rows))
+	for _, row := range rows {
+		titleIds = append(titleIds, row.Title.ID)
 	}
 
 	// Scoped to this group: GroupRatings must carry only the ratings this
 	// group's own members left in this group, never another group's ratings on
 	// the same title.
-	groupRatings, err := ratings.GetRatingsBatch(db, ctx, pageTitleIds, groupId)
+	groupRatings, err := ratings.GetRatingsBatch(db, ctx, titleIds, groupId)
 	if err != nil {
-		return generics.Page[GroupTitleDetail]{}, err
+		return nil, err
 	}
 
-	var allTitlesDetails []GroupTitleDetail
-	for _, row := range pageRows {
+	var details []GroupTitleDetail
+	for _, row := range rows {
 		detail := GroupTitleDetail{
 			GroupRatings: groupRatings.Titles[row.Title.ID],
 			Watched:      row.Item.Watched,
@@ -236,17 +265,35 @@ func GetTitlesFromGroup(
 		// Episodes are loaded on demand via GET /titles/{id}/episodes;
 		// keep the list payload light. Seasons summary is retained.
 		detail.Title.Episodes = nil
-		allTitlesDetails = append(allTitlesDetails, detail)
+		details = append(details, detail)
+	}
+	return details, nil
+}
+
+// GetGroupTitleDetail returns the group-scoped detail of a single title — the
+// same object GetTitlesFromGroup returns for that title in its Content, built
+// by the same assembly.
+//
+// Like GetTitlesFromGroup it does NOT check that the group exists or that the
+// caller may see it; the handler does that first with GroupContainsTitle, whose
+// single EXISTS also answers "is this title in this group". A title the group
+// does not hold is ErrTitleNotInGroup, which is the 404 that guard would
+// already have produced — this exists for the race where the entry disappears
+// between the two calls, and for an entry whose title has left the catalogue.
+func GetGroupTitleDetail(db store.Store, ctx context.Context, groupId, titleId string) (GroupTitleDetail, error) {
+	row, err := db.GetGroupTitle(ctx, groupId, titleId)
+	if err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return GroupTitleDetail{}, ErrTitleNotInGroup
+		}
+		return GroupTitleDetail{}, err
 	}
 
-	totalPages := int(math.Ceil(float64(total) / float64(querySize)))
-	return generics.Page[GroupTitleDetail]{
-		TotalResults: int(total),
-		Size:         querySize,
-		Page:         queryPage,
-		TotalPages:   totalPages,
-		Content:      allTitlesDetails,
-	}, nil
+	details, err := buildGroupTitleDetails(db, ctx, groupId, []models.GroupPagedTitle{row})
+	if err != nil {
+		return GroupTitleDetail{}, err
+	}
+	return details[0], nil
 }
 
 func GetUsersFromGroup(db store.Store, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {
@@ -298,6 +345,11 @@ func AddTitleToGroup(db store.Store, ctx context.Context, groupId, titleId, user
 //   - ErrInvalidSeasonValue: if season is provided and is less than or equal to zero
 //   - ErrSeasonDoesNotExist: if season is provided but doesn't exist in the title
 //   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when watched is false
+//
+// Alongside the updated title it returns the WatchedChange the call produced —
+// the addressed state before and after — since both halves are only knowable
+// here, and the activity feed needs them to tell "marked watched" from "moved
+// the date".
 func UpdateGroupTitleWatched(
 	db store.Store,
 	ctx context.Context,
@@ -307,7 +359,7 @@ func UpdateGroupTitleWatched(
 	watched *bool,
 	watchedAt *generics.FlexibleDate,
 	season *int,
-) (GroupTitle, error) {
+) (GroupTitle, WatchedChange, error) {
 	if season != nil {
 		return updateGroupTitleWatchedForTVSeries(db, ctx, groupId, title, userId, watched, watchedAt, season)
 	}
@@ -335,25 +387,29 @@ func updateGroupTitleWatchedForMovie(
 	userId string,
 	watched *bool,
 	watchedAt *generics.FlexibleDate,
-) (GroupTitle, error) {
+) (GroupTitle, WatchedChange, error) {
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrGroupNotFound
+			return GroupTitle{}, WatchedChange{}, ErrGroupNotFound
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
 
 	titleDb, exists := groupDb.Titles[title.Id]
 	if !exists {
-		return GroupTitle{}, ErrTitleNotInGroup
+		return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 	}
+
+	// The row just read is the only chance to see the state the update is
+	// about to overwrite, so capture it here rather than re-reading afterwards.
+	previous := WatchedState{Watched: titleDb.Watched, WatchedAt: titleDb.WatchedAt}
 
 	// Don't allow updating watchedAt if watched is set to false or when title is not watched
 	watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
 	watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
 	if !titleDb.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
-		return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
+		return GroupTitle{}, WatchedChange{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
 	}
 
 	// If the request comes with the watched field set to false, clear the watchedAt field.
@@ -365,11 +421,16 @@ func updateGroupTitleWatchedForMovie(
 	groupTitleItem, err := db.UpdateGroupTitleWatchedForMovie(ctx, groupId, title.Id, watched, watchedAt)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrTitleNotInGroup
+			return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
-	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
+
+	change := WatchedChange{
+		Current:  WatchedState{Watched: groupTitleItem.Watched, WatchedAt: groupTitleItem.WatchedAt},
+		Previous: previous,
+	}
+	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), change, nil
 }
 
 // updateGroupTitleWatchedForTVSeries handles watched status updates for TV series seasons.
@@ -397,15 +458,15 @@ func updateGroupTitleWatchedForTVSeries(
 	watched *bool,
 	watchedAt *generics.FlexibleDate,
 	season *int,
-) (GroupTitle, error) {
+) (GroupTitle, WatchedChange, error) {
 	// 1. Validate season value
 	if *season <= 0 {
-		return GroupTitle{}, ErrInvalidSeasonValue
+		return GroupTitle{}, WatchedChange{}, ErrInvalidSeasonValue
 	}
 
 	// 2. Check if title is a TV series
 	if title.Type != "tvSeries" && title.Type != "tvMiniSeries" {
-		return GroupTitle{}, ErrSeasonDoesNotExist
+		return GroupTitle{}, WatchedChange{}, ErrSeasonDoesNotExist
 	}
 
 	// 3. Check if the season exists in the title
@@ -418,21 +479,26 @@ func updateGroupTitleWatchedForTVSeries(
 		}
 	}
 	if !seasonExists {
-		return GroupTitle{}, ErrSeasonDoesNotExist
+		return GroupTitle{}, WatchedChange{}, ErrSeasonDoesNotExist
 	}
 
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrGroupNotFound
+			return GroupTitle{}, WatchedChange{}, ErrGroupNotFound
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
 
 	titleDb, exists := groupDb.Titles[title.Id]
 	if !exists {
-		return GroupTitle{}, ErrTitleNotInGroup
+		return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 	}
+
+	// The season row about to be overwritten. A season nobody has touched yet
+	// has no row at all, which is the same story the feed tells as an unwatched
+	// one: not watched, no date.
+	previous := seasonWatchedState(titleDb.SeasonsWatched, seasonAsString)
 
 	// 4. For TV series seasons, validate watchedAt rules
 	if titleDb.SeasonsWatched != nil {
@@ -442,7 +508,7 @@ func updateGroupTitleWatchedForTVSeries(
 			watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
 			watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
 			if !existingSeason.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
-				return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
+				return GroupTitle{}, WatchedChange{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
 			}
 		}
 	}
@@ -456,11 +522,33 @@ func updateGroupTitleWatchedForTVSeries(
 	groupTitleItem, err := db.UpdateGroupTitleWatchedForTVSeries(ctx, groupId, title.Id, watched, watchedAt, *season, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrTitleNotInGroup
+			return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
-	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
+
+	// The season's own resulting state, not the title's: the store recomputes
+	// the top-level watched/watchedAt across every season, so those describe
+	// the series as a whole and would misreport a single season's change.
+	change := WatchedChange{
+		Current:  seasonWatchedState(groupTitleItem.SeasonsWatched, seasonAsString),
+		Previous: previous,
+	}
+	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), change, nil
+}
+
+// seasonWatchedState reads one season out of a title's per-season map. A nil
+// map, or a season with no row in it, reads as not watched with no date — the
+// state a season starts in before anyone records anything against it.
+func seasonWatchedState(seasons *models.SeasonsWatched, season string) WatchedState {
+	if seasons == nil {
+		return WatchedState{}
+	}
+	item, ok := (*seasons)[season]
+	if !ok {
+		return WatchedState{}
+	}
+	return WatchedState{Watched: item.Watched, WatchedAt: item.WatchedAt}
 }
 
 func RemoveTitleFromGroup(db store.Store, ctx context.Context, groupId, titleId, userId string) error {

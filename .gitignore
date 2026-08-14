@@ -34,11 +34,14 @@ go.work.sum
 backups/
 
 *.log
-# Design/planning docs and superpowers artifacts stay local. Only the
-# maintained docs listed below are committed.
+# Only the two maintained docs are committed. Specs, plans and handoff notes
+# are working material: they go stale the moment the code moves on, and a stale
+# design doc in the repo is worse than none. They stay local.
 docs/*
 !docs/CHANGELOG.md
 !docs/CONVENTIONS.md
+
+# Subagent-driven-development scratch (ledgers, briefs, review packages).
 .superpowers/
 
 # Compiled binaries (the Dockerfile builds these names at the repo root)

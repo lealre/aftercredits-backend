@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"math"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -57,4 +58,21 @@ func pageOffset(size, page int) (int64, bool) {
 		return 0, false
 	}
 	return int64(page-1) * int64(size), true // now provably in range
+}
+
+// inTx runs fn inside its own transaction, rolling back on error and
+// committing on success. It exists for the writes that genuinely span more
+// than one statement (a rating and its season rows, a group and its members);
+// a single-statement write needs no transaction, since Postgres commits it on
+// its own.
+func (s *Store) inTx(ctx context.Context, fn func(q *database.Queries) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

@@ -1,0 +1,139 @@
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/lealre/movies-backend/internal/database"
+	"github.com/lealre/movies-backend/internal/models"
+)
+
+// InsertActivityEvents appends events to the log. It backs activity.StoreSink
+// and is called after the request's business write has already committed, so it
+// owns its own transaction: either the whole batch of events for a request
+// lands or none of it does.
+//
+// Ids and created_at are generated here, matching every other write in this
+// package. seq is assigned by the database.
+func (s *Store) InsertActivityEvents(ctx context.Context, events []models.ActivityEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	return s.inTx(ctx, func(q *database.Queries) error {
+		now := time.Now()
+		for _, e := range events {
+			var payload []byte
+			if e.Payload == nil {
+				payload = []byte(`{}`)
+			} else {
+				var err error
+				payload, err = json.Marshal(e.Payload)
+				if err != nil {
+					return err
+				}
+			}
+			row, err := q.InsertActivityEventRow(ctx, database.InsertActivityEventRowParams{
+				ID:        firstNonEmpty(e.Id, uuid.NewString()),
+				GroupID:   e.GroupId,
+				ActorID:   e.ActorId,
+				ActorName: e.ActorName,
+				Kind:      e.Kind,
+				TitleID:   ptrToText(e.TitleId),
+				TitleName: ptrToText(e.TitleName),
+				Payload:   payload,
+				CreatedAt: timeToTimestamptz(now),
+			})
+			if err != nil {
+				return err
+			}
+			// Same transaction as the insert: a rolled-back event notifies nobody.
+			if err := q.NotifyActivityEvent(ctx, row.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// GetActivityFeed returns the events visible to userId, newest first, excluding
+// their own. before is an exclusive seq cursor; nil starts at the newest. Each
+// event carries userId's own read state, so a row can be rendered read or
+// unread without a second query.
+func (s *Store) GetActivityFeed(ctx context.Context, userId string, before *int64, limit int) ([]models.ActivityEvent, error) {
+	if limit <= 0 {
+		return []models.ActivityEvent{}, nil
+	}
+	rows, err := s.q.GetActivityFeedRows(ctx, database.GetActivityFeedRowsParams{
+		UserID:   userId,
+		Before:   int64PtrToNullable(before),
+		RowLimit: int64(limit),
+	})
+	if err != nil {
+		return []models.ActivityEvent{}, err
+	}
+	events := make([]models.ActivityEvent, 0, len(rows))
+	for _, row := range rows {
+		event, err := activityEventRowToModel(row)
+		if err != nil {
+			return []models.ActivityEvent{}, err
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
+// GetActivityEventById returns a single event by id, joined with its group's
+// name, matching the shape GetActivityFeed returns. It backs the LISTEN loop:
+// a notification carries only an id, and this turns it into the row that gets
+// fanned out to subscribers.
+func (s *Store) GetActivityEventById(ctx context.Context, id string) (models.ActivityEvent, error) {
+	row, err := s.q.GetActivityEventById(ctx, id)
+	if err != nil {
+		return models.ActivityEvent{}, notFound(err)
+	}
+	// GetActivityEventById selects the same columns as GetActivityFeedRows
+	// (e.*, g.name AS group_name), so the two generated row structs are
+	// field-for-field identical and Go permits converting directly between
+	// the named types — no second mapper needed.
+	return activityEventRowToModel(database.GetActivityFeedRowsRow(row))
+}
+
+// GetActivityUnreadCount counts the events visible to userId that they have no
+// read row for — the same visibility view the feed reads through, so the badge
+// and the feed cannot disagree.
+func (s *Store) GetActivityUnreadCount(ctx context.Context, userId string) (int64, error) {
+	return s.q.CountActivityUnread(ctx, userId)
+}
+
+// MarkActivityEventRead records that userId has read exactly one event, leaving
+// every other event's state alone. It is idempotent: marking an event already
+// read succeeds and changes nothing.
+//
+// An event that is not visible to userId — another group's, their own, or an id
+// that does not exist — writes nothing and returns store.ErrRecordNotFound. The
+// three are deliberately one answer: telling them apart would tell a caller
+// which event ids exist in groups they are not in.
+func (s *Store) MarkActivityEventRead(ctx context.Context, userId, eventId string) error {
+	_, err := s.q.MarkActivityEventRead(ctx, database.MarkActivityEventReadParams{
+		ReadAt:  timeToTimestamptz(time.Now()),
+		UserID:  userId,
+		EventID: eventId,
+	})
+	if err != nil {
+		return notFound(err)
+	}
+	return nil
+}
+
+// MarkAllActivityEventsRead records that userId has read every event currently
+// visible to them, in one statement. Events that arrive afterwards are unread,
+// and an event they cannot see is not touched.
+func (s *Store) MarkAllActivityEventsRead(ctx context.Context, userId string) error {
+	return s.q.MarkAllActivityEventsRead(ctx, database.MarkAllActivityEventsReadParams{
+		ReadAt: timeToTimestamptz(time.Now()),
+		UserID: userId,
+	})
+}

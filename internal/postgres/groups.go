@@ -47,48 +47,45 @@ func (s *Store) assembleGroupTitles(ctx context.Context, groupId string) (models
 // generated here, not taken from the caller-supplied group. A violation of the (owner_id, name) partial
 // unique index is reported as store.ErrDuplicatedRecord.
 func (s *Store) CreateGroup(ctx context.Context, group models.Group) (models.Group, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return models.Group{}, err
-	}
-	defer tx.Rollback(ctx)
+	var result models.Group
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		id := uuid.NewString()
+		now := time.Now()
 
-	qtx := s.q.WithTx(tx)
+		row, err := q.InsertGroup(ctx, database.InsertGroupParams{
+			ID:          id,
+			Name:        group.Name,
+			Description: group.Description,
+			OwnerID:     group.OwnerId,
+			CreatedAt:   timeToTimestamptz(now),
+			UpdatedAt:   timeToTimestamptz(now),
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return store.ErrDuplicatedRecord
+			}
+			return err
+		}
 
-	id := uuid.NewString()
-	now := time.Now()
+		for _, userId := range group.Users {
+			if err := q.AddGroupMember(ctx, database.AddGroupMemberParams{
+				GroupID: id,
+				UserID:  userId,
+			}); err != nil {
+				return err
+			}
+		}
 
-	row, err := qtx.InsertGroup(ctx, database.InsertGroupParams{
-		ID:          id,
-		Name:        group.Name,
-		Description: group.Description,
-		OwnerID:     group.OwnerId,
-		CreatedAt:   timeToTimestamptz(now),
-		UpdatedAt:   timeToTimestamptz(now),
+		// Echo the input Users/Titles rather than re-reading them: Titles stays
+		// the empty-but-non-nil map the caller supplied, Users stays the
+		// owner-only slice.
+		result = groupRowToModel(row, group.Users, group.Titles)
+		return nil
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
-			return models.Group{}, store.ErrDuplicatedRecord
-		}
 		return models.Group{}, err
 	}
-
-	for _, userId := range group.Users {
-		if err := qtx.AddGroupMember(ctx, database.AddGroupMemberParams{
-			GroupID: id,
-			UserID:  userId,
-		}); err != nil {
-			return models.Group{}, err
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return models.Group{}, err
-	}
-
-	// Echo the input Users/Titles rather than re-reading them: Titles stays the
-	// empty-but-non-nil map the caller supplied, Users stays the owner-only slice.
-	return groupRowToModel(row, group.Users, group.Titles), nil
+	return result, nil
 }
 
 // GroupExists reports whether a non-deleted group with the given id exists and
@@ -135,34 +132,24 @@ func (s *Store) GetGroupById(ctx context.Context, groupId, userId string) (model
 // (ON CONFLICT DO NOTHING), so re-adding an existing member is a no-op. A group
 // ownerId is not a member of is reported as store.ErrRecordNotFound.
 func (s *Store) AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddId string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
+	return s.inTx(ctx, func(q *database.Queries) error {
+		ok, err := q.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: ownerId})
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return store.ErrRecordNotFound
+		}
 
-	qtx := s.q.WithTx(tx)
+		if err := q.AddGroupMember(ctx, database.AddGroupMemberParams{
+			GroupID: groupId,
+			UserID:  userToAddId,
+		}); err != nil {
+			return err
+		}
 
-	ok, err := qtx.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: ownerId})
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return store.ErrRecordNotFound
-	}
-
-	if err := qtx.AddGroupMember(ctx, database.AddGroupMemberParams{
-		GroupID: groupId,
-		UserID:  userToAddId,
-	}); err != nil {
-		return err
-	}
-
-	if err := qtx.TouchGroup(ctx, groupId); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+		return q.TouchGroup(ctx, groupId)
+	})
 }
 
 // GetUsersFromGroup returns the full member users of a non-deleted group that
@@ -195,31 +182,21 @@ func (s *Store) GetUsersFromGroup(ctx context.Context, groupId, userId string) (
 // Adding a title that is already present overwrites the existing entry and
 // resets its addedAt.
 func (s *Store) AddNewGroupTitle(ctx context.Context, groupId string, titleId string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
+	return s.inTx(ctx, func(q *database.Queries) error {
+		now := timeToTimestamptz(time.Now())
+		if _, err := q.UpsertGroupTitle(ctx, database.UpsertGroupTitleParams{
+			GroupID:   groupId,
+			TitleID:   titleId,
+			Watched:   false,
+			WatchedAt: ptrToTimestamptz(nil),
+			AddedAt:   now,
+			UpdatedAt: now,
+		}); err != nil {
+			return err
+		}
 
-	qtx := s.q.WithTx(tx)
-
-	now := timeToTimestamptz(time.Now())
-	if _, err := qtx.UpsertGroupTitle(ctx, database.UpsertGroupTitleParams{
-		GroupID:   groupId,
-		TitleID:   titleId,
-		Watched:   false,
-		WatchedAt: ptrToTimestamptz(nil),
-		AddedAt:   now,
-		UpdatedAt: now,
-	}); err != nil {
-		return err
-	}
-
-	if err := qtx.TouchGroup(ctx, groupId); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+		return q.TouchGroup(ctx, groupId)
+	})
 }
 
 // UpdateGroupTitleWatchedForMovie sets the top-level watched/watchedAt on a
@@ -233,58 +210,54 @@ func (s *Store) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId str
 		return nil, fmt.Errorf("no fields to update")
 	}
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
+	var result *models.GroupTitleItem
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		current, err := q.GetGroupTitleRow(ctx, database.GetGroupTitleRowParams{GroupID: groupId, TitleID: titleId})
+		if err != nil {
+			return notFound(err)
+		}
 
-	qtx := s.q.WithTx(tx)
+		newWatched := current.Watched
+		if watched != nil {
+			newWatched = *watched
+		}
 
-	current, err := qtx.GetGroupTitleRow(ctx, database.GetGroupTitleRowParams{GroupID: groupId, TitleID: titleId})
-	if err != nil {
-		return nil, notFound(err)
-	}
+		newWatchedAt := current.WatchedAt
+		if watchedAt != nil {
+			newWatchedAt = ptrToTimestamptz(watchedAt.Time)
+		}
 
-	newWatched := current.Watched
-	if watched != nil {
-		newWatched = *watched
-	}
+		row, err := q.UpdateGroupTitleWatchedRow(ctx, database.UpdateGroupTitleWatchedRowParams{
+			GroupID:   groupId,
+			TitleID:   titleId,
+			Watched:   newWatched,
+			WatchedAt: newWatchedAt,
+			UpdatedAt: timeToTimestamptz(time.Now()),
+		})
+		if err != nil {
+			return notFound(err)
+		}
 
-	newWatchedAt := current.WatchedAt
-	if watchedAt != nil {
-		newWatchedAt = ptrToTimestamptz(watchedAt.Time)
-	}
+		if err := q.TouchGroup(ctx, groupId); err != nil {
+			return err
+		}
 
-	row, err := qtx.UpdateGroupTitleWatchedRow(ctx, database.UpdateGroupTitleWatchedRowParams{
-		GroupID:   groupId,
-		TitleID:   titleId,
-		Watched:   newWatched,
-		WatchedAt: newWatchedAt,
-		UpdatedAt: timeToTimestamptz(time.Now()),
+		seasonRows, err := q.GetGroupTitleSeasonRowsForTitle(ctx, database.GetGroupTitleSeasonRowsForTitleParams{
+			GroupID: groupId,
+			TitleID: titleId,
+		})
+		if err != nil {
+			return err
+		}
+
+		item := groupTitleRowToModel(row, assembleSeasonsWatched(seasonRows))
+		result = &item
+		return nil
 	})
 	if err != nil {
-		return nil, notFound(err)
-	}
-
-	if err := qtx.TouchGroup(ctx, groupId); err != nil {
 		return nil, err
 	}
-
-	seasonRows, err := qtx.GetGroupTitleSeasonRowsForTitle(ctx, database.GetGroupTitleSeasonRowsForTitleParams{
-		GroupID: groupId,
-		TitleID: titleId,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-
-	item := groupTitleRowToModel(row, assembleSeasonsWatched(seasonRows))
-	return &item, nil
+	return result, nil
 }
 
 // UpdateGroupTitleWatchedForTVSeries upserts a single season's watched/watchedAt
@@ -299,109 +272,105 @@ func (s *Store) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId str
 // The group must exist, be non-deleted, and have userId as a member, and the
 // title must be present; otherwise store.ErrRecordNotFound is returned.
 func (s *Store) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season int, userId string) (*models.GroupTitleItem, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
+	var result *models.GroupTitleItem
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		// Membership + not-deleted guard (the store's GetGroupById), then confirm
+		// the title is present in the group.
+		if _, err := q.GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId}); err != nil {
+			return notFound(err)
+		}
+		if _, err := q.GetGroupTitleRow(ctx, database.GetGroupTitleRowParams{GroupID: groupId, TitleID: titleId}); err != nil {
+			return notFound(err)
+		}
 
-	qtx := s.q.WithTx(tx)
+		now := time.Now()
+		seasonKey := fmt.Sprintf("%d", season)
 
-	// Membership + not-deleted guard (the store's GetGroupById), then confirm
-	// the title is present in the group.
-	if _, err := qtx.GetGroupRow(ctx, database.GetGroupRowParams{ID: groupId, UserID: userId}); err != nil {
-		return nil, notFound(err)
-	}
-	if _, err := qtx.GetGroupTitleRow(ctx, database.GetGroupTitleRowParams{GroupID: groupId, TitleID: titleId}); err != nil {
-		return nil, notFound(err)
-	}
+		// Load the existing season row (if any) to preserve addedAt and the fields
+		// the caller did not supply.
+		existing, err := q.GetGroupTitleSeasonRow(ctx, database.GetGroupTitleSeasonRowParams{
+			GroupID: groupId,
+			TitleID: titleId,
+			Season:  seasonKey,
+		})
+		seasonExists := err == nil
+		if err != nil && notFound(err) != store.ErrRecordNotFound {
+			return err
+		}
 
-	now := time.Now()
-	seasonKey := fmt.Sprintf("%d", season)
+		seasonWatched := false
+		seasonWatchedAt := ptrToTimestamptz(nil)
+		addedAt := timeToTimestamptz(now)
+		if seasonExists {
+			seasonWatched = existing.Watched
+			seasonWatchedAt = existing.WatchedAt
+			addedAt = existing.AddedAt
+		}
+		if watched != nil {
+			seasonWatched = *watched
+		}
+		if watchedAt != nil {
+			seasonWatchedAt = ptrToTimestamptz(watchedAt.Time)
+		}
 
-	// Load the existing season row (if any) to preserve addedAt and the fields
-	// the caller did not supply.
-	existing, err := qtx.GetGroupTitleSeasonRow(ctx, database.GetGroupTitleSeasonRowParams{
-		GroupID: groupId,
-		TitleID: titleId,
-		Season:  seasonKey,
-	})
-	seasonExists := err == nil
-	if err != nil && notFound(err) != store.ErrRecordNotFound {
-		return nil, err
-	}
+		if _, err := q.UpsertGroupTitleSeason(ctx, database.UpsertGroupTitleSeasonParams{
+			GroupID:   groupId,
+			TitleID:   titleId,
+			Season:    seasonKey,
+			Watched:   seasonWatched,
+			WatchedAt: seasonWatchedAt,
+			AddedAt:   addedAt,
+			UpdatedAt: timeToTimestamptz(now),
+		}); err != nil {
+			return err
+		}
 
-	seasonWatched := false
-	seasonWatchedAt := ptrToTimestamptz(nil)
-	addedAt := timeToTimestamptz(now)
-	if seasonExists {
-		seasonWatched = existing.Watched
-		seasonWatchedAt = existing.WatchedAt
-		addedAt = existing.AddedAt
-	}
-	if watched != nil {
-		seasonWatched = *watched
-	}
-	if watchedAt != nil {
-		seasonWatchedAt = ptrToTimestamptz(watchedAt.Time)
-	}
+		// Recompute the top-level watched/watchedAt from every season.
+		seasonRows, err := q.GetGroupTitleSeasonRowsForTitle(ctx, database.GetGroupTitleSeasonRowsForTitleParams{
+			GroupID: groupId,
+			TitleID: titleId,
+		})
+		if err != nil {
+			return err
+		}
 
-	if _, err := qtx.UpsertGroupTitleSeason(ctx, database.UpsertGroupTitleSeasonParams{
-		GroupID:   groupId,
-		TitleID:   titleId,
-		Season:    seasonKey,
-		Watched:   seasonWatched,
-		WatchedAt: seasonWatchedAt,
-		AddedAt:   addedAt,
-		UpdatedAt: timeToTimestamptz(now),
-	}); err != nil {
-		return nil, err
-	}
-
-	// Recompute the top-level watched/watchedAt from every season.
-	seasonRows, err := qtx.GetGroupTitleSeasonRowsForTitle(ctx, database.GetGroupTitleSeasonRowsForTitleParams{
-		GroupID: groupId,
-		TitleID: titleId,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	topWatched := false
-	var topWatchedAt *time.Time
-	for _, sr := range seasonRows {
-		if sr.Watched {
-			topWatched = true
-			if sr.WatchedAt.Valid {
-				w := sr.WatchedAt.Time
-				if topWatchedAt == nil || w.After(*topWatchedAt) {
-					topWatchedAt = &w
+		topWatched := false
+		var topWatchedAt *time.Time
+		for _, sr := range seasonRows {
+			if sr.Watched {
+				topWatched = true
+				if sr.WatchedAt.Valid {
+					w := sr.WatchedAt.Time
+					if topWatchedAt == nil || w.After(*topWatchedAt) {
+						topWatchedAt = &w
+					}
 				}
 			}
 		}
-	}
 
-	row, err := qtx.UpdateGroupTitleWatchedRow(ctx, database.UpdateGroupTitleWatchedRowParams{
-		GroupID:   groupId,
-		TitleID:   titleId,
-		Watched:   topWatched,
-		WatchedAt: ptrToTimestamptz(topWatchedAt),
-		UpdatedAt: timeToTimestamptz(now),
+		row, err := q.UpdateGroupTitleWatchedRow(ctx, database.UpdateGroupTitleWatchedRowParams{
+			GroupID:   groupId,
+			TitleID:   titleId,
+			Watched:   topWatched,
+			WatchedAt: ptrToTimestamptz(topWatchedAt),
+			UpdatedAt: timeToTimestamptz(now),
+		})
+		if err != nil {
+			return notFound(err)
+		}
+
+		if err := q.TouchGroup(ctx, groupId); err != nil {
+			return err
+		}
+
+		item := groupTitleRowToModel(row, assembleSeasonsWatched(seasonRows))
+		result = &item
+		return nil
 	})
 	if err != nil {
-		return nil, notFound(err)
-	}
-
-	if err := qtx.TouchGroup(ctx, groupId); err != nil {
 		return nil, err
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-
-	item := groupTitleRowToModel(row, assembleSeasonsWatched(seasonRows))
-	return &item, nil
+	return result, nil
 }
 
 // UpdateGroupInfo sets name and description on a non-deleted group.
@@ -444,34 +413,24 @@ func (s *Store) SoftDeleteGroup(ctx context.Context, groupId string) error {
 // as follows: the not-found error keys off the group
 // (missing/deleted), not off whether userId was actually a member.
 func (s *Store) RemoveUserFromGroup(ctx context.Context, groupId, userId string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
+	return s.inTx(ctx, func(q *database.Queries) error {
+		ok, err := q.GroupExistsNotDeleted(ctx, groupId)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return store.ErrRecordNotFound
+		}
 
-	qtx := s.q.WithTx(tx)
+		if err := q.RemoveGroupMember(ctx, database.RemoveGroupMemberParams{
+			GroupID: groupId,
+			UserID:  userId,
+		}); err != nil {
+			return err
+		}
 
-	ok, err := qtx.GroupExistsNotDeleted(ctx, groupId)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return store.ErrRecordNotFound
-	}
-
-	if err := qtx.RemoveGroupMember(ctx, database.RemoveGroupMemberParams{
-		GroupID: groupId,
-		UserID:  userId,
-	}); err != nil {
-		return err
-	}
-
-	if err := qtx.TouchGroup(ctx, groupId); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+		return q.TouchGroup(ctx, groupId)
+	})
 }
 
 // groupTitlesOrderKeys is the sort-key whitelist for GetGroupTitlesPage.
@@ -595,60 +554,112 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 
 	out := make([]models.GroupPagedTitle, 0, len(rows))
 	for _, r := range rows {
-		title, err := rowToTitle(database.Title{
+		row, err := groupPagedTitleFromRow(database.Title{
 			ID: r.ID, PrimaryTitle: r.PrimaryTitle, Type: r.Type,
 			StartYear: r.StartYear, RatingAggregate: r.RatingAggregate,
 			VoteCount: r.VoteCount, AddedAt: r.AddedAt, UpdatedAt: r.UpdatedAt,
 			Metadata: r.Metadata,
-		})
+		}, r.GtWatched, r.GtWatchedAt, r.GtAddedAt, r.GtUpdatedAt, seasonsByTitle[r.ID])
 		if err != nil {
 			return nil, 0, err
 		}
-		out = append(out, models.GroupPagedTitle{
-			Title: title,
-			Item: models.GroupTitleItem{
-				TitleId:        r.ID,
-				SeasonsWatched: assembleSeasonsWatched(seasonsByTitle[r.ID]),
-				Watched:        r.GtWatched,
-				AddedAt:        r.GtAddedAt.Time,
-				UpdatedAt:      r.GtUpdatedAt.Time,
-				WatchedAt:      timestamptzToPtr(r.GtWatchedAt),
-			},
-		})
+		out = append(out, row)
 	}
 	return out, total, nil
+}
+
+// groupPagedTitleFromRow assembles one joined title + group_titles row into the
+// domain type. Both readers of that join go through it — the page
+// (GetGroupTitlesPage) and the single-title read (GetGroupTitle) — so the two
+// cannot drift in what they put where, which is the drift a client would see:
+// the single-title endpoint feeds the same UI as a row of the list.
+//
+// seasonRows may be empty; assembleSeasonsWatched turns that into a nil
+// SeasonsWatched, the "no season rows" shape the contract requires
+// (CONVENTIONS §5).
+func groupPagedTitleFromRow(
+	t database.Title,
+	gtWatched bool,
+	gtWatchedAt, gtAddedAt, gtUpdatedAt pgtype.Timestamptz,
+	seasonRows []database.GroupTitleSeason,
+) (models.GroupPagedTitle, error) {
+	title, err := rowToTitle(t)
+	if err != nil {
+		return models.GroupPagedTitle{}, err
+	}
+	return models.GroupPagedTitle{
+		Title: title,
+		Item: models.GroupTitleItem{
+			TitleId:        t.ID,
+			SeasonsWatched: assembleSeasonsWatched(seasonRows),
+			Watched:        gtWatched,
+			AddedAt:        gtAddedAt.Time,
+			UpdatedAt:      gtUpdatedAt.Time,
+			WatchedAt:      timestamptzToPtr(gtWatchedAt),
+		},
+	}, nil
+}
+
+// GetGroupTitle returns one of a group's titles addressed by id, in exactly the
+// shape a page entry carries (same join, same mapper — see
+// groupPagedTitleFromRow).
+//
+// Like GetGroupTitlesPage it applies no membership or deleted-group check; the
+// caller establishes that first (the handler, with GroupContainsTitle). A title
+// the group does not hold — and a group entry whose title has left the
+// catalogue, which the join drops just as it drops it from a page — is reported
+// as store.ErrRecordNotFound.
+func (s *Store) GetGroupTitle(ctx context.Context, groupId, titleId string) (models.GroupPagedTitle, error) {
+	row, err := s.q.GetGroupTitleWithTitle(ctx, database.GetGroupTitleWithTitleParams{
+		GroupID: groupId,
+		TitleID: titleId,
+	})
+	if err != nil {
+		return models.GroupPagedTitle{}, notFound(err)
+	}
+
+	// Season rows only ever exist for a series (the season watched-update
+	// refuses any other type), so a movie's lookup would be a round trip whose
+	// answer is known to be empty — the same decision the page makes.
+	var seasonRows []database.GroupTitleSeason
+	if models.IsSeriesTitleType(row.Type) {
+		seasonRows, err = s.q.GetGroupTitleSeasonRowsForTitle(ctx, database.GetGroupTitleSeasonRowsForTitleParams{
+			GroupID: groupId,
+			TitleID: titleId,
+		})
+		if err != nil {
+			return models.GroupPagedTitle{}, err
+		}
+	}
+
+	return groupPagedTitleFromRow(database.Title{
+		ID: row.ID, PrimaryTitle: row.PrimaryTitle, Type: row.Type,
+		StartYear: row.StartYear, RatingAggregate: row.RatingAggregate,
+		VoteCount: row.VoteCount, AddedAt: row.AddedAt, UpdatedAt: row.UpdatedAt,
+		Metadata: row.Metadata,
+	}, row.GtWatched, row.GtWatchedAt, row.GtAddedAt, row.GtUpdatedAt, seasonRows)
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its
 // seasons cascade): the not-found error
 // keys off group membership, not off whether the title was actually present.
 func (s *Store) RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
+	return s.inTx(ctx, func(q *database.Queries) error {
+		ok, err := q.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: userId})
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return store.ErrRecordNotFound
+		}
 
-	qtx := s.q.WithTx(tx)
+		if _, err := q.DeleteGroupTitle(ctx, database.DeleteGroupTitleParams{
+			GroupID: groupId,
+			TitleID: titleId,
+		}); err != nil {
+			return err
+		}
 
-	ok, err := qtx.GroupHasMember(ctx, database.GroupHasMemberParams{GroupID: groupId, UserID: userId})
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return store.ErrRecordNotFound
-	}
-
-	if _, err := qtx.DeleteGroupTitle(ctx, database.DeleteGroupTitleParams{
-		GroupID: groupId,
-		TitleID: titleId,
-	}); err != nil {
-		return err
-	}
-
-	if err := qtx.TouchGroup(ctx, groupId); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+		return q.TouchGroup(ctx, groupId)
+	})
 }

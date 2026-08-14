@@ -1,3 +1,102 @@
+<a name="unreleased"></a>
+## Unreleased
+
+The group activity feed — a log of what everyone in your groups has been doing,
+plus an unread badge. **Off by default**, so deploying this changes nothing until
+you switch it on. The frontend for it is not here yet, so with the flag on the
+API answers but nothing in the app shows it.
+
+* **New feature: the group activity feed.** Every group-scoped write — adding or
+  removing a title, marking one watched, rating, commenting, and the deletions of
+  each — records an event naming who did it, in which group, and to which title.
+  Three new authenticated endpoints serve it: `GET /activity` (newest first,
+  cursor-paginated), `GET /activity/unread-count` (the badge), and
+  `POST /activity/read` (mark everything read)
+* You see other members' actions, never your own, and only for groups you are
+  currently in — leaving a group hides its history from you immediately
+* **Enable it with `ACTIVITY_FEED_ENABLED=true`.** Unset or false means no events
+  are recorded at all and the three routes are absent (404), so the feature can be
+  switched off again without a rollback
+* **Requires migration 005**, which adds two tables (`activity_events`,
+  `activity_reads`). Unlike 003 and 004 it is additive DDL on new tables only, so
+  it needs no stop-the-backend step — `database -migrate` can run with the app up
+* Event delivery is deliberately best-effort: events are written after the change
+  they describe has already been saved, so a crash at the wrong moment can lose a
+  feed line, and a failure to record one can never fail the action itself. Your
+  ratings and comments are never at risk from the feed
+* A member's name and the title's name are stored on each event as they were at
+  the time, so a feed line stays readable after someone leaves the group or a
+  title is removed from the catalogue. Later renames do not change old lines
+* Nothing is pruned; the log keeps everything
+* **Activity now arrives live.** Two new authenticated endpoints —
+  `POST /activity/stream-ticket` (mints a single-use, 60-second ticket) and
+  `GET /activity/stream?ticket=…` (a server-sent-events stream) — push each
+  event to a group's other members as it happens, replacing the unread
+  badge's 10-second poll. Both live behind the same `ACTIVITY_FEED_ENABLED`
+  flag as the rest of the feed: off means no `pg_notify`, no listener process,
+  and the two routes are absent (404), exactly like the three phase 1 routes
+* No new migration. This adds no schema change at all
+* **Delivery stays best-effort, deliberately.** A missed or dropped live
+  update is repaired by the snapshot the client takes on every connect and
+  reconnect, never by retrying the write. This is the same guarantee phase 1
+  already gave the feed itself — your ratings and comments are never put at
+  risk by any of this
+* Each backend process holds one additional, dedicated database connection
+  for `LISTEN`, on top of its normal pool, for as long as the feature is
+  enabled
+* **Operator action if you run your own reverse proxy in front of the API:**
+  a proxy that buffers responses will let the stream connect and then
+  deliver nothing — a failure that looks perfectly healthy from the outside.
+  The backend already sends `X-Accel-Buffering: no` on the stream response
+  and pings the connection roughly every 25 seconds, and the bundled
+  frontend's `nginx.conf` now has a dedicated location for the stream route
+  with buffering off and a raised read timeout. If your proxy isn't that
+  nginx config, give `/activity/stream` the equivalent: buffering disabled
+  and a read timeout longer than 25 seconds
+* **Watched activity now says what actually changed.** Marking a title watched
+  and merely correcting the date it was watched used to produce the identical
+  feed line. Each of those events now carries the watched date and the state
+  before the change, so the feed can tell marking watched from marking not
+  watched, adding a date from moving one, and a single season's change from the
+  whole series'. No migration: this is extra detail inside the event's existing
+  JSON payload
+* **The unread badge is now per event, not a "newer than" watermark.** Clicking
+  one line in the feed marks exactly that line read and drops the badge by one;
+  older and newer lines keep whatever state they had. Before, read state could
+  only ever be a contiguous newest-N, so reading one line silently read every
+  older one and reading the newest cleared the whole badge
+* Each event in `GET /activity` — and in every frame the live stream pushes —
+  now carries `"read"`, the *asking* reader's own state, so the app can render
+  one row read while its neighbours stay unread. It is always present; a pushed
+  event is always `false`, because it was only just recorded
+* **`POST /activity/read` is replaced by two routes:**
+  `POST /activity/events/{id}/read` (mark that one event read; `204`, and `404`
+  for an event you cannot see) and `POST /activity/read-all` (clear the badge,
+  no body). Both are idempotent — sending either twice is a success that
+  changes nothing the second time. The old route took a `seq` in the body,
+  which no longer means anything, so it is gone rather than quietly
+  reinterpreted; nothing shipped enabled against it
+* **Requires migration 007**, which adds `activity_event_reads` (one row per
+  user per event read), drops `activity_reads` (the watermark table), and adds
+  the `activity_visible_events` view the feed, the badge and both mark-read
+  routes now share so they cannot disagree about what you can see. It is
+  additive plus one drop of a table only the feed used, so like 005 it needs no
+  stop-the-backend step — but run it **before** starting the new image, since
+  the old binary's mark-read query needs the dropped table. Any existing read
+  state is discarded, which costs nothing: the feature has never run enabled
+* The read table grows with users × events read, and clearing the badge writes
+  a row per visible event rather than moving one integer. That is the accepted
+  price of per-row read state; nothing is pruned here either
+* **One of a group's titles can now be fetched on its own:**
+  `GET /groups/{groupId}/titles/{titleId}` returns exactly what
+  `GET /groups/{groupId}/titles` returns for that title in its list — the same
+  object, ratings scoped to that group included — so the app can open a title's
+  detail straight from a feed line instead of hunting for it across pages of the
+  list. An unknown group, a group you are not in, and a title that group does
+  not hold are all `404`, the same as the other routes under that path. No
+  migration, and it is **not** behind `ACTIVITY_FEED_ENABLED`: it is an ordinary
+  group-titles read that the feed happens to use
+
 <a name="v0.1.2"></a>
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
 

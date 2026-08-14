@@ -78,5 +78,31 @@ type Store interface {
 	RemoveUserFromGroup(ctx context.Context, groupId, userId string) error
 	RemoveTitleFromGroup(ctx context.Context, groupId, titleId, userId string) error
 	GetGroupTitlesPage(ctx context.Context, groupId string, watched *bool, titleTypes []string, orderBy string, ascending *bool, size, page int) ([]models.GroupPagedTitle, int64, error)
+	GetGroupTitle(ctx context.Context, groupId, titleId string) (models.GroupPagedTitle, error)
 	GroupHasTitleEntries(ctx context.Context, groupId string, watched *bool, titleTypes []string) (bool, error)
+
+	// ----- ActivityEvents -----
+
+	InsertActivityEvents(ctx context.Context, events []models.ActivityEvent) error
+	GetActivityFeed(ctx context.Context, userId string, before *int64, limit int) ([]models.ActivityEvent, error)
+	GetActivityEventById(ctx context.Context, id string) (models.ActivityEvent, error)
+	GetActivityUnreadCount(ctx context.Context, userId string) (int64, error)
+	MarkActivityEventRead(ctx context.Context, userId, eventId string) error
+	MarkAllActivityEventsRead(ctx context.Context, userId string) error
+}
+
+// ActivityListener is the optional push half of the storage contract: a store
+// that can tell this process about events as they are committed, instead of
+// only answering reads. ListenActivity blocks until ctx is cancelled, calling
+// publish once per committed event.
+//
+// It is kept out of Store on purpose. Every method there is one that
+// services/api call on every store; this one is called once at startup, by the
+// server, and only when the activity feed is switched on. A store that cannot
+// push is not broken — the feed still works and clients still see every event
+// on their next snapshot — so the server type-asserts for this and carries on
+// without it, rather than the interface forcing every implementation to have
+// one.
+type ActivityListener interface {
+	ListenActivity(ctx context.Context, publish func(models.ActivityEvent)) error
 }

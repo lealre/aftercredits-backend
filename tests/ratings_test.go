@@ -325,8 +325,12 @@ func TestAddRating(t *testing.T) {
 			expectedNote    float32
 			expectedOverall float32
 		}{
-			{season: 2, expectedNote: expectedNoteSeasonTwo, expectedOverall: (expectedNoteSeasonOne + expectedNoteSeasonTwo) / 2},
-			{season: 3, expectedNote: expectedNoteSeasonThree, expectedOverall: (expectedNoteSeasonOne + expectedNoteSeasonTwo + expectedNoteSeasonThree) / 3},
+			// The overall note is the mean of the season ratings, rounded to
+			// one decimal like every other note. (5+8)/2 is already 6.5;
+			// (5+8+10)/3 is 7.666… and is stored as 7.7, so the expectation
+			// is spelled out rather than recomputed as a raw mean.
+			{season: 2, expectedNote: expectedNoteSeasonTwo, expectedOverall: 6.5},
+			{season: 3, expectedNote: expectedNoteSeasonThree, expectedOverall: 7.7},
 		}
 
 		for _, tt := range seasonTests {
@@ -1256,5 +1260,191 @@ func TestDeleteRatingSeason(t *testing.T) {
 		var respBody api.ErrorResponse
 		require.NoError(t, json.NewDecoder(respDeleted.Body).Decode(&respBody))
 		require.Contains(t, respBody.ErrorMessage, "Rating not found")
+	})
+}
+
+// A note is a one-decimal value (x.x). The write path is the source of truth
+// for that: a caller-supplied note with more precision is rejected outright,
+// while the TV series overall note — which the service derives as the mean of
+// the season ratings and no caller ever types — is rounded, because a mean of
+// one-decimal values is routinely not itself one-decimal.
+func TestRatingNotePrecision(t *testing.T) {
+	t.Run("adding a movie rating with two decimals is rejected and writes nothing", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		resp := addRating(t, ratings.NewRating{
+			GroupId: s.group.Id,
+			TitleId: s.movie.ID,
+			Note:    8.55,
+		}, s.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		var body api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		require.Contains(t, body.ErrorMessage, ratings.ErrNoteTooPrecise.Error()[1:])
+
+		require.Equal(t, 0, countRatings(t), "a rejected note must leave no rating behind")
+	})
+
+	t.Run("adding a season rating with two decimals is rejected and writes nothing", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		season := 1
+		resp := addRating(t, ratings.NewRating{
+			GroupId: s.group.Id,
+			TitleId: s.series.ID,
+			Note:    6.75,
+			Season:  &season,
+		}, s.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		var body api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		require.Contains(t, body.ErrorMessage, ratings.ErrNoteTooPrecise.Error()[1:])
+
+		require.Equal(t, 0, countRatings(t), "a rejected season note must leave no rating behind")
+	})
+
+	t.Run("updating a movie rating to two decimals is rejected and leaves the stored note untouched", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		rating := addRatingAndGetResult(t, s.group.Id, s.movie.ID, 7.5, nil, s.token)
+
+		resp := updateRating(t, ratings.UpdateRatingRequest{Note: 8.92}, rating.Id, s.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		var body api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		require.Contains(t, body.ErrorMessage, ratings.ErrNoteTooPrecise.Error()[1:])
+
+		require.Equal(t, float32(7.5), getRating(t, rating.Id).Note,
+			"a rejected update must not touch the stored note")
+	})
+
+	t.Run("updating a season rating to two decimals is rejected and leaves the stored ratings untouched", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		season := 1
+		rating := addRatingAndGetResult(t, s.group.Id, s.series.ID, 7.5, &season, s.token)
+
+		resp := updateRating(t, ratings.UpdateRatingRequest{Note: 6.75, Season: &season}, rating.Id, s.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		var body api.ErrorResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		require.Contains(t, body.ErrorMessage, ratings.ErrNoteTooPrecise.Error()[1:])
+
+		require.Equal(t, float32(7.5), getSeasonRating(t, rating.Id, season),
+			"a rejected update must not touch the stored season rating")
+		require.Equal(t, float32(7.5), getRating(t, rating.Id).Note,
+			"a rejected update must not touch the derived overall note")
+	})
+
+	t.Run("one-decimal and boundary notes are accepted and stored verbatim", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		// 0 and 10 are the range boundaries; 8.5 is a plain one-decimal value
+		// and 6.7 is one that float32 cannot represent exactly, which the
+		// precision check has to tolerate rather than reject.
+		for _, note := range []float32{0, 10, 8.5, 6.7} {
+			resetDB(t)
+			s = seedRatingPrecisionScenario(t)
+
+			rating := addRatingAndGetResult(t, s.group.Id, s.movie.ID, note, nil, s.token)
+			require.Equal(t, note, rating.Note, "note %v must come back unchanged", note)
+			require.Equal(t, note, getRating(t, rating.Id).Note, "note %v must be stored unchanged", note)
+		}
+	})
+
+	t.Run("one-decimal season notes are accepted and stored verbatim", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		season := 1
+		rating := addRatingAndGetResult(t, s.group.Id, s.series.ID, 8.5, &season, s.token)
+		require.Equal(t, float32(8.5), getSeasonRating(t, rating.Id, season))
+		require.Equal(t, float32(8.5), getRating(t, rating.Id).Note)
+	})
+
+	t.Run("the derived TV series overall note is rounded to one decimal", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		// Three one-decimal season ratings whose mean is not one-decimal:
+		// (5 + 8 + 10) / 3 = 7.666…, which must be stored as 7.7.
+		season1, season2, season3 := 1, 2, 3
+		addRatingAndGetResult(t, s.group.Id, s.series.ID, 5, &season1, s.token)
+		addRatingAndGetResult(t, s.group.Id, s.series.ID, 8, &season2, s.token)
+		rating := addRatingAndGetResult(t, s.group.Id, s.series.ID, 10, &season3, s.token)
+
+		require.Equal(t, float32(7.7), rating.Note, "the mean must be rounded in the response")
+		require.Equal(t, float32(7.7), getRating(t, rating.Id).Note, "the mean must be rounded in the database")
+
+		// Updating a season re-derives the mean, which must be rounded too:
+		// (5 + 8 + 9) / 3 = 7.333… -> 7.3.
+		resp := updateRating(t, ratings.UpdateRatingRequest{Note: 9, Season: &season3}, rating.Id, s.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		require.Equal(t, float32(7.3), getRating(t, rating.Id).Note,
+			"the re-derived mean must be rounded after an update")
+
+		// Deleting a season re-derives it once more: (5 + 8) / 2 = 6.5.
+		respDelete := deleteRatingSeason(t, rating.Id, s.token, season3)
+		defer respDelete.Body.Close()
+		require.Equal(t, http.StatusOK, respDelete.StatusCode)
+
+		require.Equal(t, float32(6.5), getRating(t, rating.Id).Note,
+			"the re-derived mean must be rounded after a season delete")
+	})
+}
+
+// Migration 006 repairs the rows written before the write path enforced
+// one-decimal notes. It is exercised here against rows inserted straight into
+// the tables, since the service can no longer produce them.
+func TestRatingRoundingMigration(t *testing.T) {
+	t.Run("rounds existing two-decimal notes and season ratings, and is idempotent", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		// The two values the live database actually holds, plus a clean value
+		// that the repair must leave alone.
+		insertRawRating(t, "rating-dirty-1", s.movie.ID, s.user.Id, s.group.Id, 6.75)
+		insertRawRating(t, "rating-dirty-2", s.series.ID, s.user.Id, s.group.Id, 8.92)
+		insertRawSeasonRating(t, "rating-dirty-2", 1, 9.05)
+		insertRawSeasonRating(t, "rating-dirty-2", 2, 7.4)
+
+		affected := runRatingRoundingMigration(t)
+		require.Equal(t, int64(3), affected,
+			"the repair must touch exactly the three two-decimal rows, not the clean one")
+
+		require.Equal(t, float32(6.8), getRating(t, "rating-dirty-1").Note)
+		require.Equal(t, float32(8.9), getRating(t, "rating-dirty-2").Note)
+		require.Equal(t, float32(9.1), getSeasonRating(t, "rating-dirty-2", 1))
+		require.Equal(t, float32(7.4), getSeasonRating(t, "rating-dirty-2", 2),
+			"an already one-decimal value must be left exactly as it was")
+
+		// Idempotency: the second run must match no rows at all. The stored
+		// values would look unchanged even if the WHERE were dropped or
+		// mis-written — round(round(x)) is round(x) — so rows-affected is the
+		// assertion with teeth here. It is what catches a WHERE that compares
+		// the REAL column against numeric without casting it, which promotes
+		// both sides to double precision and re-rewrites every clean row.
+		affected = runRatingRoundingMigration(t)
+		require.Equal(t, int64(0), affected, "a second run must match no rows")
+
+		require.Equal(t, float32(6.8), getRating(t, "rating-dirty-1").Note)
+		require.Equal(t, float32(8.9), getRating(t, "rating-dirty-2").Note)
+		require.Equal(t, float32(9.1), getSeasonRating(t, "rating-dirty-2", 1))
+		require.Equal(t, float32(7.4), getSeasonRating(t, "rating-dirty-2", 2))
 	})
 }

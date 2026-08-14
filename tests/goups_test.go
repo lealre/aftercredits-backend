@@ -1821,7 +1821,9 @@ func TestGroupTitlesSeriesRatingAndWatchedAggregation(t *testing.T) {
 	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason2, &season2, tokenOwnerUser)
 	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason3, &season3, tokenOwnerUser)
 
-	expectedAverageRating := (noteSeason1 + noteSeason2 + noteSeason3) / 3
+	// The mean of the season ratings, rounded to one decimal as every stored
+	// note is: (4+8+10)/3 is 7.333… and is stored as 7.3.
+	expectedAverageRating := float32(7.3)
 
 	// Mark all three seasons as watched, with season 2's watchedAt being the most recent
 	watched := true
@@ -2537,5 +2539,204 @@ func TestGroupTitlesPaginationIsTotallyOrdered(t *testing.T) {
 					"the pages of %q must concatenate back into the unpaginated order", query)
 			}
 		}
+	})
+}
+
+// TestGetGroupTitleById covers GET /groups/{groupId}/titles/{titleId}: the
+// group-scoped detail of one title, addressed by id.
+//
+// It exists for the activity feed, whose rows deep-link to a title's modal —
+// the same modal a row of GET /groups/{id}/titles opens. That is why the
+// centrepiece here is the equality subtest rather than a restatement of the
+// fields: the frontend feeds both responses to the same component, so anything
+// this endpoint renders differently from the list is a bug that surfaces only
+// in the UI. Comparing the two raw bodies is the assertion that keeps them
+// from drifting; listing the fields again would only re-encode today's shape.
+func TestGetGroupTitleById(t *testing.T) {
+	t.Run("The title detail is exactly the entry the list returns for that title", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// Give both titles every kind of state the shape carries — ratings,
+		// top-level watched, per-season watched — so the comparison covers
+		// populated fields rather than two identically empty objects.
+		season1, season2 := 1, 2
+		addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, 7, nil, world.token)
+		addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, 9, &season1, world.token)
+
+		movieWatchedAt := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
+		setGroupTitleWatched(t, world.groupA.Id, world.movie.ID, true, &movieWatchedAt, world.token)
+		applyWatchedUpdate(t, world.groupA.Id, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: world.tvSeries.ID, Season: &season1,
+			Watched: watchedFlag(true), WatchedAt: watchedDate(time.Date(2025, 3, 4, 0, 0, 0, 0, time.UTC)),
+		}, world.token)
+		applyWatchedUpdate(t, world.groupA.Id, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: world.tvSeries.ID, Season: &season2,
+			Watched: watchedFlag(true), WatchedAt: watchedDate(time.Date(2025, 5, 6, 0, 0, 0, 0, time.UTC)),
+		}, world.token)
+
+		for _, titleId := range []string{world.movie.ID, world.tvSeries.ID} {
+			require.JSONEq(t,
+				groupTitleRawFromList(t, world.groupA.Id, titleId, world.token),
+				getGroupTitleRawBody(t, world.groupA.Id, titleId, world.token),
+				"the single-title response for %s must be the same object the list returns for it", titleId)
+		}
+	})
+
+	t.Run("An unrated title reports groupRatings as null, exactly as the list does", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// null vs [] is observable and clients depend on it (CONVENTIONS §5),
+		// and a decoded struct cannot tell the two apart — so this is asserted
+		// on the raw body, and against the list rather than against a literal,
+		// so that whichever of the two the list settles on, this follows.
+		require.Contains(t,
+			groupTitleRawFromList(t, world.groupA.Id, world.movie.ID, world.token),
+			`"groupRatings":null`,
+			"sanity: the list serializes an unrated title's groupRatings as null")
+		require.Contains(t,
+			getGroupTitleRawBody(t, world.groupA.Id, world.movie.ID, world.token),
+			`"groupRatings":null`,
+			"the single-title response must serialize an empty groupRatings the same way the list does")
+	})
+
+	t.Run("Ratings are scoped to the group the title is read through", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// The same movie sits in both groups; a rating belongs to (user, title,
+		// group), so reading it through group A must never surface group B's.
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, 7, nil, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, 3, nil, world.token)
+		ratingOtherUserGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, 10, nil, world.otherToken)
+
+		require.Len(t, getRatingsForTitleFromDB(t, world.movie.ID), 3,
+			"sanity: all three ratings must be stored, or a short list below proves nothing")
+
+		detailGroupA := getGroupTitleById(t, world.groupA.Id, world.movie.ID, world.token)
+		require.Len(t, detailGroupA.GroupRatings, 1,
+			"reading the title through group A must carry only group A's rating")
+		require.Equal(t, ratingGroupA.Id, detailGroupA.GroupRatings[0].Id,
+			"the rating listed for group A must be the one created in group A")
+		require.Equal(t, world.groupA.Id, detailGroupA.GroupRatings[0].GroupId,
+			"every rating listed for group A must be attributed to group A")
+		require.Equal(t, float32(7), detailGroupA.GroupRatings[0].Note,
+			"the rating listed for group A must carry group A's note")
+
+		detailGroupB := getGroupTitleById(t, world.groupB.Id, world.movie.ID, world.token)
+		listedIds := []string{}
+		listedNotes := []float32{}
+		for _, rating := range detailGroupB.GroupRatings {
+			require.Equal(t, world.groupB.Id, rating.GroupId,
+				"every rating listed for group B must be attributed to group B")
+			listedIds = append(listedIds, rating.Id)
+			listedNotes = append(listedNotes, rating.Note)
+		}
+		require.ElementsMatch(t, []string{ratingGroupB.Id, ratingOtherUserGroupB.Id}, listedIds,
+			"reading the title through group B must carry both of group B's ratings and nothing from group A")
+		require.ElementsMatch(t, []float32{3, 10}, listedNotes,
+			"group B's ratings must keep their own notes")
+	})
+
+	t.Run("A series comes back with its per-season watched state intact", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		season1, season2 := 1, 2
+		watchedSeason1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+		watchedSeason2 := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC) // the later of the two
+
+		applyWatchedUpdate(t, world.groupA.Id, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: world.tvSeries.ID, Season: &season1,
+			Watched: watchedFlag(true), WatchedAt: watchedDate(watchedSeason1),
+		}, world.token)
+		applyWatchedUpdate(t, world.groupA.Id, groups.UpdateGroupTitleWatchedRequest{
+			TitleId: world.tvSeries.ID, Season: &season2,
+			Watched: watchedFlag(true), WatchedAt: watchedDate(watchedSeason2),
+		}, world.token)
+
+		detail := getGroupTitleById(t, world.groupA.Id, world.tvSeries.ID, world.token)
+		require.NotNil(t, detail.SeasonsWatched, "a series with watched seasons must report seasonsWatched")
+
+		seasonsWatched := *detail.SeasonsWatched
+		require.Len(t, seasonsWatched, 2, "both touched seasons must be reported")
+		require.True(t, seasonsWatched["1"].Watched, "season 1 must be reported as watched")
+		require.Equal(t, watchedSeason1, *seasonsWatched["1"].WatchedAt, "season 1 must keep its own watchedAt")
+		require.True(t, seasonsWatched["2"].Watched, "season 2 must be reported as watched")
+		require.Equal(t, watchedSeason2, *seasonsWatched["2"].WatchedAt, "season 2 must keep its own watchedAt")
+
+		// The top-level pair is the rollup the store computes across seasons.
+		require.True(t, detail.Watched, "a series with a watched season must be watched at the top level")
+		require.Equal(t, watchedSeason2, *detail.WatchedAt,
+			"the top-level watchedAt must be the latest watched season's date")
+
+		// A movie has no season rows at all, and the contract says that is a
+		// nil map rather than an empty one — omitempty makes it absent.
+		movieRaw := getGroupTitleRawBody(t, world.groupA.Id, world.movie.ID, world.token)
+		require.NotContains(t, movieRaw, `"seasonsWatched"`,
+			"a movie must not carry a seasonsWatched key at all")
+	})
+
+	t.Run("A non-member reading a title of that group gets 404", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		_, outsiderToken := addUser(t, users.NewUserRequest{
+			Username: "grouptitleoutsider",
+			Password: "testpass",
+		})
+
+		// Group A exists and holds the movie; the caller just is not in it, and
+		// the response must not say which of the two it was.
+		resp := getGroupTitleResponse(t, world.groupA.Id, world.movie.ID, outsiderToken)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"a non-member must not be able to tell a group they cannot see from one that does not exist")
+	})
+
+	t.Run("An unknown group is 404", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		resp := getGroupTitleResponse(t, "00000000-0000-0000-0000-000000000000", world.movie.ID, world.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("An unknown title is 404", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		resp := getGroupTitleResponse(t, world.groupA.Id, "tt00000000", world.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("A title that exists but is not in this group is 404", func(t *testing.T) {
+		resetDB(t)
+		world := setupTwoGroups(t)
+
+		// setupTwoGroups seeds the whole movie fixture but only puts the first
+		// title in the groups, so another seeded title is a real catalogue
+		// title that group A does not hold. It is added to group B to make the
+		// point sharper: the caller is a member of both, so only the group in
+		// the path can be what makes this a 404.
+		otherMovie := loadTitlesFixture(t)[1]
+		require.NotEqual(t, world.movie.ID, otherMovie.ID, "sanity: this must be a different title")
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", otherMovie.ID),
+			GroupId: world.groupB.Id,
+		}, world.token)
+
+		resp := getGroupTitleResponse(t, world.groupA.Id, otherMovie.ID, world.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"a title the group does not hold must be 404 even when the caller can see the group")
+
+		// ...and the same title read through the group that does hold it works,
+		// so the 404 above is about the group, not about the title.
+		detail := getGroupTitleById(t, world.groupB.Id, otherMovie.ID, world.token)
+		require.Equal(t, otherMovie.ID, detail.Id)
 	})
 }

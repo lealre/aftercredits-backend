@@ -142,6 +142,32 @@ ORDER BY
     t.id ASC
 LIMIT sqlc.arg('page_size')::bigint OFFSET sqlc.arg('page_offset')::bigint;
 
+-- name: GetGroupTitleWithTitle :one
+-- One group title addressed by (group, title): the same join and the same
+-- title/group_titles columns GetGroupTitlesPage selects, minus everything that
+-- only exists to page — the CASE ORDER BY, LIMIT/OFFSET and the window total.
+--
+-- Deliberately a separate statement rather than an optional title-id filter on
+-- GetGroupTitlesPage: that query is the hottest read in the app and has already
+-- been through two rounds of fixes (pagination tie-break, empty-page shapes),
+-- and a filter every page caller passes as NULL would put this read's risk
+-- there for no gain here. What must not drift between the two is the assembly
+-- of the row into models.GroupPagedTitle, and that is shared in Go
+-- (groupPagedTitleFromRow), not duplicated.
+--
+-- No membership or deleted-group predicate, exactly like GetGroupTitlesPage:
+-- callers guard with GroupContainsTitle first. The INNER JOIN means a group
+-- entry whose title has left the catalogue returns no row, the same way such
+-- an entry is absent from a page.
+SELECT
+    t.id, t.primary_title, t.type, t.start_year, t.rating_aggregate,
+    t.vote_count, t.added_at, t.updated_at, t.metadata,
+    gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
+    gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at
+FROM group_titles gt
+JOIN titles t ON t.id = gt.title_id
+WHERE gt.group_id = sqlc.arg('group_id') AND gt.title_id = sqlc.arg('title_id');
+
 -- name: CountGroupTitles :one
 -- Companion to GetGroupTitlesPage: the window-function total disappears when
 -- an out-of-range page returns zero rows, so the store method falls back to

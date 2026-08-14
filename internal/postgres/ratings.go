@@ -67,42 +67,38 @@ func (s *Store) assembleRatingRows(ctx context.Context, rows []database.Rating) 
 // single transaction: the id and timestamps
 // are generated here, not taken from the caller-supplied rating.
 func (s *Store) AddRating(ctx context.Context, rating models.UserRating) (models.UserRating, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return models.UserRating{}, err
-	}
-	defer tx.Rollback(ctx)
+	var result models.UserRating
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		id := uuid.NewString()
+		now := time.Now()
 
-	qtx := s.q.WithTx(tx)
+		row, err := q.InsertRating(ctx, database.InsertRatingParams{
+			ID:        id,
+			TitleID:   rating.TitleId,
+			UserID:    rating.UserId,
+			GroupID:   rating.GroupId,
+			Note:      rating.Note,
+			CreatedAt: timeToTimestamptz(now),
+			UpdatedAt: timeToTimestamptz(now),
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return store.ErrDuplicatedRecord
+			}
+			return err
+		}
 
-	id := uuid.NewString()
-	now := time.Now()
+		if err := insertRatingSeasons(ctx, q, id, rating.SeasonsRatings); err != nil {
+			return err
+		}
 
-	row, err := qtx.InsertRating(ctx, database.InsertRatingParams{
-		ID:        id,
-		TitleID:   rating.TitleId,
-		UserID:    rating.UserId,
-		GroupID:   rating.GroupId,
-		Note:      rating.Note,
-		CreatedAt: timeToTimestamptz(now),
-		UpdatedAt: timeToTimestamptz(now),
+		result = ratingRowToModel(row, rating.SeasonsRatings)
+		return nil
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
-			return models.UserRating{}, store.ErrDuplicatedRecord
-		}
 		return models.UserRating{}, err
 	}
-
-	if err := insertRatingSeasons(ctx, qtx, id, rating.SeasonsRatings); err != nil {
-		return models.UserRating{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return models.UserRating{}, err
-	}
-
-	return ratingRowToModel(row, rating.SeasonsRatings), nil
+	return result, nil
 }
 
 // GetRatingsByTitleId fetches every rating left on titleId within groupId,
@@ -159,37 +155,33 @@ func (s *Store) GetRatingByUserIdAndTitleId(ctx context.Context, userId, titleId
 // (delete-then-reinsert)'s document
 // replace semantics for the seasonsRatings field.
 func (s *Store) UpdateRating(ctx context.Context, rating models.UserRating, userId string) (models.UserRating, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return models.UserRating{}, err
-	}
-	defer tx.Rollback(ctx)
+	var result models.UserRating
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		row, err := q.UpdateRatingRow(ctx, database.UpdateRatingRowParams{
+			ID:        rating.Id,
+			UserID:    userId,
+			Note:      rating.Note,
+			UpdatedAt: timeToTimestamptz(time.Now()),
+		})
+		if err != nil {
+			return notFound(err)
+		}
 
-	qtx := s.q.WithTx(tx)
+		if err := q.DeleteRatingSeasons(ctx, row.ID); err != nil {
+			return err
+		}
 
-	row, err := qtx.UpdateRatingRow(ctx, database.UpdateRatingRowParams{
-		ID:        rating.Id,
-		UserID:    userId,
-		Note:      rating.Note,
-		UpdatedAt: timeToTimestamptz(time.Now()),
+		if err := insertRatingSeasons(ctx, q, row.ID, rating.SeasonsRatings); err != nil {
+			return err
+		}
+
+		result = ratingRowToModel(row, rating.SeasonsRatings)
+		return nil
 	})
 	if err != nil {
-		return models.UserRating{}, notFound(err)
-	}
-
-	if err := qtx.DeleteRatingSeasons(ctx, row.ID); err != nil {
 		return models.UserRating{}, err
 	}
-
-	if err := insertRatingSeasons(ctx, qtx, row.ID, rating.SeasonsRatings); err != nil {
-		return models.UserRating{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return models.UserRating{}, err
-	}
-
-	return ratingRowToModel(row, rating.SeasonsRatings), nil
+	return result, nil
 }
 
 // GetRatingsByTitleIds fetches every rating left on the given titleIds within

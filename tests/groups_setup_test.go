@@ -145,6 +145,45 @@ func addTitleToGroup(t *testing.T, newTitle groups.AddTitleToGroupRequest, token
 
 }
 
+// addTitleToGroupResponse calls POST /groups/titles and returns the raw
+// response, for callers that need to assert on a failing request (addTitleToGroup
+// asserts 200 and decodes the body, so it cannot be reused for that).
+func addTitleToGroupResponse(t *testing.T, newTitle groups.AddTitleToGroupRequest, token string) *http.Response {
+	t.Helper()
+
+	jsonData, err := json.Marshal(newTitle)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost,
+		testServer.URL+"/groups/titles",
+		bytes.NewBuffer(jsonData),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// deleteTitleFromGroupResponse calls DELETE /groups/{groupId}/titles/{titleId}
+// and returns the raw response for the caller to assert on.
+func deleteTitleFromGroupResponse(t *testing.T, groupId, titleId, token string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodDelete,
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId,
+		nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
 func patchGroupTitleWatched(t *testing.T, groupId string, pathBody []byte, token string) groups.GroupTitle {
 	req, err := http.NewRequest(http.MethodPatch,
 		testServer.URL+"/groups/"+groupId+"/titles",
@@ -270,6 +309,81 @@ func getGroupTitleDetail(t *testing.T, groupId, titleId, token string) groups.Gr
 	require.FailNowf(t, "title missing from group titles page",
 		"expected title %s to be listed for group %s, got %v", titleId, groupId, groupTitleIds(page))
 	return groups.GroupTitleDetail{}
+}
+
+// getGroupTitleResponse calls GET /groups/{groupId}/titles/{titleId} and
+// returns the raw response for the caller to assert on.
+func getGroupTitleResponse(t *testing.T, groupId, titleId, token string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet,
+		testServer.URL+"/groups/"+groupId+"/titles/"+titleId, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// getGroupTitleById decodes a successful single-title response.
+func getGroupTitleById(t *testing.T, groupId, titleId, token string) groups.GroupTitleDetail {
+	t.Helper()
+
+	resp := getGroupTitleResponse(t, groupId, titleId, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var detail groups.GroupTitleDetail
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&detail))
+	return detail
+}
+
+// getGroupTitleRawBody returns the single-title response body as a string, for
+// the assertions a decoded struct cannot make: a `null` and a `[]` both decode
+// into an empty Go slice (CONVENTIONS §5).
+func getGroupTitleRawBody(t *testing.T, groupId, titleId, token string) string {
+	t.Helper()
+
+	resp := getGroupTitleResponse(t, groupId, titleId, token)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(body)
+}
+
+// groupTitleRawFromList returns the raw JSON of one entry of the group-titles
+// list — the element the single-title endpoint has to reproduce exactly.
+//
+// It is deliberately taken before decoding: the drift worth catching between
+// the two responses includes a field that is `null` in one and `[]` in the
+// other, which no decoded comparison can see.
+func groupTitleRawFromList(t *testing.T, groupId, titleId, token string) string {
+	t.Helper()
+
+	var page struct {
+		Content []json.RawMessage `json:"Content"`
+	}
+	body := getGroupTitlesRawBody(t, groupId, "size=100&page=1", token)
+	require.NoError(t, json.Unmarshal([]byte(body), &page), "failed to decode the group titles page envelope")
+
+	listed := make([]string, 0, len(page.Content))
+	for _, entry := range page.Content {
+		var identified struct {
+			Id string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(entry, &identified), "failed to decode a group titles entry")
+		if identified.Id == titleId {
+			return string(entry)
+		}
+		listed = append(listed, identified.Id)
+	}
+
+	require.FailNowf(t, "title missing from the group titles page",
+		"expected title %s to be listed for group %s, got %v", titleId, groupId, listed)
+	return ""
 }
 
 // twoGroupFixture is the world the group-scoping tests share: one user who
@@ -537,4 +651,28 @@ func setGroupTitleWatched(t *testing.T, groupId, titleId string, watched bool, w
 	})
 	require.NoError(t, err)
 	patchGroupTitleWatched(t, groupId, body, token)
+}
+
+// applyWatchedUpdate sends one PATCH /groups/{id}/titles carrying exactly the
+// fields set on req.
+//
+// setGroupTitleWatched always sends both watched and watchedAt, which collapses
+// the very distinction the activity payload has to preserve: "mark it watched"
+// and "change the date" are different requests, and only an omitted field says
+// which one the caller meant.
+func applyWatchedUpdate(t *testing.T, groupId string, req groups.UpdateGroupTitleWatchedRequest, token string) groups.GroupTitle {
+	t.Helper()
+
+	body, err := json.Marshal(req)
+	require.NoError(t, err, "failed to encode the watched update for title %s", req.TitleId)
+	return patchGroupTitleWatched(t, groupId, body, token)
+}
+
+// watchedFlag and watchedDate build the optional fields of an update: a nil
+// field means "leave this alone", so tests need a way to set one without
+// setting the other.
+func watchedFlag(watched bool) *bool { return &watched }
+
+func watchedDate(when time.Time) *generics.FlexibleDate {
+	return &generics.FlexibleDate{Time: &when}
 }
