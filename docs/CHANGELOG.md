@@ -1,10 +1,9 @@
-<a name="unreleased"></a>
-## Unreleased
+<a name="v0.1.3"></a>
+## [v0.1.3](https://github.com/lealre/aftercredits-backend/compare/v0.1.2...v0.1.3) (2026-08-14)
 
 The group activity feed — a log of what everyone in your groups has been doing,
-plus an unread badge. **Off by default**, so deploying this changes nothing until
-you switch it on. The frontend for it is not here yet, so with the flag on the
-API answers but nothing in the app shows it.
+plus an unread badge, delivered live. **Off by default**, so deploying this
+changes nothing until you switch `ACTIVITY_FEED_ENABLED` on.
 
 * **New feature: the group activity feed.** Every group-scoped write — adding or
   removing a title, marking one watched, rating, commenting, and the deletions of
