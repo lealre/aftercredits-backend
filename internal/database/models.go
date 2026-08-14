@@ -21,10 +21,25 @@ type ActivityEvent struct {
 	CreatedAt pgtype.Timestamptz
 }
 
-type ActivityRead struct {
+type ActivityEventRead struct {
 	UserID  string
+	EventID string
 	ReadAt  pgtype.Timestamptz
-	ReadSeq int64
+}
+
+type ActivityVisibleEvent struct {
+	ID        string
+	Seq       int64
+	GroupID   string
+	ActorID   string
+	ActorName string
+	Kind      string
+	TitleID   pgtype.Text
+	TitleName pgtype.Text
+	Payload   []byte
+	CreatedAt pgtype.Timestamptz
+	GroupName string
+	ReaderID  string
 }
 
 type Comment struct {

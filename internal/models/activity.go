@@ -10,6 +10,11 @@ import "time"
 // row stays readable after the actor leaves the group or the title is removed
 // from the catalogue. Seq is the ordering and cursor key; it is unique, so
 // ordering by it alone is total.
+//
+// Read is the one field that is not a property of the event: it says whether
+// the reader who asked for it has read it, so the same row is Read for one
+// member and unread for another. It is filled by the read paths only — writes
+// ignore it, and an event freshly pushed to the stream is unread by definition.
 type ActivityEvent struct {
 	Id        string
 	Seq       int64
@@ -22,4 +27,5 @@ type ActivityEvent struct {
 	TitleName *string
 	Payload   map[string]any
 	CreatedAt time.Time
+	Read      bool
 }

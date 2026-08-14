@@ -236,31 +236,107 @@ func getActivityUnreadCount(t *testing.T, token string) int64 {
 	return count.Unread
 }
 
-// markActivityReadResponse calls POST /activity/read and returns the response
-// for the caller to assert on.
-func markActivityReadResponse(t *testing.T, token string, seq int64) *http.Response {
+// activityFeedFixture is what seedActivityFeed hands back: the group, the two
+// tokens, the ids of the events the reader can see — numbered oldest first, so
+// a case can talk about "event 3" the way the UI's list does — and one title
+// that is seeded but not yet in the group, for cases that need to record a
+// further event after doing something.
+type activityFeedFixture struct {
+	groupId      string
+	actorToken   string
+	readerToken  string
+	eventIds     []string
+	spareTitleId string
+}
+
+// seedActivityFeed puts an actor and a reader in one group and has the actor
+// add n titles to it, which is n events in the reader's feed and none in the
+// actor's.
+func seedActivityFeed(t *testing.T, n int) activityFeedFixture {
 	t.Helper()
 
-	jsonData, err := json.Marshal(activity.MarkReadRequest{Seq: seq})
-	require.NoError(t, err)
+	_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+	reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+	group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
+	addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
 
-	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/activity/read", bytes.NewBuffer(jsonData))
+	// One more title than events: seededTitleIds is deterministic, so a case
+	// cannot simply seed another one later without colliding with these.
+	titleIds := seededTitleIds(t, n+1)
+	for _, titleId := range titleIds[:n] {
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", titleId),
+			GroupId: group.Id,
+		}, actorToken)
+	}
+
+	feed := getActivityFeed(t, readerToken, "?limit=50")
+	require.Len(t, feed.Events, n, "the fixture must record exactly one event per title added")
+
+	// The feed is newest first; the ids come back oldest first so event 1 is
+	// the oldest, matching how the cases are written.
+	ids := make([]string, 0, n)
+	for i := len(feed.Events) - 1; i >= 0; i-- {
+		ids = append(ids, feed.Events[i].Id)
+	}
+	return activityFeedFixture{
+		groupId:      group.Id,
+		actorToken:   actorToken,
+		readerToken:  readerToken,
+		eventIds:     ids,
+		spareTitleId: titleIds[n],
+	}
+}
+
+// markActivityEventReadResponse calls POST /activity/events/{id}/read and
+// returns the response for the caller to assert on.
+func markActivityEventReadResponse(t *testing.T, token, eventId string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost,
+		testServer.URL+"/activity/events/"+eventId+"/read", nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := (&http.Client{}).Do(req)
 	require.NoError(t, err)
 	return resp
 }
 
-// markActivityRead calls POST /activity/read and asserts it succeeded.
-func markActivityRead(t *testing.T, token string, seq int64) {
+// markActivityEventRead marks one event read and asserts it succeeded.
+func markActivityEventRead(t *testing.T, token, eventId string) {
 	t.Helper()
 
-	resp := markActivityReadResponse(t, token, seq)
+	resp := markActivityEventReadResponse(t, token, eventId)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
+// markAllActivityRead calls POST /activity/read-all and asserts it succeeded.
+func markAllActivityRead(t *testing.T, token string) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/activity/read-all", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
+// activityReadStateById returns each event in token's feed by id with the read
+// flag the API reported for it. Per-row read state is a set property — "this
+// one moved and the others did not" — so cases assert on the whole map.
+func activityReadStateById(t *testing.T, token string) map[string]bool {
+	t.Helper()
+
+	state := map[string]bool{}
+	for _, event := range getActivityFeed(t, token, "?limit=50").Events {
+		state[event.Id] = event.Read
+	}
+	return state
 }
 
 // buildGroupWithTitleAgainst registers a user, logs in, creates a group and

@@ -246,6 +246,10 @@ func assembleSeasonsWatched(rows []database.GroupTitleSeason) *models.SeasonsWat
 // (database.GetActivityFeedRowsRow) carrying every event column plus GroupName.
 // The insert's returned row is discarded, so no mapper is needed for it. Check
 // the generated field name after `sqlc generate` and match it exactly.
+//
+// ReadByMe is the asking reader's own state, not the event's, which is why the
+// query that has no reader (GetActivityEventById, for the LISTEN loop) selects
+// a literal FALSE for it: a just-written event is unread for everyone.
 func activityEventRowToModel(row database.GetActivityFeedRowsRow) (models.ActivityEvent, error) {
 	var payload map[string]any
 	if len(row.Payload) > 0 {
@@ -265,6 +269,7 @@ func activityEventRowToModel(row database.GetActivityFeedRowsRow) (models.Activi
 		TitleName: textToPtr(row.TitleName),
 		Payload:   payload,
 		CreatedAt: row.CreatedAt.Time,
+		Read:      row.ReadByMe,
 	}, nil
 }
 

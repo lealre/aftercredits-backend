@@ -21,5 +21,6 @@ func MapDbEventToApiEvent(e models.ActivityEvent) Event {
 		TitleName: e.TitleName,
 		Payload:   payload,
 		CreatedAt: e.CreatedAt,
+		Read:      e.Read,
 	}
 }

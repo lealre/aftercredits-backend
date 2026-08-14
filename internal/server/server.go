@@ -98,7 +98,14 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 	if activityFeedEnabled {
 		mux.HandleFunc("GET /activity", a.GetActivityFeed)
 		mux.HandleFunc("GET /activity/unread-count", a.GetActivityUnreadCount)
-		mux.HandleFunc("POST /activity/read", a.MarkActivityRead)
+		// Read state is per event, so the two things a client can do have
+		// separate routes rather than one route whose body decides: marking one
+		// row read names that row in its path, and clearing the badge says so.
+		// The old POST /activity/read (a watermark seq in the body) is gone
+		// rather than reinterpreted — it never shipped enabled, and silently
+		// changing what a body meant would be worse than removing it.
+		mux.HandleFunc("POST /activity/events/{id}/read", a.MarkActivityEventRead)
+		mux.HandleFunc("POST /activity/read-all", a.MarkAllActivityRead)
 
 		// Everything live is built here and nowhere else: with the flag off
 		// there is no hub, no ticket store, no listener goroutine, no

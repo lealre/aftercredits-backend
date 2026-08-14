@@ -112,6 +112,11 @@ func (s *Streamer) CloseStream(subscriber *activitycore.Subscriber) {
 // pushing data instead of a signal, which is why there is one function here
 // and not a second serializer, and why a test pins the two byte-identical.
 //
+// The DTO's read flag is false on this path, and correctly so: the event is
+// being pushed because it was just committed, so no subscriber can have read it
+// yet. That is also what keeps this frame byte-identical to the same event's
+// REST element — the reader who has not read it sees read:false there too.
+//
 // id: carries the event's seq. Nothing reads it back — reconnect takes a fresh
 // snapshot rather than replaying from Last-Event-ID — but it costs nothing and
 // leaves replay possible later.

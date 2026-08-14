@@ -86,7 +86,8 @@ type Store interface {
 	GetActivityFeed(ctx context.Context, userId string, before *int64, limit int) ([]models.ActivityEvent, error)
 	GetActivityEventById(ctx context.Context, id string) (models.ActivityEvent, error)
 	GetActivityUnreadCount(ctx context.Context, userId string) (int64, error)
-	MarkActivityRead(ctx context.Context, userId string, seq int64) error
+	MarkActivityEventRead(ctx context.Context, userId, eventId string) error
+	MarkAllActivityEventsRead(ctx context.Context, userId string) error
 }
 
 // ActivityListener is the optional push half of the storage contract: a store

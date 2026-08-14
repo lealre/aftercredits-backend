@@ -59,7 +59,9 @@ func (s *Store) InsertActivityEvents(ctx context.Context, events []models.Activi
 }
 
 // GetActivityFeed returns the events visible to userId, newest first, excluding
-// their own. before is an exclusive seq cursor; nil starts at the newest.
+// their own. before is an exclusive seq cursor; nil starts at the newest. Each
+// event carries userId's own read state, so a row can be rendered read or
+// unread without a second query.
 func (s *Store) GetActivityFeed(ctx context.Context, userId string, before *int64, limit int) ([]models.ActivityEvent, error) {
 	if limit <= 0 {
 		return []models.ActivityEvent{}, nil
@@ -99,14 +101,39 @@ func (s *Store) GetActivityEventById(ctx context.Context, id string) (models.Act
 	return activityEventRowToModel(database.GetActivityFeedRowsRow(row))
 }
 
+// GetActivityUnreadCount counts the events visible to userId that they have no
+// read row for — the same visibility view the feed reads through, so the badge
+// and the feed cannot disagree.
 func (s *Store) GetActivityUnreadCount(ctx context.Context, userId string) (int64, error) {
 	return s.q.CountActivityUnread(ctx, userId)
 }
 
-func (s *Store) MarkActivityRead(ctx context.Context, userId string, seq int64) error {
-	return s.q.UpsertActivityRead(ctx, database.UpsertActivityReadParams{
-		UserID:  userId,
+// MarkActivityEventRead records that userId has read exactly one event, leaving
+// every other event's state alone. It is idempotent: marking an event already
+// read succeeds and changes nothing.
+//
+// An event that is not visible to userId — another group's, their own, or an id
+// that does not exist — writes nothing and returns store.ErrRecordNotFound. The
+// three are deliberately one answer: telling them apart would tell a caller
+// which event ids exist in groups they are not in.
+func (s *Store) MarkActivityEventRead(ctx context.Context, userId, eventId string) error {
+	_, err := s.q.MarkActivityEventRead(ctx, database.MarkActivityEventReadParams{
 		ReadAt:  timeToTimestamptz(time.Now()),
-		ReadSeq: seq,
+		UserID:  userId,
+		EventID: eventId,
+	})
+	if err != nil {
+		return notFound(err)
+	}
+	return nil
+}
+
+// MarkAllActivityEventsRead records that userId has read every event currently
+// visible to them, in one statement. Events that arrive afterwards are unread,
+// and an event they cannot see is not touched.
+func (s *Store) MarkAllActivityEventsRead(ctx context.Context, userId string) error {
+	return s.q.MarkAllActivityEventsRead(ctx, database.MarkAllActivityEventsReadParams{
+		ReadAt: timeToTimestamptz(time.Now()),
+		UserID: userId,
 	})
 }

@@ -14,6 +14,11 @@ type Event struct {
 	TitleName *string        `json:"titleName,omitempty"`
 	Payload   map[string]any `json:"payload"`
 	CreatedAt time.Time      `json:"createdAt"`
+	// Read is per-reader: whether the caller of this request has read this
+	// event, so the UI can render one row read while its neighbours stay
+	// unread. It is never omitempty — a client cannot tell an absent field
+	// from a false one, and "unread" is the state that has to be visible.
+	Read bool `json:"read"`
 }
 
 // Feed is the feed's own envelope. generics.Page is deliberately not reused:
@@ -28,8 +33,4 @@ type Feed struct {
 
 type UnreadCount struct {
 	Unread int64 `json:"unread"`
-}
-
-type MarkReadRequest struct {
-	Seq int64 `json:"seq"`
 }

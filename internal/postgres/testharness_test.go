@@ -74,7 +74,7 @@ func resetDB(t *testing.T) {
 	ctx := context.Background()
 	const stmt = `TRUNCATE users, titles, ratings, rating_seasons, comments,
 		comment_seasons, groups, group_members, group_titles,
-		group_title_seasons, activity_events, activity_reads
+		group_title_seasons, activity_events, activity_event_reads
 		RESTART IDENTITY CASCADE`
 
 	if _, err := newTestPool(t).Exec(ctx, stmt); err != nil {
@@ -141,13 +141,15 @@ func runMigrations(dsn string, direction migrateDirection) error {
 	}
 }
 
-// tableNames lists every table 001_init.sql creates, used to assert the
-// schema is fully applied after "goose up".
+// tableNames lists every relation the migrations leave behind, used to assert
+// the schema is fully applied after "goose up". Views count: information_schema
+// .tables lists them alongside tables, and activity_visible_events is schema the
+// activity queries depend on exactly as much as a table.
 var tableNames = []string{
 	"users", "titles", "ratings", "rating_seasons",
 	"comments", "comment_seasons", "groups", "group_members",
 	"group_titles", "group_title_seasons",
-	"activity_events", "activity_reads",
+	"activity_events", "activity_event_reads", "activity_visible_events",
 }
 
 // existingTables returns which of tableNames are currently present in the

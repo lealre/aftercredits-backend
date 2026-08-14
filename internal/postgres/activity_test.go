@@ -12,6 +12,23 @@ import (
 	"github.com/lealre/movies-backend/internal/store"
 )
 
+// readStateById reads userId's whole feed and returns each event's read flag by
+// event id. Per-row read state is only meaningful as a set — "e3 is read and
+// nothing else moved" — so the assertions compare whole maps rather than
+// picking at one row and hoping about the rest.
+func readStateById(t *testing.T, s *Store, userId string) map[string]bool {
+	t.Helper()
+
+	feed, err := s.GetActivityFeed(context.Background(), userId, nil, 100)
+	require.NoError(t, err, "failed to read the feed")
+
+	state := map[string]bool{}
+	for _, event := range feed {
+		state[event.Id] = event.Read
+	}
+	return state
+}
+
 func TestStore_ActivityEvents(t *testing.T) {
 	t.Run("a reader sees other members' events but never their own", func(t *testing.T) {
 		resetDB(t)
@@ -89,7 +106,10 @@ func TestStore_ActivityEvents(t *testing.T) {
 		require.Zero(t, n, "a departed member's badge must not count events from a group they left")
 	})
 
-	t.Run("the unread count respects the watermark", func(t *testing.T) {
+	t.Run("marking one event read leaves every other event alone", func(t *testing.T) {
+		// The property the watermark could not express: read state is per row,
+		// so marking the middle event read must not touch the two older or the
+		// two newer ones, and must move the badge by exactly one.
 		resetDB(t)
 		s := newTestStore(t)
 		ctx := context.Background()
@@ -102,35 +122,139 @@ func TestStore_ActivityEvents(t *testing.T) {
 		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
 			{Id: "e1", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_added"},
 			{Id: "e2", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "rating_added"},
+			{Id: "e3", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "comment_added"},
+			{Id: "e4", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "rating_updated"},
+			{Id: "e5", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_removed"},
 		}))
 
 		n, err := s.GetActivityUnreadCount(ctx, reader)
 		require.NoError(t, err)
-		require.EqualValues(t, 2, n, "both of the actor's events are unread")
+		require.EqualValues(t, 5, n, "all five of the actor's events start unread")
 
 		actorUnread, err := s.GetActivityUnreadCount(ctx, actor)
 		require.NoError(t, err)
 		require.Zero(t, actorUnread, "an actor's own events must never count toward their own badge")
 
-		feed, err := s.GetActivityFeed(ctx, reader, nil, 50)
-		require.NoError(t, err)
-		require.NoError(t, s.MarkActivityRead(ctx, reader, feed[0].Seq))
+		require.NoError(t, s.MarkActivityEventRead(ctx, reader, "e3"))
 
 		n, err = s.GetActivityUnreadCount(ctx, reader)
 		require.NoError(t, err)
-		require.Zero(t, n, "marking the newest seq read clears the badge")
+		require.EqualValues(t, 4, n, "marking one event read drops the badge by exactly one")
 
-		require.NoError(t, s.MarkActivityRead(ctx, reader, 1), "an older seq must be accepted")
-		n, err = s.GetActivityUnreadCount(ctx, reader)
+		require.Equal(t, map[string]bool{"e1": false, "e2": false, "e3": true, "e4": false, "e5": false},
+			readStateById(t, s, reader),
+			"only e3 is read — the older events below it and the newer ones above it are untouched")
+	})
+
+	t.Run("marking the same event read twice changes nothing", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		actor := addTestUser(t, s)
+		reader := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "idempotent", actor))
 		require.NoError(t, err)
-		require.Zero(t, n, "the watermark is monotonic — an older seq must not un-read anything")
+		require.NoError(t, s.AddUserToGroup(ctx, group.Id, actor, reader))
+		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
+			{Id: "e1", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_added"},
+			{Id: "e2", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "rating_added"},
+		}))
+
+		require.NoError(t, s.MarkActivityEventRead(ctx, reader, "e1"))
+		require.NoError(t, s.MarkActivityEventRead(ctx, reader, "e1"),
+			"marking an already-read event read must succeed, not error")
+
+		n, err := s.GetActivityUnreadCount(ctx, reader)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, n, "the second mark must not double-count against the badge")
+	})
+
+	t.Run("an event the reader cannot see cannot be marked read", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		actor := addTestUser(t, s)
+		outsider := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "private", actor))
+		require.NoError(t, err)
+		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
+			{Id: "e1", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_added"},
+		}))
+
+		require.ErrorIs(t, s.MarkActivityEventRead(ctx, outsider, "e1"), store.ErrRecordNotFound,
+			"a non-member must not be able to mark a group's event read")
+		require.ErrorIs(t, s.MarkActivityEventRead(ctx, actor, "e1"), store.ErrRecordNotFound,
+			"your own action is not in your feed, so there is nothing there to mark read")
+		require.ErrorIs(t, s.MarkActivityEventRead(ctx, actor, "nope"), store.ErrRecordNotFound,
+			"an unknown id is the same answer, so it cannot be used to probe for events")
+	})
+
+	t.Run("read state is private to the reader who marked it", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		actor := addTestUser(t, s)
+		reader := addTestUser(t, s)
+		other := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "shared", actor))
+		require.NoError(t, err)
+		require.NoError(t, s.AddUserToGroup(ctx, group.Id, actor, reader))
+		require.NoError(t, s.AddUserToGroup(ctx, group.Id, actor, other))
+		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
+			{Id: "e1", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_added"},
+			{Id: "e2", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "rating_added"},
+		}))
+
+		require.NoError(t, s.MarkActivityEventRead(ctx, reader, "e1"))
+
+		require.Equal(t, map[string]bool{"e1": true, "e2": false}, readStateById(t, s, reader))
+		require.Equal(t, map[string]bool{"e1": false, "e2": false}, readStateById(t, s, other),
+			"one member reading an event must not read it for another")
+
+		n, err := s.GetActivityUnreadCount(ctx, other)
+		require.NoError(t, err)
+		require.EqualValues(t, 2, n, "the other member's badge is untouched")
+	})
+
+	t.Run("marking all read clears the badge and a later event raises it again", func(t *testing.T) {
+		resetDB(t)
+		s := newTestStore(t)
+		ctx := context.Background()
+
+		actor := addTestUser(t, s)
+		reader := addTestUser(t, s)
+		group, err := s.CreateGroup(ctx, newTestGroup(t, "markall", actor))
+		require.NoError(t, err)
+		require.NoError(t, s.AddUserToGroup(ctx, group.Id, actor, reader))
+		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
+			{Id: "e1", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_added"},
+			{Id: "e2", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "rating_added"},
+		}))
+
+		require.NoError(t, s.MarkActivityEventRead(ctx, reader, "e1"))
+		require.NoError(t, s.MarkAllActivityEventsRead(ctx, reader),
+			"mark-all must tolerate events that are already read")
+
+		n, err := s.GetActivityUnreadCount(ctx, reader)
+		require.NoError(t, err)
+		require.Zero(t, n, "marking everything read clears the badge")
+		require.Equal(t, map[string]bool{"e1": true, "e2": true}, readStateById(t, s, reader))
 
 		require.NoError(t, s.InsertActivityEvents(ctx, []models.ActivityEvent{
 			{Id: "e3", GroupId: group.Id, ActorId: actor, ActorName: "a", Kind: "title_added"},
 		}))
 		n, err = s.GetActivityUnreadCount(ctx, reader)
 		require.NoError(t, err)
-		require.EqualValues(t, 1, n, "a new event past the watermark must raise the badge again")
+		require.EqualValues(t, 1, n, "an event recorded after the sweep is unread")
+
+		require.NoError(t, s.MarkAllActivityEventsRead(ctx, actor),
+			"a sweep by someone with nothing to read is a no-op, not an error")
+		n, err = s.GetActivityUnreadCount(ctx, reader)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, n, "one user's sweep must not read anything for another")
 	})
 
 	t.Run("the cursor pages without duplicates or gaps", func(t *testing.T) {

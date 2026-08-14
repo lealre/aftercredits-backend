@@ -600,35 +600,93 @@ func TestActivityFeedEndpoints(t *testing.T) {
 		require.Contains(t, body, `"hasMore":false`)
 	})
 
-	t.Run("unread count drops to zero after marking read and rises again", func(t *testing.T) {
+	t.Run("marking one event read leaves every other event unread", func(t *testing.T) {
+		// The whole point of replacing the watermark. Under the old model
+		// "unread" meant "newer than read_seq", so marking event 3 read
+		// necessarily read events 1 and 2 with it and the badge fell to 2.
 		resetDB(t)
-		testTitleId, secondTestTitleId := seedTwoActivityTitles(t)
+		fixture := seedActivityFeed(t, 5)
 
-		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
-		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
-		group := createGroup(t, groups.CreateGroupRequest{Name: "shared"}, actorToken)
-		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, group.Id, actorToken)
-		addTitleToGroup(t, groups.AddTitleToGroupRequest{
-			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", testTitleId),
-			GroupId: group.Id,
-		}, actorToken)
-
-		require.EqualValues(t, 1, getActivityUnreadCount(t, readerToken),
-			"the actor's event is unread for the reader")
-		require.EqualValues(t, 0, getActivityUnreadCount(t, actorToken),
+		require.EqualValues(t, 5, getActivityUnreadCount(t, fixture.readerToken),
+			"all five of the actor's events start unread for the reader")
+		require.EqualValues(t, 0, getActivityUnreadCount(t, fixture.actorToken),
 			"your own action is never unread for you")
 
-		feed := getActivityFeed(t, readerToken, "")
-		markActivityRead(t, readerToken, feed.Events[0].Seq)
-		require.EqualValues(t, 0, getActivityUnreadCount(t, readerToken),
-			"marking the newest seq read clears the badge")
+		third := fixture.eventIds[2]
+		markActivityEventRead(t, fixture.readerToken, third)
+
+		require.EqualValues(t, 4, getActivityUnreadCount(t, fixture.readerToken),
+			"the badge drops by exactly one, not to the number of events newer than event 3")
+
+		want := map[string]bool{}
+		for i, id := range fixture.eventIds {
+			want[id] = i == 2
+		}
+		require.Equal(t, want, activityReadStateById(t, fixture.readerToken),
+			"exactly event 3 is read: events 1 and 2 below it and 4 and 5 above it are untouched")
+	})
+
+	t.Run("marking the same event read twice is a success that does not double-count", func(t *testing.T) {
+		resetDB(t)
+		fixture := seedActivityFeed(t, 3)
+
+		markActivityEventRead(t, fixture.readerToken, fixture.eventIds[0])
+		markActivityEventRead(t, fixture.readerToken, fixture.eventIds[0])
+
+		require.EqualValues(t, 2, getActivityUnreadCount(t, fixture.readerToken),
+			"clicking a row twice must not error and must not move the badge twice")
+	})
+
+	t.Run("one member's read state is private to them", func(t *testing.T) {
+		resetDB(t)
+		fixture := seedActivityFeed(t, 3)
+
+		other, otherToken := addUser(t, users.NewUserRequest{Username: "other", Password: "pass"})
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: other.Id}, fixture.groupId, fixture.actorToken)
+
+		markActivityEventRead(t, fixture.readerToken, fixture.eventIds[1])
+
+		require.EqualValues(t, 2, getActivityUnreadCount(t, fixture.readerToken))
+		require.EqualValues(t, 3, getActivityUnreadCount(t, otherToken),
+			"reading an event as one member must leave it unread for another")
+		for id, read := range activityReadStateById(t, otherToken) {
+			require.False(t, read, "event %s must still be unread for the other member", id)
+		}
+	})
+
+	t.Run("mark all read clears every row and a later event raises the badge again", func(t *testing.T) {
+		resetDB(t)
+		fixture := seedActivityFeed(t, 4)
+
+		markActivityEventRead(t, fixture.readerToken, fixture.eventIds[0])
+		markAllActivityRead(t, fixture.readerToken)
+
+		require.EqualValues(t, 0, getActivityUnreadCount(t, fixture.readerToken),
+			"marking all read clears the badge, including rows already read")
+		for id, read := range activityReadStateById(t, fixture.readerToken) {
+			require.True(t, read, "event %s must be read after marking all read", id)
+		}
 
 		addTitleToGroup(t, groups.AddTitleToGroupRequest{
-			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", secondTestTitleId),
-			GroupId: group.Id,
-		}, actorToken)
-		require.EqualValues(t, 1, getActivityUnreadCount(t, readerToken),
-			"a new event after the watermark is unread again")
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", fixture.spareTitleId),
+			GroupId: fixture.groupId,
+		}, fixture.actorToken)
+
+		require.EqualValues(t, 1, getActivityUnreadCount(t, fixture.readerToken),
+			"an event recorded after the sweep is unread")
+	})
+
+	t.Run("a feed row carries the reader's own read state", func(t *testing.T) {
+		resetDB(t)
+		fixture := seedActivityFeed(t, 2)
+
+		body := getActivityFeedRawBody(t, fixture.readerToken, "")
+		require.Contains(t, body, `"read":false`,
+			"every event must carry the flag, and an unread one must say so rather than omit it")
+
+		markActivityEventRead(t, fixture.readerToken, fixture.eventIds[1])
+		require.Contains(t, getActivityFeedRawBody(t, fixture.readerToken, "?limit=1"), `"read":true`,
+			"the newest row is the one just marked read")
 	})
 
 	t.Run("the cursor walks every event exactly once", func(t *testing.T) {
@@ -684,16 +742,28 @@ func TestActivityFeedEndpoints(t *testing.T) {
 		require.EqualValues(t, 0, getActivityUnreadCount(t, outsiderToken))
 	})
 
-	t.Run("seq zero or negative is rejected with 400", func(t *testing.T) {
+	t.Run("an event the caller cannot see cannot be marked read", func(t *testing.T) {
 		resetDB(t)
-		_, token := addUser(t, users.NewUserRequest{Username: "marker", Password: "pass"})
+		fixture := seedActivityFeed(t, 2)
+		_, outsiderToken := addUser(t, users.NewUserRequest{Username: "outsider", Password: "pass"})
 
-		for _, seq := range []int64{0, -1} {
-			resp := markActivityReadResponse(t, token, seq)
-			require.Equal(t, http.StatusBadRequest, resp.StatusCode,
-				"seq=%d must be rejected rather than silently accepted", seq)
-			resp.Body.Close()
-		}
+		resp := markActivityEventReadResponse(t, outsiderToken, fixture.eventIds[0])
+		require.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"a non-member must not be able to mark another group's event read")
+		resp.Body.Close()
+
+		resp = markActivityEventReadResponse(t, fixture.actorToken, fixture.eventIds[0])
+		require.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"your own action is not in your feed, so there is nothing there to mark read")
+		resp.Body.Close()
+
+		resp = markActivityEventReadResponse(t, fixture.readerToken, "no-such-event")
+		require.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"an unknown id answers the same way, so it cannot be used to probe for events")
+		resp.Body.Close()
+
+		require.EqualValues(t, 2, getActivityUnreadCount(t, fixture.readerToken),
+			"none of the refused calls may have marked anything read")
 	})
 }
 

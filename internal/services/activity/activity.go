@@ -2,6 +2,7 @@ package activity
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lealre/movies-backend/internal/config"
 	"github.com/lealre/movies-backend/internal/store"
@@ -45,9 +46,29 @@ func GetUnreadCount(db store.Store, ctx context.Context, userId string) (UnreadC
 	return UnreadCount{Unread: n}, nil
 }
 
-func MarkRead(db store.Store, ctx context.Context, userId string, seq int64) error {
-	if seq <= 0 {
-		return ErrInvalidSeq
+// MarkEventRead marks exactly one event read for one user. Clicking a row twice
+// is a success, not an error: the store's write is idempotent, so the second
+// call changes nothing and the badge does not move twice.
+//
+// An event the caller cannot see is ErrEventNotFound, whether it is another
+// group's, their own, or an id that never existed — the store collapses the
+// three, and so does the answer.
+func MarkEventRead(db store.Store, ctx context.Context, userId, eventId string) error {
+	if eventId == "" {
+		return ErrEventNotFound
 	}
-	return db.MarkActivityRead(ctx, userId, seq)
+	if err := db.MarkActivityEventRead(ctx, userId, eventId); err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return ErrEventNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+// MarkAllRead clears the caller's badge: every event visible to them right now
+// becomes read. Events recorded afterwards are unread, which is what makes the
+// badge rise again.
+func MarkAllRead(db store.Store, ctx context.Context, userId string) error {
+	return db.MarkAllActivityEventsRead(ctx, userId)
 }
