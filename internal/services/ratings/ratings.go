@@ -3,6 +3,7 @@ package ratings
 import (
 	"context"
 	"errors"
+	"math"
 	"strconv"
 	"time"
 
@@ -11,6 +12,69 @@ import (
 	"github.com/lealre/movies-backend/internal/services/titles"
 	"github.com/lealre/movies-backend/internal/store"
 )
+
+// A note is a one-decimal value (x.x). Two places have to uphold that, and they
+// pull in opposite directions:
+//
+//   - A note the caller typed is *rejected* when it carries more precision.
+//     The stored value is the user's own statement about a title, so silently
+//     rewriting 8.55 to 8.6 would hand back something they never said and make
+//     a later GET disagree with the PUT that produced it. It also lets a client
+//     bug hide: the UI's step="0.1" already prevents this, so anything finer
+//     arriving here is a caller that bypassed the control and should hear about
+//     it. This matches how the range check already behaves — an out-of-band
+//     note is a 400, not a clamp.
+//
+//   - A note the *service* derived is rounded. A TV series' overall note is the
+//     mean of its season ratings, and a mean of one-decimal values is routinely
+//     not one-decimal ((5+8+10)/3 = 7.666…). Nobody typed it, so there is no
+//     caller to send a 400 to and nothing for them to correct; rounding is the
+//     only way the derived value can honour the same contract as the values it
+//     is derived from.
+const notePrecisionTolerance = 1e-3
+
+// validateNote is the single gate every caller-supplied note passes through, on
+// add and on update alike. The request carries one Note field, used as the
+// movie's note or as the season's rating depending on the title type, so
+// validating it here covers both without a per-branch check.
+func validateNote(note float32) error {
+	if note < 0 || note > 10 {
+		return ErrInvalidNoteValue
+	}
+
+	// REAL is float32 and most one-decimal values are not exactly
+	// representable (6.7 stores as 6.69999980926513671875), so the test is
+	// "within tolerance of a tenth", not equality. The tolerance sits far
+	// above float32's representation error near 10 (~1e-5 once scaled) and far
+	// below the smallest real violation (8.51 is off by 0.1 scaled).
+	scaled := float64(note) * 10
+	if math.Abs(scaled-math.Round(scaled)) > notePrecisionTolerance {
+		return ErrNoteTooPrecise
+	}
+
+	return nil
+}
+
+func roundToOneDecimal(note float32) float32 {
+	return float32(math.Round(float64(note)*10) / 10)
+}
+
+// overallNote is the TV series note: the mean of every season rating, rounded
+// back to one decimal. Every path that adds, updates or deletes a season rating
+// recomputes the overall note through here, so the rounding cannot be forgotten
+// on one of them.
+func overallNote(seasonsRatings *models.SeasonsRatings) float32 {
+	if seasonsRatings == nil || len(*seasonsRatings) == 0 {
+		return 0
+	}
+
+	var sum float32
+	for _, seasonRating := range *seasonsRatings {
+		sum += seasonRating.Rating
+	}
+
+	return roundToOneDecimal(sum / float32(len(*seasonsRatings)))
+}
 
 // GetRatingsByTitleId returns the ratings left on a title inside a single
 // group. A rating is a group-scoped fact, so there is no unscoped variant of
@@ -82,8 +146,8 @@ func GetRatingsBatch(db store.Store, ctx context.Context, titleIDs []string, gro
 func AddRating(db store.Store, ctx context.Context, rating NewRating, userId string) (created Rating, title titles.Title, err error) {
 	logger := logx.FromContext(ctx)
 
-	if rating.Note < 0 || rating.Note > 10 {
-		return Rating{}, titles.Title{}, ErrInvalidNoteValue
+	if err := validateNote(rating.Note); err != nil {
+		return Rating{}, titles.Title{}, err
 	}
 	if rating.Season != nil && *rating.Season <= 0 {
 		return Rating{}, titles.Title{}, ErrInvalidSeasonValue
@@ -205,13 +269,7 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 	}
 
 	// 1.4: Calculates the overall rating as the mean of all season ratings
-	var sum float32
-	var count int
-	for _, seasonRating := range *seasonsRatings {
-		sum += seasonRating.Rating
-		count++
-	}
-	newOverallRating := sum / float32(count)
+	newOverallRating := overallNote(seasonsRatings)
 
 	// 1.5: Creates a new rating OR updates the existing rating in the database
 	ratingDb := models.UserRating{
@@ -302,8 +360,8 @@ func addRatingForMovie(db store.Store, ctx context.Context, rating NewRating, us
 func UpdateRating(db store.Store, ctx context.Context, ratingId, userId string, updateReq UpdateRatingRequest) (updated Rating, previous Rating, err error) {
 	logger := logx.FromContext(ctx)
 
-	if updateReq.Note < 0 || updateReq.Note > 10 {
-		return Rating{}, Rating{}, ErrInvalidNoteValue
+	if err := validateNote(updateReq.Note); err != nil {
+		return Rating{}, Rating{}, err
 	}
 
 	previous, err = GetRatingById(db, ctx, ratingId, userId)
@@ -436,13 +494,7 @@ func updateRatingForTVSeries(
 	}
 
 	// 9. Recalculate the overall rating (average of all season ratings)
-	var sum float32
-	var count int
-	for _, seasonRating := range *seasonsRatings {
-		sum += seasonRating.Rating
-		count++
-	}
-	newOverallRating := sum / float32(count)
+	newOverallRating := overallNote(seasonsRatings)
 
 	// 10. Prepare updated rating for persistence
 	ratingDb := models.UserRating{
@@ -564,13 +616,7 @@ func DeleteRatingSeason(db store.Store, ctx context.Context, ratingId, userId st
 	}
 
 	// 9. Recalculate the overall rating (average of remaining season ratings)
-	var sum float32
-	var count int
-	for _, seasonRating := range *existingRating.SeasonsRatings {
-		sum += seasonRating.Rating
-		count++
-	}
-	newOverallRating := sum / float32(count)
+	newOverallRating := overallNote(existingRating.SeasonsRatings)
 
 	// 10. Update the existing rating with remaining seasons and new overall rating
 	ratingDb := models.UserRating{

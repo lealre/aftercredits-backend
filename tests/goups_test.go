@@ -1821,7 +1821,9 @@ func TestGroupTitlesSeriesRatingAndWatchedAggregation(t *testing.T) {
 	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason2, &season2, tokenOwnerUser)
 	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason3, &season3, tokenOwnerUser)
 
-	expectedAverageRating := (noteSeason1 + noteSeason2 + noteSeason3) / 3
+	// The mean of the season ratings, rounded to one decimal as every stored
+	// note is: (4+8+10)/3 is 7.333… and is stored as 7.3.
+	expectedAverageRating := float32(7.3)
 
 	// Mark all three seasons as watched, with season 2's watchedAt being the most recent
 	watched := true
