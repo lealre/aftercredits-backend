@@ -53,6 +53,13 @@ API answers but nothing in the app shows it.
   with buffering off and a raised read timeout. If your proxy isn't that
   nginx config, give `/activity/stream` the equivalent: buffering disabled
   and a read timeout longer than 25 seconds
+* **Watched activity now says what actually changed.** Marking a title watched
+  and merely correcting the date it was watched used to produce the identical
+  feed line. Each of those events now carries the watched date and the state
+  before the change, so the feed can tell marking watched from marking not
+  watched, adding a date from moving one, and a single season's change from the
+  whole series'. No migration: this is extra detail inside the event's existing
+  JSON payload
 
 <a name="v0.1.2"></a>
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
