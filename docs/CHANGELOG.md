@@ -60,6 +60,33 @@ API answers but nothing in the app shows it.
   watched, adding a date from moving one, and a single season's change from the
   whole series'. No migration: this is extra detail inside the event's existing
   JSON payload
+* **The unread badge is now per event, not a "newer than" watermark.** Clicking
+  one line in the feed marks exactly that line read and drops the badge by one;
+  older and newer lines keep whatever state they had. Before, read state could
+  only ever be a contiguous newest-N, so reading one line silently read every
+  older one and reading the newest cleared the whole badge
+* Each event in `GET /activity` — and in every frame the live stream pushes —
+  now carries `"read"`, the *asking* reader's own state, so the app can render
+  one row read while its neighbours stay unread. It is always present; a pushed
+  event is always `false`, because it was only just recorded
+* **`POST /activity/read` is replaced by two routes:**
+  `POST /activity/events/{id}/read` (mark that one event read; `204`, and `404`
+  for an event you cannot see) and `POST /activity/read-all` (clear the badge,
+  no body). Both are idempotent — sending either twice is a success that
+  changes nothing the second time. The old route took a `seq` in the body,
+  which no longer means anything, so it is gone rather than quietly
+  reinterpreted; nothing shipped enabled against it
+* **Requires migration 007**, which adds `activity_event_reads` (one row per
+  user per event read), drops `activity_reads` (the watermark table), and adds
+  the `activity_visible_events` view the feed, the badge and both mark-read
+  routes now share so they cannot disagree about what you can see. It is
+  additive plus one drop of a table only the feed used, so like 005 it needs no
+  stop-the-backend step — but run it **before** starting the new image, since
+  the old binary's mark-read query needs the dropped table. Any existing read
+  state is discarded, which costs nothing: the feature has never run enabled
+* The read table grows with users × events read, and clearing the badge writes
+  a row per visible event rather than moving one integer. That is the accepted
+  price of per-row read state; nothing is pruned here either
 
 <a name="v0.1.2"></a>
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
