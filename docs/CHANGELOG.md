@@ -87,6 +87,15 @@ API answers but nothing in the app shows it.
 * The read table grows with users × events read, and clearing the badge writes
   a row per visible event rather than moving one integer. That is the accepted
   price of per-row read state; nothing is pruned here either
+* **One of a group's titles can now be fetched on its own:**
+  `GET /groups/{groupId}/titles/{titleId}` returns exactly what
+  `GET /groups/{groupId}/titles` returns for that title in its list — the same
+  object, ratings scoped to that group included — so the app can open a title's
+  detail straight from a feed line instead of hunting for it across pages of the
+  list. An unknown group, a group you are not in, and a title that group does
+  not hold are all `404`, the same as the other routes under that path. No
+  migration, and it is **not** behind `ACTIVITY_FEED_ENABLED`: it is an ordinary
+  group-titles read that the feed happens to use
 
 <a name="v0.1.2"></a>
 ## [v0.1.2](https://github.com/lealre/aftercredits-backend/compare/v0.1.1...v0.1.2) (2026-08-08)
