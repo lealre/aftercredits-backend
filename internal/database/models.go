@@ -27,6 +27,12 @@ type ActivityEventRead struct {
 	ReadAt  pgtype.Timestamptz
 }
 
+type ActivityReadFloor struct {
+	UserID   string
+	FloorSeq int64
+	ReadAt   pgtype.Timestamptz
+}
+
 type ActivityVisibleEvent struct {
 	ID        string
 	Seq       int64

@@ -1009,3 +1009,183 @@ func TestActivityStreamEndToEnd(t *testing.T) {
 			"a ticket is single-use: replaying it against the real server must not open a second stream")
 	})
 }
+
+// TestActivityReadFloor pins the storage half of read state: a floor covering
+// everything below it, and exception rows only for events above it.
+//
+// The endpoints and their responses are unchanged from per-event storage, so
+// the cases that matter here are the ones the badge alone cannot distinguish —
+// how many rows a mark-all actually writes, and what a reader sees in a group
+// whose history predates them.
+func TestActivityReadFloor(t *testing.T) {
+	t.Run("marking all read raises the floor instead of writing a row per event", func(t *testing.T) {
+		resetDB(t)
+		seedTitles(t, loadTitlesFixture(t))
+
+		fixture := seedActivityFeed(t, 5)
+		require.EqualValues(t, 5, getActivityUnreadCount(t, fixture.readerToken),
+			"all five of the actor's events start unread for the reader")
+
+		markAllActivityRead(t, fixture.readerToken)
+
+		require.EqualValues(t, 0, getActivityUnreadCount(t, fixture.readerToken),
+			"marking all read must clear the badge")
+		require.Zero(t, countActivityExceptionRows(t),
+			"marking all read must move the floor, not write an exception row per event")
+	})
+
+	t.Run("marking one row read writes exactly one exception row", func(t *testing.T) {
+		resetDB(t)
+		seedTitles(t, loadTitlesFixture(t))
+
+		fixture := seedActivityFeed(t, 5)
+		// eventIds is oldest first, so index 2 is neither the newest nor the
+		// oldest — the case a floor alone could never express.
+		markActivityEventRead(t, fixture.readerToken, fixture.eventIds[2])
+
+		require.EqualValues(t, 4, getActivityUnreadCount(t, fixture.readerToken),
+			"marking one event read must drop the badge by exactly one")
+		require.Equal(t, 1, countActivityExceptionRows(t),
+			"an event above the floor is recorded as a single exception row")
+
+		read := activityReadStateById(t, fixture.readerToken)
+		require.True(t, read[fixture.eventIds[2]], "the clicked event is read")
+		for _, i := range []int{0, 1, 3, 4} {
+			require.False(t, read[fixture.eventIds[i]],
+				"event %d must stay unread — neither older nor newer rows may collapse", i)
+		}
+	})
+
+	t.Run("marking read below the floor succeeds without writing a row", func(t *testing.T) {
+		resetDB(t)
+		seedTitles(t, loadTitlesFixture(t))
+
+		fixture := seedActivityFeed(t, 3)
+		markAllActivityRead(t, fixture.readerToken)
+		require.Zero(t, countActivityExceptionRows(t), "the floor covers every event")
+
+		// Already read via the floor: the endpoint must still report success
+		// (idempotent), and must not add a row the floor already covers.
+		resp := markActivityEventReadResponse(t, fixture.readerToken, fixture.eventIds[0])
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusNoContent, resp.StatusCode,
+			"marking an already-read event read is a no-op, not an error")
+		require.Zero(t, countActivityExceptionRows(t),
+			"an event at or below the floor must not produce a redundant exception row")
+		require.EqualValues(t, 0, getActivityUnreadCount(t, fixture.readerToken))
+	})
+
+	t.Run("exceptions above the floor survive a later mark-all sweep", func(t *testing.T) {
+		resetDB(t)
+		seedTitles(t, loadTitlesFixture(t))
+
+		fixture := seedActivityFeed(t, 3)
+		markActivityEventRead(t, fixture.readerToken, fixture.eventIds[1])
+		require.Equal(t, 1, countActivityExceptionRows(t))
+
+		// A newer event arrives, then everything is marked read: the floor
+		// rises past all of them and the exception row becomes redundant.
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", fixture.spareTitleId),
+			GroupId: fixture.groupId,
+		}, fixture.actorToken)
+		require.EqualValues(t, 3, getActivityUnreadCount(t, fixture.readerToken),
+			"two originals plus the new one, with the read one excluded")
+
+		markAllActivityRead(t, fixture.readerToken)
+
+		require.EqualValues(t, 0, getActivityUnreadCount(t, fixture.readerToken))
+		require.Zero(t, countActivityExceptionRows(t),
+			"rows the raised floor now covers must be deleted, or they accumulate exactly as before")
+
+		for _, id := range fixture.eventIds {
+			require.True(t, activityReadStateById(t, fixture.readerToken)[id],
+				"every event stays read after the sweep")
+		}
+	})
+
+	t.Run("a new member does not inherit the group's backlog as unread", func(t *testing.T) {
+		resetDB(t)
+		seedTitles(t, loadTitlesFixture(t))
+
+		// A group with history, and a reader who marks it all read.
+		fixture := seedActivityFeed(t, 3)
+		markAllActivityRead(t, fixture.readerToken)
+
+		// A third person joins after those events happened. They were not
+		// there, so the history is not news to them — it is below their floor
+		// only if they have one, which they do not. This pins whichever
+		// behaviour the model actually produces so it cannot change silently.
+		latecomer, latecomerToken := addUser(t, users.NewUserRequest{Username: "latecomer", Password: "pass"})
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: latecomer.Id},
+			fixture.groupId, fixture.actorToken)
+
+		backlog := getActivityUnreadCount(t, latecomerToken)
+		require.EqualValues(t, 3, backlog,
+			"a joiner with no floor sees the group's history as unread; raising a floor on join is a product decision, not an accident")
+
+		// And they can clear it in one move without writing three rows.
+		markAllActivityRead(t, latecomerToken)
+		require.EqualValues(t, 0, getActivityUnreadCount(t, latecomerToken))
+		require.Zero(t, countActivityExceptionRows(t))
+	})
+}
+
+// TestActivityReadFloorAcrossGroups pins the one place the floor is genuinely
+// lossy: it is one number per user, not per group, so it spans every group they
+// are in.
+//
+// A reader who has cleared their badge has a floor at the newest event they
+// could see. Joining a group whose history is older than that puts those events
+// below the floor, and they arrive already read. Whether that is right is a
+// product call — you were not there, so it is arguably not news — but it is a
+// real consequence of one floor per user rather than one per group, and it must
+// not be discovered by someone wondering where their notifications went.
+func TestActivityReadFloorAcrossGroups(t *testing.T) {
+	t.Run("joining a group whose history predates your floor arrives read", func(t *testing.T) {
+		resetDB(t)
+		seedTitles(t, loadTitlesFixture(t))
+
+		titleIds := seededTitleIds(t, 4)
+
+		// An older group the reader is not in yet, with two events in it.
+		_, strangerToken := addUser(t, users.NewUserRequest{Username: "stranger", Password: "pass"})
+		oldGroup := createGroup(t, groups.CreateGroupRequest{Name: "old"}, strangerToken)
+		for _, titleId := range titleIds[:2] {
+			addTitleToGroup(t, groups.AddTitleToGroupRequest{
+				URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", titleId),
+				GroupId: oldGroup.Id,
+			}, strangerToken)
+		}
+
+		// Meanwhile the reader is active elsewhere and clears their badge,
+		// which puts their floor above those two older events.
+		_, actorToken := addUser(t, users.NewUserRequest{Username: "actor", Password: "pass"})
+		reader, readerToken := addUser(t, users.NewUserRequest{Username: "reader", Password: "pass"})
+		ownGroup := createGroup(t, groups.CreateGroupRequest{Name: "own"}, actorToken)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, ownGroup.Id, actorToken)
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", titleIds[2]),
+			GroupId: ownGroup.Id,
+		}, actorToken)
+
+		markAllActivityRead(t, readerToken)
+		floor := activityReadFloor(t, reader.Id)
+		require.NotZero(t, floor, "clearing the badge must leave a floor to be meaningful")
+
+		// Now they join the older group.
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: reader.Id}, oldGroup.Id, strangerToken)
+
+		require.EqualValues(t, 0, getActivityUnreadCount(t, readerToken),
+			"the older group's history sits below the reader's floor and arrives already read")
+
+		// A new event in that same group is above the floor and does notify,
+		// so joining costs the backlog only, never future activity.
+		addTitleToGroup(t, groups.AddTitleToGroupRequest{
+			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", titleIds[3]),
+			GroupId: oldGroup.Id,
+		}, strangerToken)
+		require.EqualValues(t, 1, getActivityUnreadCount(t, readerToken),
+			"activity after joining must still reach the new member")
+	})
+}

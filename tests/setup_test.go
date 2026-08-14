@@ -97,7 +97,7 @@ func resetDB(t *testing.T) {
 	t.Helper()
 	const stmt = `TRUNCATE users, titles, ratings, rating_seasons, comments,
 		comment_seasons, groups, group_members, group_titles,
-		group_title_seasons, activity_events, activity_event_reads
+		group_title_seasons, activity_events, activity_event_reads, activity_read_floors
 		RESTART IDENTITY CASCADE`
 	if _, err := testPool.Exec(context.Background(), stmt); err != nil {
 		t.Fatalf("failed to reset db: %v", err)

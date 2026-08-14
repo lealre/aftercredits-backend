@@ -589,3 +589,33 @@ func insertHeldActivityEvent(t *testing.T, ctx context.Context, groupId, actorId
 
 	return tx, eventId
 }
+
+// countActivityExceptionRows returns how many per-event read rows exist, across
+// all users.
+//
+// The floor and the exception rows are two halves of one answer, so a case that
+// only checks the badge cannot tell them apart: writing a row per event and
+// raising the floor both clear it. Counting the rows is what distinguishes
+// "mark all as read moved one integer" from "mark all as read wrote a row per
+// event", which is the whole point of the floor.
+func countActivityExceptionRows(t *testing.T) int {
+	t.Helper()
+
+	var n int
+	err := testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM activity_event_reads`).Scan(&n)
+	require.NoError(t, err, "failed to count activity_event_reads")
+	return n
+}
+
+// activityReadFloor returns the reader's floor seq, or 0 when they have none.
+func activityReadFloor(t *testing.T, userId string) int64 {
+	t.Helper()
+
+	var seq int64
+	err := testPool.QueryRow(context.Background(),
+		`SELECT COALESCE(max(floor_seq), 0) FROM activity_read_floors WHERE user_id = $1`,
+		userId).Scan(&seq)
+	require.NoError(t, err, "failed to read the activity read floor")
+	return seq
+}

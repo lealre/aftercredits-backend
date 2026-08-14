@@ -74,7 +74,7 @@ func resetDB(t *testing.T) {
 	ctx := context.Background()
 	const stmt = `TRUNCATE users, titles, ratings, rating_seasons, comments,
 		comment_seasons, groups, group_members, group_titles,
-		group_title_seasons, activity_events, activity_event_reads
+		group_title_seasons, activity_events, activity_event_reads, activity_read_floors
 		RESTART IDENTITY CASCADE`
 
 	if _, err := newTestPool(t).Exec(ctx, stmt); err != nil {
@@ -149,7 +149,7 @@ var tableNames = []string{
 	"users", "titles", "ratings", "rating_seasons",
 	"comments", "comment_seasons", "groups", "group_members",
 	"group_titles", "group_title_seasons",
-	"activity_events", "activity_event_reads", "activity_visible_events",
+	"activity_events", "activity_event_reads", "activity_read_floors", "activity_visible_events",
 }
 
 // existingTables returns which of tableNames are currently present in the
