@@ -298,6 +298,11 @@ func AddTitleToGroup(db store.Store, ctx context.Context, groupId, titleId, user
 //   - ErrInvalidSeasonValue: if season is provided and is less than or equal to zero
 //   - ErrSeasonDoesNotExist: if season is provided but doesn't exist in the title
 //   - ErrUpdatingWatchedAtWhenWatchedIsFalse: if trying to update watchedAt when watched is false
+//
+// Alongside the updated title it returns the WatchedChange the call produced —
+// the addressed state before and after — since both halves are only knowable
+// here, and the activity feed needs them to tell "marked watched" from "moved
+// the date".
 func UpdateGroupTitleWatched(
 	db store.Store,
 	ctx context.Context,
@@ -307,7 +312,7 @@ func UpdateGroupTitleWatched(
 	watched *bool,
 	watchedAt *generics.FlexibleDate,
 	season *int,
-) (GroupTitle, error) {
+) (GroupTitle, WatchedChange, error) {
 	if season != nil {
 		return updateGroupTitleWatchedForTVSeries(db, ctx, groupId, title, userId, watched, watchedAt, season)
 	}
@@ -335,25 +340,29 @@ func updateGroupTitleWatchedForMovie(
 	userId string,
 	watched *bool,
 	watchedAt *generics.FlexibleDate,
-) (GroupTitle, error) {
+) (GroupTitle, WatchedChange, error) {
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrGroupNotFound
+			return GroupTitle{}, WatchedChange{}, ErrGroupNotFound
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
 
 	titleDb, exists := groupDb.Titles[title.Id]
 	if !exists {
-		return GroupTitle{}, ErrTitleNotInGroup
+		return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 	}
+
+	// The row just read is the only chance to see the state the update is
+	// about to overwrite, so capture it here rather than re-reading afterwards.
+	previous := WatchedState{Watched: titleDb.Watched, WatchedAt: titleDb.WatchedAt}
 
 	// Don't allow updating watchedAt if watched is set to false or when title is not watched
 	watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
 	watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
 	if !titleDb.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
-		return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
+		return GroupTitle{}, WatchedChange{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
 	}
 
 	// If the request comes with the watched field set to false, clear the watchedAt field.
@@ -365,11 +374,16 @@ func updateGroupTitleWatchedForMovie(
 	groupTitleItem, err := db.UpdateGroupTitleWatchedForMovie(ctx, groupId, title.Id, watched, watchedAt)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrTitleNotInGroup
+			return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
-	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
+
+	change := WatchedChange{
+		Current:  WatchedState{Watched: groupTitleItem.Watched, WatchedAt: groupTitleItem.WatchedAt},
+		Previous: previous,
+	}
+	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), change, nil
 }
 
 // updateGroupTitleWatchedForTVSeries handles watched status updates for TV series seasons.
@@ -397,15 +411,15 @@ func updateGroupTitleWatchedForTVSeries(
 	watched *bool,
 	watchedAt *generics.FlexibleDate,
 	season *int,
-) (GroupTitle, error) {
+) (GroupTitle, WatchedChange, error) {
 	// 1. Validate season value
 	if *season <= 0 {
-		return GroupTitle{}, ErrInvalidSeasonValue
+		return GroupTitle{}, WatchedChange{}, ErrInvalidSeasonValue
 	}
 
 	// 2. Check if title is a TV series
 	if title.Type != "tvSeries" && title.Type != "tvMiniSeries" {
-		return GroupTitle{}, ErrSeasonDoesNotExist
+		return GroupTitle{}, WatchedChange{}, ErrSeasonDoesNotExist
 	}
 
 	// 3. Check if the season exists in the title
@@ -418,21 +432,26 @@ func updateGroupTitleWatchedForTVSeries(
 		}
 	}
 	if !seasonExists {
-		return GroupTitle{}, ErrSeasonDoesNotExist
+		return GroupTitle{}, WatchedChange{}, ErrSeasonDoesNotExist
 	}
 
 	groupDb, err := db.GetGroupById(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrGroupNotFound
+			return GroupTitle{}, WatchedChange{}, ErrGroupNotFound
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
 
 	titleDb, exists := groupDb.Titles[title.Id]
 	if !exists {
-		return GroupTitle{}, ErrTitleNotInGroup
+		return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 	}
+
+	// The season row about to be overwritten. A season nobody has touched yet
+	// has no row at all, which is the same story the feed tells as an unwatched
+	// one: not watched, no date.
+	previous := seasonWatchedState(titleDb.SeasonsWatched, seasonAsString)
 
 	// 4. For TV series seasons, validate watchedAt rules
 	if titleDb.SeasonsWatched != nil {
@@ -442,7 +461,7 @@ func updateGroupTitleWatchedForTVSeries(
 			watchedAtUpdateNotAllowedFalse := watchedAt != nil && watchedAt.Time != nil && watched != nil && !*watched
 			watchedAtUpdateNotAllowedNil := watchedAt != nil && watchedAt.Time != nil && watched == nil
 			if !existingSeason.Watched && (watchedAtUpdateNotAllowedFalse || watchedAtUpdateNotAllowedNil) {
-				return GroupTitle{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
+				return GroupTitle{}, WatchedChange{}, ErrUpdatingWatchedAtWhenWatchedIsFalse
 			}
 		}
 	}
@@ -456,11 +475,33 @@ func updateGroupTitleWatchedForTVSeries(
 	groupTitleItem, err := db.UpdateGroupTitleWatchedForTVSeries(ctx, groupId, title.Id, watched, watchedAt, *season, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return GroupTitle{}, ErrTitleNotInGroup
+			return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup
 		}
-		return GroupTitle{}, err
+		return GroupTitle{}, WatchedChange{}, err
 	}
-	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), nil
+
+	// The season's own resulting state, not the title's: the store recomputes
+	// the top-level watched/watchedAt across every season, so those describe
+	// the series as a whole and would misreport a single season's change.
+	change := WatchedChange{
+		Current:  seasonWatchedState(groupTitleItem.SeasonsWatched, seasonAsString),
+		Previous: previous,
+	}
+	return MapDbGroupTitleToApiGroupTitle(*groupTitleItem), change, nil
+}
+
+// seasonWatchedState reads one season out of a title's per-season map. A nil
+// map, or a season with no row in it, reads as not watched with no date — the
+// state a season starts in before anyone records anything against it.
+func seasonWatchedState(seasons *models.SeasonsWatched, season string) WatchedState {
+	if seasons == nil {
+		return WatchedState{}
+	}
+	item, ok := (*seasons)[season]
+	if !ok {
+		return WatchedState{}
+	}
+	return WatchedState{Watched: item.Watched, WatchedAt: item.WatchedAt}
 }
 
 func RemoveTitleFromGroup(db store.Store, ctx context.Context, groupId, titleId, userId string) error {

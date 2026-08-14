@@ -22,6 +22,7 @@ package activity
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 const (
@@ -94,9 +95,39 @@ func TitleRemoved(groupId, titleId, titleName string) Event {
 	return Event{GroupId: groupId, Kind: KindTitleRemoved, TitleId: tid, TitleName: tname}
 }
 
-func TitleWatchedChanged(groupId, titleId, titleName string, watched bool, season *int) Event {
+// WatchedState is one side of a watched change: the flag, and the date it was
+// watched when there is one. It is scoped to whatever the request addressed —
+// the title as a whole for a movie, a single season for a series.
+type WatchedState struct {
+	Watched   bool
+	WatchedAt *time.Time
+}
+
+// TitleWatchedChanged carries both sides of the change, not just the result,
+// because one kind has to cover several distinct sentences and only the
+// before/after pair separates them: marked watched, marked not watched, a date
+// added where there was none, a date changed from one day to another. A payload
+// of {watched} alone made "marked as watched" and "moved the date" identical on
+// the wire, which is the defect this fixes.
+//
+// previousNote on RatingUpdated is the same idea; previousWatched and
+// previousWatchedAt follow its naming.
+//
+// The two dates are only present when they exist, so the frontend can test for
+// presence rather than for a zero time: no watchedAt means the resulting state
+// carries no date, no previousWatchedAt means there was none before.
+func TitleWatchedChanged(groupId, titleId, titleName string, current, previous WatchedState, season *int) Event {
 	tid, tname := title(titleId, titleName)
-	p := map[string]any{"watched": watched}
+	p := map[string]any{
+		"watched":         current.Watched,
+		"previousWatched": previous.Watched,
+	}
+	if current.WatchedAt != nil {
+		p["watchedAt"] = *current.WatchedAt
+	}
+	if previous.WatchedAt != nil {
+		p["previousWatchedAt"] = *previous.WatchedAt
+	}
 	if season != nil {
 		p["season"] = *season
 	}

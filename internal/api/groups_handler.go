@@ -401,7 +401,7 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	groupTitle, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, title, currentUser.Id, req.Watched, req.WatchedAt, req.Season)
+	groupTitle, change, err := groups.UpdateGroupTitleWatched(api.Db, r.Context(), groupId, title, currentUser.Id, req.Watched, req.WatchedAt, req.Season)
 	if err != nil {
 		if statusCode, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, statusCode, formatErrorMessage(err))
@@ -412,7 +412,13 @@ func (api *API) UpdateGroupTitleWatched(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	activity.Record(r.Context(), activity.TitleWatchedChanged(groupId, req.TitleId, title.PrimaryTitle, groupTitle.Watched, req.Season))
+	// The change, not groupTitle: for a season-scoped update the title's own
+	// watched flag is a rollup over every season, and the event has to describe
+	// the season that was actually changed.
+	activity.Record(r.Context(), activity.TitleWatchedChanged(groupId, req.TitleId, title.PrimaryTitle,
+		activity.WatchedState{Watched: change.Current.Watched, WatchedAt: change.Current.WatchedAt},
+		activity.WatchedState{Watched: change.Previous.Watched, WatchedAt: change.Previous.WatchedAt},
+		req.Season))
 
 	respondWithJSON(w, http.StatusOK, groupTitle)
 }
