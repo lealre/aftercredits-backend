@@ -30,13 +30,21 @@
 -- depend on a Postgres subtlety a reader would have to know to trust it,
 -- where an explicit round(x, 1) is legible on its own and costs nothing.
 --
--- The cast order matters, matching the trap 006's own comment records: a
--- REAL column cast straight to numeric (`note::numeric`) takes float4's
--- shortest-round-trip decimal, so an honestly-stored 6.7 casts to exactly
--- 6.7 and round(...,1) on it is a no-op. Casting through double precision
--- first (float4 -> float8 -> numeric) would widen 6.7 to
--- 6.699999809265137 before rounding ever saw it, reopening on every
--- deploy the exact bug this migration exists to close.
+-- The cast is written `note::numeric` rather than through double precision
+-- deliberately, though not because the alternative would break this
+-- statement. A REAL cast straight to numeric takes float4's
+-- shortest-round-trip decimal, so a stored 6.7 casts to exactly 6.7 and the
+-- round() is a no-op; going via float8 would widen it to 6.699999809265137
+-- first. Checked against every distinct note in a real database, both orders
+-- produce identical results here, because the explicit round(...,1) absorbs
+-- the widening either way.
+--
+-- The trap is real, but it belongs to 006, whose WHERE clause compared the
+-- two sides WITHOUT rounding and so matched every already-correct row and
+-- rewrote it on every run. Naming it here is worth doing — the same
+-- expression appears in both files and a reader will wonder — but claiming
+-- this statement depends on it would overstate the danger. The direct cast
+-- is simply the one that needs no rounding to be correct.
 --
 -- This is necessarily a full table rewrite — Postgres has no incremental
 -- path for a column type change — same as every other ALTER COLUMN TYPE in
