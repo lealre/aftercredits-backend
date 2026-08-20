@@ -8,13 +8,13 @@ type Rating struct {
 	SeasonsRatings *SeasonsRatings `json:"seasonsRatings,omitempty"`
 	UserId         string          `json:"userId"`
 	GroupId        string          `json:"groupId"`
-	Note           float32         `json:"note"`
+	Note           float64         `json:"note"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`
 }
 
 type SeasonRating struct {
-	Rating    float32   `json:"rating"`
+	Rating    float64   `json:"rating"`
 	AddedAt   time.Time `json:"addedAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -24,12 +24,12 @@ type SeasonsRatings map[string]SeasonRating
 type NewRating struct {
 	GroupId string  `json:"groupId"`
 	TitleId string  `json:"titleId"`
-	Note    float32 `json:"note"`
+	Note    float64 `json:"note"`
 	Season  *int    `json:"season,omitempty"`
 }
 
 type UpdateRatingRequest struct {
-	Note   float32 `json:"note"`
+	Note   float64 `json:"note"`
 	Season *int    `json:"season,omitempty"`
 }
 

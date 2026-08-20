@@ -1814,16 +1814,16 @@ func TestGroupTitlesSeriesRatingAndWatchedAggregation(t *testing.T) {
 
 	// Add ratings for seasons 1, 2 and 3
 	season1, season2, season3 := 1, 2, 3
-	noteSeason1 := float32(4)
-	noteSeason2 := float32(8)
-	noteSeason3 := float32(10)
+	noteSeason1 := float64(4)
+	noteSeason2 := float64(8)
+	noteSeason3 := float64(10)
 	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason1, &season1, tokenOwnerUser)
 	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason2, &season2, tokenOwnerUser)
 	_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, noteSeason3, &season3, tokenOwnerUser)
 
 	// The mean of the season ratings, rounded to one decimal as every stored
 	// note is: (4+8+10)/3 is 7.333… and is stored as 7.3.
-	expectedAverageRating := float32(7.3)
+	expectedAverageRating := float64(7.3)
 
 	// Mark all three seasons as watched, with season 2's watchedAt being the most recent
 	watched := true
@@ -2621,12 +2621,12 @@ func TestGetGroupTitleById(t *testing.T) {
 			"the rating listed for group A must be the one created in group A")
 		require.Equal(t, world.groupA.Id, detailGroupA.GroupRatings[0].GroupId,
 			"every rating listed for group A must be attributed to group A")
-		require.Equal(t, float32(7), detailGroupA.GroupRatings[0].Note,
+		require.Equal(t, float64(7), detailGroupA.GroupRatings[0].Note,
 			"the rating listed for group A must carry group A's note")
 
 		detailGroupB := getGroupTitleById(t, world.groupB.Id, world.movie.ID, world.token)
 		listedIds := []string{}
-		listedNotes := []float32{}
+		listedNotes := []float64{}
 		for _, rating := range detailGroupB.GroupRatings {
 			require.Equal(t, world.groupB.Id, rating.GroupId,
 				"every rating listed for group B must be attributed to group B")
@@ -2635,7 +2635,7 @@ func TestGetGroupTitleById(t *testing.T) {
 		}
 		require.ElementsMatch(t, []string{ratingGroupB.Id, ratingOtherUserGroupB.Id}, listedIds,
 			"reading the title through group B must carry both of group B's ratings and nothing from group A")
-		require.ElementsMatch(t, []float32{3, 10}, listedNotes,
+		require.ElementsMatch(t, []float64{3, 10}, listedNotes,
 			"group B's ratings must keep their own notes")
 	})
 

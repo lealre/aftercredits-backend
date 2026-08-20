@@ -3,7 +3,7 @@ package models
 import "time"
 
 type SeasonRatingItem struct {
-	Rating    float32
+	Rating    float64
 	AddedAt   time.Time
 	UpdatedAt time.Time
 }
@@ -23,7 +23,7 @@ type UserRating struct {
 	SeasonsRatings *SeasonsRatings
 	UserId         string
 	GroupId        string
-	Note           float32
+	Note           float64
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

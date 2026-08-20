@@ -96,7 +96,7 @@ func addRating(t *testing.T, newRating ratings.NewRating, innerToken string) *ht
 	return resp
 }
 
-func addRatingAndGetResult(t *testing.T, groupId, titleId string, note float32, season *int, token string) ratings.Rating {
+func addRatingAndGetResult(t *testing.T, groupId, titleId string, note float64, season *int, token string) ratings.Rating {
 	newRating := ratings.NewRating{
 		GroupId: groupId,
 		TitleId: titleId,
@@ -221,10 +221,10 @@ func countRatings(t *testing.T) int {
 
 // getSeasonRating returns one stored season rating straight from the table, for
 // assertions about the value that was actually persisted.
-func getSeasonRating(t *testing.T, ratingId string, season int) float32 {
+func getSeasonRating(t *testing.T, ratingId string, season int) float64 {
 	t.Helper()
 
-	var v float32
+	var v float64
 	require.NoError(t, testPool.QueryRow(context.Background(),
 		"SELECT rating FROM rating_seasons WHERE rating_id = $1 AND season = $2",
 		ratingId, strconv.Itoa(season)).Scan(&v), "error querying a season rating from db")
@@ -232,10 +232,12 @@ func getSeasonRating(t *testing.T, ratingId string, season int) float32 {
 }
 
 // insertRawRating writes a rating row with the given note directly, bypassing
-// the service. The write path now rejects two-decimal notes, so a row in the
-// state migration 006 has to repair can only be produced this way — which is
-// exactly the point: these are rows that predate the enforcement.
-func insertRawRating(t *testing.T, ratingId, titleId, userId, groupId string, note float32) {
+// the service. The write path rejects a note with more than one decimal, so
+// this is the only way to get a value onto a rating that the service itself
+// would refuse — historically what a pre-006 REAL row looked like; since 009,
+// the note column is NUMERIC(3,1), so any excess decimal in note is rounded
+// on the way in by Postgres itself, not by anything this helper does.
+func insertRawRating(t *testing.T, ratingId, titleId, userId, groupId string, note float64) {
 	t.Helper()
 
 	_, err := testPool.Exec(context.Background(),
@@ -245,7 +247,7 @@ func insertRawRating(t *testing.T, ratingId, titleId, userId, groupId string, no
 	require.NoError(t, err, "error inserting a raw rating row")
 }
 
-func insertRawSeasonRating(t *testing.T, ratingId string, season int, rating float32) {
+func insertRawSeasonRating(t *testing.T, ratingId string, season int, rating float64) {
 	t.Helper()
 
 	_, err := testPool.Exec(context.Background(),

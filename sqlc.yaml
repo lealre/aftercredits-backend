@@ -10,3 +10,17 @@ sql:
         sql_package: "pgx/v5"
         emit_json_tags: false
         emit_interface: false
+        overrides:
+          # Default pgx/v5 mapping for numeric is pgtype.Numeric, a
+          # decimal-string-backed struct with no natural JSON rendering (it
+          # marshals as {"Int":...,"Exp":...}) and no arithmetic without a
+          # conversion step at every call site. A plain float64 is what
+          # rating_aggregate (DOUBLE PRECISION) already uses end to end, and
+          # pgx/v5's default type map wraps a bare *float64 target for the
+          # numeric codec the same way it wraps one for float8 — no manual
+          # Scan/Value glue needed, and encoding/json prints a float64 with
+          # the shortest decimal that round-trips to it, so a value read back
+          # from NUMERIC(3,1) renders as "5.6", not "5.5999..." and not a
+          # struct.
+          - db_type: "pg_catalog.numeric"
+            go_type: "float64"

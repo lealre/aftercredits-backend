@@ -1,3 +1,30 @@
+<a name="unreleased"></a>
+## Unreleased
+
+A rating note is now stored exactly, closing the class of bug behind the
+activity feed line that once read "...with note 5.599999904632568".
+
+* **`ratings.note` and `rating_seasons.rating` are `NUMERIC(3,1)`, not `REAL`.**
+  A one-decimal note (the only kind the write path accepts) could never be
+  represented exactly by `REAL` (float32) — `5.6` was stored as
+  `5.5999999046325684` — so every read was one widening away from leaking the
+  binary expansion, as it did in a feed line. Migration 006 repaired the
+  *values* this uncovered; this migration (009) finishes the job by changing
+  the *type*, so the class of bug cannot reopen no matter what writes it
+  going forward
+* **Migration 009** converts both columns, rounding as it goes so any
+  residual float32 noise written since 006 is resolved rather than carried
+  across as an exact-looking number that is still a hair off
+* The note now travels the whole read path — API responses and activity feed
+  payloads alike — as a plain, exact number. A rating's JSON always renders
+  its note as a clean decimal (`5.6`), never as a widened float and never as
+  a raw numeric-object shape
+* A side effect worth knowing: comparing a note with a bare equality
+  predicate (`WHERE note = 5.6`) used to silently match nothing, because
+  comparing `REAL` to a decimal literal promoted both sides to double
+  precision and the widened stored value no longer matched the clean
+  literal. That is fixed too — the comparison is exact now
+
 <a name="v0.1.3"></a>
 ## [v0.1.3](https://github.com/lealre/aftercredits-backend/compare/v0.1.2...v0.1.3) (2026-08-14)
 

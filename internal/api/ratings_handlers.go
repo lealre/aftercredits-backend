@@ -226,7 +226,7 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 
 	// rating was fetched before the delete above, so its SeasonsRatings still
 	// holds the value that is being removed.
-	var previousNote float32
+	var previousNote float64
 	if rating.SeasonsRatings != nil {
 		if seasonRating, ok := (*rating.SeasonsRatings)[seasonStr]; ok {
 			previousNote = seasonRating.Rating

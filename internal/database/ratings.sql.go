@@ -234,7 +234,7 @@ type InsertRatingParams struct {
 	TitleID   string
 	UserID    string
 	GroupID   string
-	Note      float32
+	Note      float64
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
@@ -273,7 +273,7 @@ INSERT INTO rating_seasons (
 type InsertRatingSeasonParams struct {
 	RatingID  string
 	Season    string
-	Rating    float32
+	Rating    float64
 	AddedAt   pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
@@ -299,7 +299,7 @@ RETURNING id, title_id, user_id, note, created_at, updated_at, group_id
 type UpdateRatingRowParams struct {
 	ID        string
 	UserID    string
-	Note      float32
+	Note      float64
 	UpdatedAt pgtype.Timestamptz
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"testing"
@@ -47,7 +48,7 @@ func TestGetRatingById(t *testing.T) {
 	}, tokenOwnerUser)
 
 	// Add a rating
-	ratingCreated := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(7), nil, tokenOwnerUser)
+	ratingCreated := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float64(7), nil, tokenOwnerUser)
 
 	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
@@ -77,7 +78,7 @@ func TestGetRatingById(t *testing.T) {
 		require.Equal(t, ratingCreated.Id, respRating.Id)
 		require.Equal(t, user.Id, respRating.UserId)
 		require.Equal(t, expectedMovieTitle.ID, respRating.TitleId)
-		require.Equal(t, float32(7), respRating.Note)
+		require.Equal(t, float64(7), respRating.Note)
 		require.NotEmpty(t, respRating.CreatedAt)
 		require.NotEmpty(t, respRating.UpdatedAt)
 	})
@@ -168,7 +169,7 @@ func TestAddRating(t *testing.T) {
 	// =========================================================
 
 	t.Run("Adding a rating for a movie title sucessfully", func(t *testing.T) {
-		expectedNote := float32(5)
+		expectedNote := float64(5)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
 			TitleId: expectedMovieTitle.ID,
@@ -197,7 +198,7 @@ func TestAddRating(t *testing.T) {
 	})
 
 	t.Run("Adding a rating for a movie title twice should return 409", func(t *testing.T) {
-		expectedNote := float32(8)
+		expectedNote := float64(8)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
 			TitleId: expectedMovieTitle.ID,
@@ -214,7 +215,7 @@ func TestAddRating(t *testing.T) {
 	})
 
 	t.Run("Adding a rating for a movie title not in group should return 404", func(t *testing.T) {
-		expectedNote := float32(5)
+		expectedNote := float64(5)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
 			TitleId: expectedMovieTitleNotIngroup.ID,
@@ -231,7 +232,7 @@ func TestAddRating(t *testing.T) {
 	})
 
 	t.Run("Adding a rating for a movie title not being from group should return 404", func(t *testing.T) {
-		expectedNote := float32(5)
+		expectedNote := float64(5)
 		newRating := ratings.NewRating{
 			GroupId: group.Id,
 			TitleId: expectedMovieTitle.ID,
@@ -248,7 +249,7 @@ func TestAddRating(t *testing.T) {
 	})
 
 	t.Run("Add a rating for a movie title with notes not between 0 and 10 should return 400", func(t *testing.T) {
-		expectedNotes := []float32{-5, 11}
+		expectedNotes := []float64{-5, 11}
 
 		for _, note := range expectedNotes {
 			newRating := ratings.NewRating{
@@ -271,9 +272,9 @@ func TestAddRating(t *testing.T) {
 	// 		TEST ADDING RATINGS - TV SERIES
 	// =========================================================
 
-	expectedNoteSeasonOne := float32(5)
-	expectedNoteSeasonTwo := float32(8)
-	expectedNoteSeasonThree := float32(10)
+	expectedNoteSeasonOne := float64(5)
+	expectedNoteSeasonTwo := float64(8)
+	expectedNoteSeasonThree := float64(10)
 
 	t.Run("Adding a rating for a TV series for the first time should create a new rating sucessfully", func(t *testing.T) {
 		expectedSeason := 1
@@ -322,8 +323,8 @@ func TestAddRating(t *testing.T) {
 		// We expect to see the overall rating updated to the mean of all seasons ratings, and the additional season rating added.
 		seasonTests := []struct {
 			season          int
-			expectedNote    float32
-			expectedOverall float32
+			expectedNote    float64
+			expectedOverall float64
 		}{
 			// The overall note is the mean of the season ratings, rounded to
 			// one decimal like every other note. (5+8)/2 is already 6.5;
@@ -489,13 +490,13 @@ func TestUpdateRating(t *testing.T) {
 	})
 
 	// Add a rating for the movie
-	ratingToUpdateMovie := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(5), nil, tokenOwnerUser)
+	ratingToUpdateMovie := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float64(5), nil, tokenOwnerUser)
 
 	// Add ratings for the TV series (season 1 and season 2)
 	season1 := 1
 	season2 := 2
-	season1Note := float32(5)
-	season2Note := float32(8)
+	season1Note := float64(5)
+	season2Note := float64(8)
 	ratingToUpdateTVSeriesSeason1 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, season1Note, &season1, tokenOwnerUser)
 	ratingToUpdateTVSeriesSeason2 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, season2Note, &season2, tokenOwnerUser)
 	// These variables are available for future TV series update tests
@@ -510,7 +511,7 @@ func TestUpdateRating(t *testing.T) {
 	// =========================================================
 
 	t.Run("Update a movie rating sucessfully", func(t *testing.T) {
-		expectedNewNote := float32(10)
+		expectedNewNote := float64(10)
 		updateRequestRating := ratings.UpdateRatingRequest{
 			Note: expectedNewNote,
 		}
@@ -539,7 +540,7 @@ func TestUpdateRating(t *testing.T) {
 	})
 
 	t.Run("Update a movie rating from other user should return 404", func(t *testing.T) {
-		expectedNewNote := float32(10)
+		expectedNewNote := float64(10)
 		updateRequestRating := ratings.UpdateRatingRequest{
 			Note: expectedNewNote,
 		}
@@ -555,7 +556,7 @@ func TestUpdateRating(t *testing.T) {
 	})
 
 	t.Run("Update a movie rating with notes not between 0 and 10 should return 400", func(t *testing.T) {
-		expectedNotes := []float32{-5, 11}
+		expectedNotes := []float64{-5, 11}
 
 		for _, note := range expectedNotes {
 			updateRequestRating := ratings.UpdateRatingRequest{
@@ -580,29 +581,29 @@ func TestUpdateRating(t *testing.T) {
 		name         string
 		season       int
 		ratingId     string
-		newNote      float32
-		expectedNote func(seasonsRatings *ratings.SeasonsRatings) float32
+		newNote      float64
+		expectedNote func(seasonsRatings *ratings.SeasonsRatings) float64
 	}{
 		{
 			name:     "season 1",
 			season:   season1,
 			ratingId: ratingToUpdateTVSeriesSeason1.Id,
-			newNote:  float32(10),
-			expectedNote: func(seasonsRatings *ratings.SeasonsRatings) float32 {
-				return (float32(10) + season2Note) / 2
+			newNote:  float64(10),
+			expectedNote: func(seasonsRatings *ratings.SeasonsRatings) float64 {
+				return (float64(10) + season2Note) / 2
 			},
 		},
 		{
 			name:     "season 2",
 			season:   season2,
 			ratingId: ratingToUpdateTVSeriesSeason2.Id,
-			newNote:  float32(3),
-			expectedNote: func(seasonsRatings *ratings.SeasonsRatings) float32 {
-				var sum float32
+			newNote:  float64(3),
+			expectedNote: func(seasonsRatings *ratings.SeasonsRatings) float64 {
+				var sum float64
 				for _, seasonRating := range *seasonsRatings {
 					sum += seasonRating.Rating
 				}
-				return sum / float32(len(*seasonsRatings))
+				return sum / float64(len(*seasonsRatings))
 			},
 		},
 	}
@@ -656,7 +657,7 @@ func TestUpdateRating(t *testing.T) {
 		for _, season := range invalidSeasons {
 			invalidSeason := season
 			updateRequestRating := ratings.UpdateRatingRequest{
-				Note:   float32(10),
+				Note:   float64(10),
 				Season: &invalidSeason,
 			}
 
@@ -673,7 +674,7 @@ func TestUpdateRating(t *testing.T) {
 	t.Run("Update a TV series rating with season that has no rating should return 404", func(t *testing.T) {
 		seasonWithoutRating := 3
 		updateRequestRating := ratings.UpdateRatingRequest{
-			Note:   float32(10),
+			Note:   float64(10),
 			Season: &seasonWithoutRating,
 		}
 
@@ -688,7 +689,7 @@ func TestUpdateRating(t *testing.T) {
 
 	t.Run("Update a TV series rating without season value in request should return 400", func(t *testing.T) {
 		updateRequestRating := ratings.UpdateRatingRequest{
-			Note: float32(10),
+			Note: float64(10),
 		}
 
 		respUpdatedRating := updateRating(t, updateRequestRating, ratingToUpdateTVSeriesSeason1.Id, tokenOwnerUser)
@@ -748,7 +749,7 @@ func TestDeleteRating(t *testing.T) {
 
 	t.Run("Deleting a movie rating successfully", func(t *testing.T) {
 		// Add a rating for the movie
-		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(5), nil, tokenOwnerUser)
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float64(5), nil, tokenOwnerUser)
 
 		// Delete the rating
 		respDeleted := deleteRating(t, ratingToDelete.Id, tokenOwnerUser)
@@ -779,7 +780,7 @@ func TestDeleteRating(t *testing.T) {
 
 	t.Run("Deleting a rating that belongs to another user should return 404", func(t *testing.T) {
 		// Add a rating for the movie by the owner
-		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float32(5), nil, tokenOwnerUser)
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float64(5), nil, tokenOwnerUser)
 
 		// Try to delete it with another user's token
 		respDeleted := deleteRating(t, ratingToDelete.Id, tokenUserNotInGroup)
@@ -799,8 +800,8 @@ func TestDeleteRating(t *testing.T) {
 		// Add ratings for TV series (season 1 and season 2)
 		season1 := 1
 		season2 := 2
-		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(5), &season1, tokenOwnerUser)
-		_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(8), &season2, tokenOwnerUser)
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float64(5), &season1, tokenOwnerUser)
+		_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float64(8), &season2, tokenOwnerUser)
 
 		// Delete the entire rating
 		respDeleted := deleteRating(t, ratingToDelete.Id, tokenOwnerUser)
@@ -831,8 +832,8 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		noteGroupA := float32(7)
-		noteGroupB := float32(3)
+		noteGroupA := float64(7)
+		noteGroupB := float64(3)
 
 		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, noteGroupA, nil, world.token)
 		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
@@ -862,9 +863,9 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		noteGroupA := float32(7)
-		noteGroupB := float32(3)
-		noteOtherUserGroupB := float32(10)
+		noteGroupA := float64(7)
+		noteGroupB := float64(3)
+		noteOtherUserGroupB := float64(10)
 
 		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, noteGroupA, nil, world.token)
 		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
@@ -890,7 +891,7 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 			"Expected group B's title detail to carry both of its own members' ratings and nothing from group A")
 
 		listedIds := []string{}
-		listedNotes := []float32{}
+		listedNotes := []float64{}
 		for _, rating := range detailGroupB.GroupRatings {
 			require.Equal(t, world.groupB.Id, rating.GroupId,
 				"Expected every rating listed for group B to be attributed to group B")
@@ -899,7 +900,7 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 		}
 		require.ElementsMatch(t, []string{ratingGroupB.Id, ratingOtherUserGroupB.Id}, listedIds,
 			"Expected group B's title detail to list exactly the two ratings left in group B")
-		require.ElementsMatch(t, []float32{noteGroupB, noteOtherUserGroupB}, listedNotes,
+		require.ElementsMatch(t, []float64{noteGroupB, noteOtherUserGroupB}, listedNotes,
 			"Expected group B's title detail to carry group B's notes")
 	})
 
@@ -907,13 +908,13 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		_ = addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, float32(7), nil, world.token)
+		_ = addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, float64(7), nil, world.token)
 
 		// A rating in another group is a different fact, not a duplicate.
 		respSecondGroup := addRating(t, ratings.NewRating{
 			GroupId: world.groupB.Id,
 			TitleId: world.movie.ID,
-			Note:    float32(3),
+			Note:    float64(3),
 		}, world.token)
 		defer respSecondGroup.Body.Close()
 		require.Equal(t, http.StatusCreated, respSecondGroup.StatusCode,
@@ -923,7 +924,7 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 		respSameGroup := addRating(t, ratings.NewRating{
 			GroupId: world.groupA.Id,
 			TitleId: world.movie.ID,
-			Note:    float32(9),
+			Note:    float64(9),
 		}, world.token)
 		defer respSameGroup.Body.Close()
 		require.Equal(t, http.StatusConflict, respSameGroup.StatusCode,
@@ -943,12 +944,12 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		noteGroupA := float32(7)
-		noteGroupB := float32(3)
+		noteGroupA := float64(7)
+		noteGroupB := float64(3)
 		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, noteGroupA, nil, world.token)
 		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
 
-		updatedNote := float32(1)
+		updatedNote := float64(1)
 		respUpdated := updateRating(t, ratings.UpdateRatingRequest{Note: updatedNote}, ratingGroupA.Id, world.token)
 		defer respUpdated.Body.Close()
 		require.Equal(t, http.StatusOK, respUpdated.StatusCode, "Expected group A's rating to be updated")
@@ -976,8 +977,8 @@ func TestRatingsAreGroupScoped(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		noteGroupB := float32(3)
-		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, float32(7), nil, world.token)
+		noteGroupB := float64(3)
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.movie.ID, float64(7), nil, world.token)
 		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.movie.ID, noteGroupB, nil, world.token)
 
 		respDeleted := deleteRating(t, ratingGroupA.Id, world.token)
@@ -1010,9 +1011,9 @@ func TestRatingsForTVSeriesAreGroupScoped(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		noteGroupASeason1 := float32(4)
-		noteGroupBSeason1 := float32(10)
-		noteGroupBSeason2 := float32(8)
+		noteGroupASeason1 := float64(4)
+		noteGroupBSeason1 := float64(10)
+		noteGroupBSeason2 := float64(8)
 
 		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, noteGroupASeason1, &season1, world.token)
 		ratingGroupBFirst := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, noteGroupBSeason1, &season1, world.token)
@@ -1062,14 +1063,14 @@ func TestRatingsForTVSeriesAreGroupScoped(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		noteGroupASeason1 := float32(4)
+		noteGroupASeason1 := float64(4)
 		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, noteGroupASeason1, &season1, world.token)
-		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float32(10), &season1, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float64(10), &season1, world.token)
 
 		respDuplicate := addRating(t, ratings.NewRating{
 			GroupId: world.groupB.Id,
 			TitleId: world.tvSeries.ID,
-			Note:    float32(6),
+			Note:    float64(6),
 			Season:  &season1,
 		}, world.token)
 		defer respDuplicate.Body.Close()
@@ -1088,16 +1089,16 @@ func TestRatingsForTVSeriesAreGroupScoped(t *testing.T) {
 		require.Len(t, *ratingGroupADb.SeasonsRatings, 1, "Expected group A's seasons to be untouched")
 
 		ratingGroupBDb := getRating(t, ratingGroupB.Id)
-		require.Equal(t, float32(10), ratingGroupBDb.Note, "Expected group B's series rating to keep its original note")
+		require.Equal(t, float64(10), ratingGroupBDb.Note, "Expected group B's series rating to keep its original note")
 	})
 
 	t.Run("Deleting a season rating leaves the other group's series rating intact", func(t *testing.T) {
 		resetDB(t)
 		world := setupTwoGroups(t)
 
-		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, float32(4), &season1, world.token)
-		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float32(10), &season1, world.token)
-		_ = addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float32(8), &season2, world.token)
+		ratingGroupA := addRatingAndGetResult(t, world.groupA.Id, world.tvSeries.ID, float64(4), &season1, world.token)
+		ratingGroupB := addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float64(10), &season1, world.token)
+		_ = addRatingAndGetResult(t, world.groupB.Id, world.tvSeries.ID, float64(8), &season2, world.token)
 
 		// Season 1 is group A's only season, so deleting it removes the whole
 		// group A rating and must not reach group B's season 1.
@@ -1164,8 +1165,8 @@ func TestDeleteRatingSeason(t *testing.T) {
 	// Create a TV series rating with seasons 1 and 2
 	season1 := 1
 	season2 := 2
-	ratingSeason1 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(5), &season1, tokenOwnerUser)
-	ratingSeason2 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(8), &season2, tokenOwnerUser)
+	ratingSeason1 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float64(5), &season1, tokenOwnerUser)
+	ratingSeason2 := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float64(8), &season2, tokenOwnerUser)
 	require.Equal(t, ratingSeason1.Id, ratingSeason2.Id, "Expected same rating id for multiple seasons of the same TV series")
 
 	ratingId := ratingSeason1.Id
@@ -1189,16 +1190,16 @@ func TestDeleteRatingSeason(t *testing.T) {
 		_, ok := (*ratingDb.SeasonsRatings)["1"]
 		require.False(t, ok, "Expected season 1 to be deleted from SeasonsRatings")
 		season2RatingDb := (*ratingDb.SeasonsRatings)["2"]
-		require.Equal(t, float32(8), season2RatingDb.Rating)
+		require.Equal(t, float64(8), season2RatingDb.Rating)
 		require.NotEmpty(t, season2RatingDb.AddedAt)
 		require.NotEmpty(t, season2RatingDb.UpdatedAt)
 		// Overall rating should be recalculated (only season 2 remains)
-		require.Equal(t, float32(8), ratingDb.Note)
+		require.Equal(t, float64(8), ratingDb.Note)
 	})
 
 	t.Run("Deleting last season should delete the whole rating document", func(t *testing.T) {
 		onlySeason := 1
-		ratingOnlySeason := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle2.ID, float32(7), &onlySeason, tokenOwnerUser)
+		ratingOnlySeason := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle2.ID, float64(7), &onlySeason, tokenOwnerUser)
 
 		respDeleted := deleteRatingSeason(t, ratingOnlySeason.Id, tokenOwnerUser, onlySeason)
 		defer respDeleted.Body.Close()
@@ -1250,7 +1251,7 @@ func TestDeleteRatingSeason(t *testing.T) {
 	t.Run("Deleting a season rating that belongs to another user should return 404", func(t *testing.T) {
 		// Add a rating for TV series by the owner
 		season1 := 1
-		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float32(5), &season1, tokenOwnerUser)
+		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float64(5), &season1, tokenOwnerUser)
 
 		// Try to delete it with another user's token
 		respDeleted := deleteRatingSeason(t, ratingToDelete.Id, tokenUserNotInGroup, season1)
@@ -1323,7 +1324,7 @@ func TestRatingNotePrecision(t *testing.T) {
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 		require.Contains(t, body.ErrorMessage, ratings.ErrNoteTooPrecise.Error()[1:])
 
-		require.Equal(t, float32(7.5), getRating(t, rating.Id).Note,
+		require.Equal(t, float64(7.5), getRating(t, rating.Id).Note,
 			"a rejected update must not touch the stored note")
 	})
 
@@ -1342,9 +1343,9 @@ func TestRatingNotePrecision(t *testing.T) {
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 		require.Contains(t, body.ErrorMessage, ratings.ErrNoteTooPrecise.Error()[1:])
 
-		require.Equal(t, float32(7.5), getSeasonRating(t, rating.Id, season),
+		require.Equal(t, float64(7.5), getSeasonRating(t, rating.Id, season),
 			"a rejected update must not touch the stored season rating")
-		require.Equal(t, float32(7.5), getRating(t, rating.Id).Note,
+		require.Equal(t, float64(7.5), getRating(t, rating.Id).Note,
 			"a rejected update must not touch the derived overall note")
 	})
 
@@ -1352,10 +1353,12 @@ func TestRatingNotePrecision(t *testing.T) {
 		resetDB(t)
 		s := seedRatingPrecisionScenario(t)
 
-		// 0 and 10 are the range boundaries; 8.5 is a plain one-decimal value
-		// and 6.7 is one that float32 cannot represent exactly, which the
-		// precision check has to tolerate rather than reject.
-		for _, note := range []float32{0, 10, 8.5, 6.7} {
+		// 0 and 10 are the range boundaries; 8.5 is a plain one-decimal value;
+		// 6.7, 5.6, 8.7 and 0.1 are ones float64 (and, before this migration,
+		// float32) cannot represent exactly in binary, which the precision
+		// check has to tolerate rather than reject, and which the database
+		// must now hand back exactly rather than as a widened approximation.
+		for _, note := range []float64{0, 10, 8.5, 6.7, 5.6, 8.7, 0.1} {
 			resetDB(t)
 			s = seedRatingPrecisionScenario(t)
 
@@ -1365,20 +1368,60 @@ func TestRatingNotePrecision(t *testing.T) {
 		}
 	})
 
+	t.Run("the JSON response renders the note as a clean decimal, not a widened float or a numeric struct", func(t *testing.T) {
+		resetDB(t)
+		s := seedRatingPrecisionScenario(t)
+
+		// Decoding into ratings.Rating (Note float64) would already catch a
+		// value that came back numerically wrong, but it would not show what
+		// actually went over the wire: encoding/json's shortest-round-trip
+		// float64 formatting could still coincidentally decode correctly even
+		// if something upstream were broken, and pgtype.Numeric marshals as
+		// {"Int":...,"Exp":...} rather than erroring, which a float64 target
+		// would reject at decode time rather than reveal. Asserting on the raw
+		// body is what actually pins the wire format: "5.6", never
+		// "5.5999999046325684" and never a struct.
+		resp := addRating(t, ratings.NewRating{
+			GroupId: s.group.Id,
+			TitleId: s.movie.ID,
+			Note:    5.6,
+		}, s.token)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		raw, err := io.ReadAll(resp.Body)
+		require.NoError(t, err, "error reading the raw response body")
+
+		require.Contains(t, string(raw), `"note":5.6`,
+			"the response body must render the note as a clean 5.6, got: %s", string(raw))
+		require.NotContains(t, string(raw), "5.599999",
+			"the response body must not carry a widened float32-origin note")
+		require.NotContains(t, string(raw), `"Int"`,
+			"the response body must not render the note as a pgtype.Numeric struct")
+	})
+
 	t.Run("one-decimal season notes are accepted and stored verbatim", func(t *testing.T) {
 		resetDB(t)
 		s := seedRatingPrecisionScenario(t)
 
 		season := 1
 		rating := addRatingAndGetResult(t, s.group.Id, s.series.ID, 8.5, &season, s.token)
-		require.Equal(t, float32(8.5), getSeasonRating(t, rating.Id, season))
-		require.Equal(t, float32(8.5), getRating(t, rating.Id).Note)
+		require.Equal(t, float64(8.5), getSeasonRating(t, rating.Id, season))
+		require.Equal(t, float64(8.5), getRating(t, rating.Id).Note)
 	})
 
 	t.Run("the derived TV series overall note is rounded to one decimal", func(t *testing.T) {
 		resetDB(t)
 		s := seedRatingPrecisionScenario(t)
 
+		// Since 009, this no longer isolates overallNote's own rounding: the
+		// note column is NUMERIC(3,1), so Postgres rounds any excess scale on
+		// write regardless of whether overallNote already did. The DB-free
+		// pin for that function's own behavior is
+		// internal/services/ratings.TestOverallNote; this test's job is the
+		// end-to-end contract — that a caller reading the response or the row
+		// sees a one-decimal mean, however it got there.
+		//
 		// Three one-decimal season ratings whose mean is not one-decimal:
 		// (5 + 8 + 10) / 3 = 7.666…, which must be stored as 7.7.
 		season1, season2, season3 := 1, 2, 3
@@ -1386,8 +1429,8 @@ func TestRatingNotePrecision(t *testing.T) {
 		addRatingAndGetResult(t, s.group.Id, s.series.ID, 8, &season2, s.token)
 		rating := addRatingAndGetResult(t, s.group.Id, s.series.ID, 10, &season3, s.token)
 
-		require.Equal(t, float32(7.7), rating.Note, "the mean must be rounded in the response")
-		require.Equal(t, float32(7.7), getRating(t, rating.Id).Note, "the mean must be rounded in the database")
+		require.Equal(t, float64(7.7), rating.Note, "the mean must be rounded in the response")
+		require.Equal(t, float64(7.7), getRating(t, rating.Id).Note, "the mean must be rounded in the database")
 
 		// Updating a season re-derives the mean, which must be rounded too:
 		// (5 + 8 + 9) / 3 = 7.333… -> 7.3.
@@ -1395,7 +1438,7 @@ func TestRatingNotePrecision(t *testing.T) {
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		require.Equal(t, float32(7.3), getRating(t, rating.Id).Note,
+		require.Equal(t, float64(7.3), getRating(t, rating.Id).Note,
 			"the re-derived mean must be rounded after an update")
 
 		// Deleting a season re-derives it once more: (5 + 8) / 2 = 6.5.
@@ -1403,48 +1446,54 @@ func TestRatingNotePrecision(t *testing.T) {
 		defer respDelete.Body.Close()
 		require.Equal(t, http.StatusOK, respDelete.StatusCode)
 
-		require.Equal(t, float32(6.5), getRating(t, rating.Id).Note,
+		require.Equal(t, float64(6.5), getRating(t, rating.Id).Note,
 			"the re-derived mean must be rounded after a season delete")
 	})
 }
 
-// Migration 006 repairs the rows written before the write path enforced
-// one-decimal notes. It is exercised here against rows inserted straight into
-// the tables, since the service can no longer produce them.
+// Migration 006 repaired the rows written before the write path enforced
+// one-decimal notes, back when both columns were REAL. 009 changed the
+// column type to NUMERIC(3,1), which enforces the same invariant at the
+// storage layer: Postgres rounds any excess scale to fit a NUMERIC column's
+// declared scale on write, so insertRawRating can no longer even produce a
+// stored two-decimal value the way it could before 009 — the column itself
+// now does what 006's UPDATE used to have to do after the fact.
+//
+// 006's SQL is still exercised here, against today's schema, to pin that it
+// remains a harmless no-op forever rather than something that would need to
+// be dropped: every row it could touch is already at the column's declared
+// scale before the statement ever runs, so it matches nothing, on the first
+// run and every run after.
 func TestRatingRoundingMigration(t *testing.T) {
-	t.Run("rounds existing two-decimal notes and season ratings, and is idempotent", func(t *testing.T) {
+	t.Run("is a no-op against the NUMERIC(3,1) columns 009 introduced, and stays idempotent", func(t *testing.T) {
 		resetDB(t)
 		s := seedRatingPrecisionScenario(t)
 
-		// The two values the live database actually holds, plus a clean value
-		// that the repair must leave alone.
+		// Two-decimal input, same as migration 006 once had to repair after
+		// the fact — but the column now rounds it on the way in.
 		insertRawRating(t, "rating-dirty-1", s.movie.ID, s.user.Id, s.group.Id, 6.75)
 		insertRawRating(t, "rating-dirty-2", s.series.ID, s.user.Id, s.group.Id, 8.92)
 		insertRawSeasonRating(t, "rating-dirty-2", 1, 9.05)
 		insertRawSeasonRating(t, "rating-dirty-2", 2, 7.4)
 
-		affected := runRatingRoundingMigration(t)
-		require.Equal(t, int64(3), affected,
-			"the repair must touch exactly the three two-decimal rows, not the clean one")
-
-		require.Equal(t, float32(6.8), getRating(t, "rating-dirty-1").Note)
-		require.Equal(t, float32(8.9), getRating(t, "rating-dirty-2").Note)
-		require.Equal(t, float32(9.1), getSeasonRating(t, "rating-dirty-2", 1))
-		require.Equal(t, float32(7.4), getSeasonRating(t, "rating-dirty-2", 2),
+		require.Equal(t, float64(6.8), getRating(t, "rating-dirty-1").Note,
+			"NUMERIC(3,1) must round a two-decimal insert to one decimal on write, unaided by any migration")
+		require.Equal(t, float64(8.9), getRating(t, "rating-dirty-2").Note)
+		require.Equal(t, float64(9.1), getSeasonRating(t, "rating-dirty-2", 1))
+		require.Equal(t, float64(7.4), getSeasonRating(t, "rating-dirty-2", 2),
 			"an already one-decimal value must be left exactly as it was")
 
-		// Idempotency: the second run must match no rows at all. The stored
-		// values would look unchanged even if the WHERE were dropped or
-		// mis-written — round(round(x)) is round(x) — so rows-affected is the
-		// assertion with teeth here. It is what catches a WHERE that compares
-		// the REAL column against numeric without casting it, which promotes
-		// both sides to double precision and re-rewrites every clean row.
-		affected = runRatingRoundingMigration(t)
-		require.Equal(t, int64(0), affected, "a second run must match no rows")
+		// Running 006's Up SQL now must match nothing: every value it could
+		// have repaired is already at scale 1 before it runs.
+		affected := runRatingRoundingMigration(t)
+		require.Equal(t, int64(0), affected, "006 must match no rows once the columns are NUMERIC(3,1)")
 
-		require.Equal(t, float32(6.8), getRating(t, "rating-dirty-1").Note)
-		require.Equal(t, float32(8.9), getRating(t, "rating-dirty-2").Note)
-		require.Equal(t, float32(9.1), getSeasonRating(t, "rating-dirty-2", 1))
-		require.Equal(t, float32(7.4), getSeasonRating(t, "rating-dirty-2", 2))
+		affected = runRatingRoundingMigration(t)
+		require.Equal(t, int64(0), affected, "a second run must match no rows either")
+
+		require.Equal(t, float64(6.8), getRating(t, "rating-dirty-1").Note)
+		require.Equal(t, float64(8.9), getRating(t, "rating-dirty-2").Note)
+		require.Equal(t, float64(9.1), getSeasonRating(t, "rating-dirty-2", 1))
+		require.Equal(t, float64(7.4), getSeasonRating(t, "rating-dirty-2", 2))
 	})
 }
