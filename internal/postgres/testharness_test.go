@@ -406,3 +406,108 @@ func TestMigration003BackfillsGroupId(t *testing.T) {
 		}
 	})
 }
+
+// TestMigration009NumericNoteColumns exercises 009 against data seeded while
+// the columns are still REAL, the same "stop before, seed, migrate the rest"
+// shape TestMigration003BackfillsGroupId uses — the only way to prove a type
+// migration repairs pre-existing rows is to create rows in the type it is
+// migrating away from, which a database already sitting at the newest schema
+// cannot do.
+//
+// Two things are checked, both float32-era defects 009 exists to close:
+//
+//   - A row inserted with a genuinely noisy value (rating_seasons.rating =
+//     8.92, two decimals — the shape 006 used to have to repair after the
+//     fact) must come out at exactly one decimal once the column is
+//     NUMERIC(3,1), not merely "close to" it.
+//   - A row inserted with note = 5.6 must be findable by `note = 5.6`.
+//     Before 009 it is not: comparing a REAL column against a bare numeric
+//     literal has no real-numeric operator, so Postgres promotes both sides
+//     to double precision — the stored float32 widens to
+//     5.599999904632568 while the literal stays a clean 5.6 — and the row is
+//     silently invisible to that predicate. This is the same trap 006's own
+//     comment records for its WHERE clause, generalized to any future query,
+//     filter or sort that compares a note. NUMERIC(3,1) removes it because
+//     both sides of the comparison are then the same exact type.
+func TestMigration009NumericNoteColumns(t *testing.T) {
+	ctx := context.Background()
+
+	dsn, terminate, err := startPostgresContainer(ctx)
+	if err != nil {
+		t.Fatalf("failed to start postgres container: %v", err)
+	}
+	defer terminate()
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("failed to open sql.DB: %v", err)
+	}
+	defer db.Close()
+
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("failed to set goose dialect: %v", err)
+	}
+	// 008 is the migration immediately before 009: the schema here still has
+	// ratings.note and rating_seasons.rating as REAL.
+	if err := goose.UpTo(db, schemaDir, 8); err != nil {
+		t.Fatalf("goose up to version 8 failed: %v", err)
+	}
+
+	if _, err := db.Exec(`INSERT INTO groups (id, name, owner_id) VALUES ('g-009', 'g-009', 'u-009')`); err != nil {
+		t.Fatalf("failed to seed group: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO ratings (id, title_id, user_id, group_id, note)
+		VALUES ('r-clean', 't1', 'u-009', 'g-009', 5.6)`); err != nil {
+		t.Fatalf("failed to seed the clean rating: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO ratings (id, title_id, user_id, group_id, note)
+		VALUES ('r-dirty', 't2', 'u-009', 'g-009', 6.75)`); err != nil {
+		t.Fatalf("failed to seed the dirty rating: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO rating_seasons (rating_id, season, rating)
+		VALUES ('r-dirty', '1', 8.92)`); err != nil {
+		t.Fatalf("failed to seed the dirty season rating: %v", err)
+	}
+
+	var preCount int
+	if err := db.QueryRow(`SELECT count(*) FROM ratings WHERE note = 5.6`).Scan(&preCount); err != nil {
+		t.Fatalf("failed to run the equality query before migrating: %v", err)
+	}
+	if preCount != 0 {
+		t.Fatalf("expected `note = 5.6` to match nothing against a REAL column (the double-precision promotion trap), matched %d", preCount)
+	}
+
+	if err := goose.Up(db, schemaDir); err != nil {
+		t.Fatalf("goose up (applying 009 and beyond) failed: %v", err)
+	}
+
+	var postCount int
+	if err := db.QueryRow(`SELECT count(*) FROM ratings WHERE note = 5.6`).Scan(&postCount); err != nil {
+		t.Fatalf("failed to run the equality query after migrating: %v", err)
+	}
+	if postCount != 1 {
+		t.Errorf("expected `note = 5.6` to match the seeded row once note is NUMERIC(3,1), matched %d", postCount)
+	}
+
+	var cleanNote, dirtyNote, dirtySeasonRating float64
+	if err := db.QueryRow(`SELECT note FROM ratings WHERE id = 'r-clean'`).Scan(&cleanNote); err != nil {
+		t.Fatalf("failed to read r-clean's note: %v", err)
+	}
+	if cleanNote != 5.6 {
+		t.Errorf("expected r-clean's note to survive as exactly 5.6, got %v", cleanNote)
+	}
+
+	if err := db.QueryRow(`SELECT note FROM ratings WHERE id = 'r-dirty'`).Scan(&dirtyNote); err != nil {
+		t.Fatalf("failed to read r-dirty's note: %v", err)
+	}
+	if dirtyNote != 6.8 {
+		t.Errorf("expected r-dirty's note (seeded noisy at 6.75) to be rounded to exactly 6.8, got %v", dirtyNote)
+	}
+
+	if err := db.QueryRow(`SELECT rating FROM rating_seasons WHERE rating_id = 'r-dirty' AND season = '1'`).Scan(&dirtySeasonRating); err != nil {
+		t.Fatalf("failed to read the dirty season rating: %v", err)
+	}
+	if dirtySeasonRating != 8.9 {
+		t.Errorf("expected the dirty season rating (seeded noisy at 8.92) to be rounded to exactly 8.9, got %v", dirtySeasonRating)
+	}
+}

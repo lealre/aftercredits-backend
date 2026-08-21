@@ -37,17 +37,22 @@ const notePrecisionTolerance = 1e-3
 // add and on update alike. The request carries one Note field, used as the
 // movie's note or as the season's rating depending on the title type, so
 // validating it here covers both without a per-branch check.
-func validateNote(note float32) error {
+func validateNote(note float64) error {
 	if note < 0 || note > 10 {
 		return ErrInvalidNoteValue
 	}
 
-	// REAL is float32 and most one-decimal values are not exactly
-	// representable (6.7 stores as 6.69999980926513671875), so the test is
-	// "within tolerance of a tenth", not equality. The tolerance sits far
-	// above float32's representation error near 10 (~1e-5 once scaled) and far
-	// below the smallest real violation (8.51 is off by 0.1 scaled).
-	scaled := float64(note) * 10
+	// The stored column is exact (NUMERIC(3,1)) but the value in hand here
+	// never touched it yet: it is a float64 fresh off encoding/json, and most
+	// one-decimal literals are not exactly representable in binary regardless
+	// of width (6.7 decodes to 6.7000000000000002 in float64, just as it did
+	// in float32, only with far smaller error). The test is therefore still
+	// "within tolerance of a tenth", not equality. The tolerance is unchanged
+	// from the float32 era: it sits far above float64's representation error
+	// near 10 (~1e-15) and far below the smallest real violation (8.51 is off
+	// by 0.1 scaled), so it needs no retuning now that the residual it has to
+	// absorb is many orders of magnitude smaller.
+	scaled := note * 10
 	if math.Abs(scaled-math.Round(scaled)) > notePrecisionTolerance {
 		return ErrNoteTooPrecise
 	}
@@ -55,25 +60,25 @@ func validateNote(note float32) error {
 	return nil
 }
 
-func roundToOneDecimal(note float32) float32 {
-	return float32(math.Round(float64(note)*10) / 10)
+func roundToOneDecimal(note float64) float64 {
+	return math.Round(note*10) / 10
 }
 
 // overallNote is the TV series note: the mean of every season rating, rounded
 // back to one decimal. Every path that adds, updates or deletes a season rating
 // recomputes the overall note through here, so the rounding cannot be forgotten
 // on one of them.
-func overallNote(seasonsRatings *models.SeasonsRatings) float32 {
+func overallNote(seasonsRatings *models.SeasonsRatings) float64 {
 	if seasonsRatings == nil || len(*seasonsRatings) == 0 {
 		return 0
 	}
 
-	var sum float32
+	var sum float64
 	for _, seasonRating := range *seasonsRatings {
 		sum += seasonRating.Rating
 	}
 
-	return roundToOneDecimal(sum / float32(len(*seasonsRatings)))
+	return roundToOneDecimal(sum / float64(len(*seasonsRatings)))
 }
 
 // GetRatingsByTitleId returns the ratings left on a title inside a single

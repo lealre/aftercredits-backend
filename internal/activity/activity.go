@@ -21,7 +21,6 @@ package activity
 
 import (
 	"context"
-	"math"
 	"sync"
 	"time"
 )
@@ -135,51 +134,43 @@ func TitleWatchedChanged(groupId, titleId, titleName string, current, previous W
 	return Event{GroupId: groupId, Kind: KindTitleWatchedChanged, TitleId: tid, TitleName: tname, Payload: p}
 }
 
-// noteValue is the only place a stored note becomes a payload number.
-//
-// Notes are one-decimal values by contract, but they are stored in a REAL
-// column — a float32, which cannot represent 5.6. Widening that straight to
-// float64 with float64(note) resurrects the full binary expansion, and
-// encoding/json then writes every digit of it: a feed line read "rated 1917
-// with note 5.599999904632568". Marshalling the float32 directly would print
-// "5.6", but the payload is map[string]any and any float32 in it would be
-// widened by the JSON encoder anyway, so the rounding has to happen here.
-//
-// This treats the symptom. The cause is the column type, and rounding here
-// only holds because the contract is one decimal — if that ever changes, this
-// changes with it.
-func noteValue(note float32) float64 {
-	return math.Round(float64(note)*10) / 10
-}
-
-func RatingAdded(groupId, titleId, titleName string, note float32, season *int) Event {
+// RatingAdded and the three constructors below it used to run every note
+// through noteValue, which rounded a widened float32 back to the decimal the
+// user actually typed — the stored column was REAL, so float64(note) alone
+// resurrected the full binary expansion and a feed line read "rated 1917
+// with note 5.599999904632568". That helper is gone along with the reason
+// for it: the note path is float64 end to end now, sourced from a
+// NUMERIC(3,1) column that holds a one-decimal value exactly, so there is no
+// widening step left for anything to leak. The payload takes the note
+// straight through.
+func RatingAdded(groupId, titleId, titleName string, note float64, season *int) Event {
 	tid, tname := title(titleId, titleName)
-	p := map[string]any{"note": noteValue(note)}
+	p := map[string]any{"note": note}
 	if season != nil {
 		p["season"] = *season
 	}
 	return Event{GroupId: groupId, Kind: KindRatingAdded, TitleId: tid, TitleName: tname, Payload: p}
 }
 
-func RatingUpdated(groupId, titleId, titleName string, note, previous float32, season *int) Event {
+func RatingUpdated(groupId, titleId, titleName string, note, previous float64, season *int) Event {
 	tid, tname := title(titleId, titleName)
-	p := map[string]any{"note": noteValue(note), "previousNote": noteValue(previous)}
+	p := map[string]any{"note": note, "previousNote": previous}
 	if season != nil {
 		p["season"] = *season
 	}
 	return Event{GroupId: groupId, Kind: KindRatingUpdated, TitleId: tid, TitleName: tname, Payload: p}
 }
 
-func RatingDeleted(groupId, titleId, titleName string, previous float32) Event {
+func RatingDeleted(groupId, titleId, titleName string, previous float64) Event {
 	tid, tname := title(titleId, titleName)
 	return Event{GroupId: groupId, Kind: KindRatingDeleted, TitleId: tid, TitleName: tname,
-		Payload: map[string]any{"previousNote": noteValue(previous)}}
+		Payload: map[string]any{"previousNote": previous}}
 }
 
-func RatingSeasonDeleted(groupId, titleId, titleName string, season int, previous float32) Event {
+func RatingSeasonDeleted(groupId, titleId, titleName string, season int, previous float64) Event {
 	tid, tname := title(titleId, titleName)
 	return Event{GroupId: groupId, Kind: KindRatingSeasonDeleted, TitleId: tid, TitleName: tname,
-		Payload: map[string]any{"season": season, "previousNote": noteValue(previous)}}
+		Payload: map[string]any{"season": season, "previousNote": previous}}
 }
 
 func CommentAdded(groupId, titleId, titleName string, season *int) Event {

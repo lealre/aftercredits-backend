@@ -137,7 +137,7 @@ func TestActivityIsRecorded(t *testing.T) {
 			GroupId: group.Id,
 		}, token)
 
-		addRatingAndGetResult(t, group.Id, movie.ID, float32(7), nil, token)
+		addRatingAndGetResult(t, group.Id, movie.ID, float64(7), nil, token)
 
 		rows := getActivityRows(t)
 		require.Len(t, rows, 2, "add title then rate must record exactly two events")
@@ -162,9 +162,9 @@ func TestActivityIsRecorded(t *testing.T) {
 			GroupId: group.Id,
 		}, token)
 
-		rating := addRatingAndGetResult(t, group.Id, movie.ID, float32(7), nil, token)
+		rating := addRatingAndGetResult(t, group.Id, movie.ID, float64(7), nil, token)
 
-		resp := updateRating(t, ratings.UpdateRatingRequest{Note: float32(9)}, rating.Id, token)
+		resp := updateRating(t, ratings.UpdateRatingRequest{Note: float64(9)}, rating.Id, token)
 		defer resp.Body.Close()
 		require.Equal(t, 200, resp.StatusCode)
 
@@ -191,7 +191,7 @@ func TestActivityIsRecorded(t *testing.T) {
 			GroupId: group.Id,
 		}, token)
 
-		rating := addRatingAndGetResult(t, group.Id, movie.ID, float32(7), nil, token)
+		rating := addRatingAndGetResult(t, group.Id, movie.ID, float64(7), nil, token)
 
 		resp := deleteRating(t, rating.Id, token)
 		defer resp.Body.Close()
@@ -221,7 +221,7 @@ func TestActivityIsRecorded(t *testing.T) {
 		}, token)
 
 		season := 1
-		rating := addRatingAndGetResult(t, group.Id, show.ID, float32(7), &season, token)
+		rating := addRatingAndGetResult(t, group.Id, show.ID, float64(7), &season, token)
 
 		resp := deleteRatingSeason(t, rating.Id, token, season)
 		defer resp.Body.Close()

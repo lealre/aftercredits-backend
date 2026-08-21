@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func addTestGroup(t *testing.T, s *Store) string {
 // (no SeasonsRatings), matching what services/ratings.addRatingForMovie
 // passes to Store.AddRating (no Id/CreatedAt/UpdatedAt: those are generated
 // by the store). groupId is part of the rating's identity and is never empty.
-func newTestMovieRating(t *testing.T, titleId, userId, groupId string, note float32) models.UserRating {
+func newTestMovieRating(t *testing.T, titleId, userId, groupId string, note float64) models.UserRating {
 	t.Helper()
 	return models.UserRating{
 		TitleId: titleId,
@@ -41,11 +42,11 @@ func newTestMovieRating(t *testing.T, titleId, userId, groupId string, note floa
 // newTestSeriesRating builds a models.UserRating with the given season ->
 // rating entries, matching what services/ratings.addRatingForTVSeries
 // passes to Store.AddRating.
-func newTestSeriesRating(t *testing.T, titleId, userId, groupId string, seasons map[string]float32) models.UserRating {
+func newTestSeriesRating(t *testing.T, titleId, userId, groupId string, seasons map[string]float64) models.UserRating {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
 	seasonsRatings := make(models.SeasonsRatings, len(seasons))
-	var sum float32
+	var sum float64
 	for season, rating := range seasons {
 		seasonsRatings[season] = models.SeasonRatingItem{
 			Rating:    rating,
@@ -58,7 +59,7 @@ func newTestSeriesRating(t *testing.T, titleId, userId, groupId string, seasons 
 		TitleId:        titleId,
 		UserId:         userId,
 		GroupId:        groupId,
-		Note:           sum / float32(len(seasons)),
+		Note:           sum / float64(len(seasons)),
 		SeasonsRatings: &seasonsRatings,
 	}
 }
@@ -79,7 +80,7 @@ func TestStore_AddRating_GetRatingById_Movie(t *testing.T) {
 	require.Equal(t, titleId, added.TitleId)
 	require.Equal(t, userId, added.UserId)
 	require.Equal(t, groupId, added.GroupId, "the rating must round-trip with the group it was written in")
-	require.Equal(t, float32(7.5), added.Note)
+	require.Equal(t, float64(7.5), added.Note)
 	require.Nil(t, added.SeasonsRatings, "a movie rating (no seasons) must round-trip with a nil SeasonsRatings map")
 	require.WithinDuration(t, time.Now(), added.CreatedAt, 5*time.Second)
 	require.WithinDuration(t, time.Now(), added.UpdatedAt, 5*time.Second)
@@ -97,15 +98,15 @@ func TestStore_AddRating_GetRatingById_Series(t *testing.T) {
 	groupId := addTestGroup(t, s)
 	titleId := "tt-series-" + uuid.NewString()
 	userId := "user-" + uuid.NewString()
-	rating := newTestSeriesRating(t, titleId, userId, groupId, map[string]float32{"1": 8.0, "2": 6.0})
+	rating := newTestSeriesRating(t, titleId, userId, groupId, map[string]float64{"1": 8.0, "2": 6.0})
 
 	added, err := s.AddRating(ctx, rating)
 	require.NoError(t, err)
 	require.Equal(t, groupId, added.GroupId, "the rating must round-trip with the group it was written in")
 	require.NotNil(t, added.SeasonsRatings, "a series rating with seasons must round-trip with a non-nil SeasonsRatings map")
 	require.Len(t, *added.SeasonsRatings, 2)
-	require.Equal(t, float32(8.0), (*added.SeasonsRatings)["1"].Rating)
-	require.Equal(t, float32(6.0), (*added.SeasonsRatings)["2"].Rating)
+	require.Equal(t, float64(8.0), (*added.SeasonsRatings)["1"].Rating)
+	require.Equal(t, float64(6.0), (*added.SeasonsRatings)["2"].Rating)
 
 	got, err := s.GetRatingById(ctx, added.Id, userId)
 	require.NoError(t, err)
@@ -114,6 +115,38 @@ func TestStore_AddRating_GetRatingById_Series(t *testing.T) {
 	require.Equal(t, (*added.SeasonsRatings)["1"].Rating, (*got.SeasonsRatings)["1"].Rating)
 	require.Equal(t, (*added.SeasonsRatings)["2"].Rating, (*got.SeasonsRatings)["2"].Rating)
 	require.WithinDuration(t, (*added.SeasonsRatings)["1"].AddedAt, (*got.SeasonsRatings)["1"].AddedAt, time.Second)
+}
+
+// TestStore_AddRating_NoteRoundTripsExactly pins the point of the note
+// column being NUMERIC(3,1) rather than REAL: every value below is a
+// one-decimal number that float32 cannot represent exactly (5.6 stores as
+// 5.5999999046325684, 8.7 as 8.699999809265137, 0.1 as 0.10000000149011612),
+// so before this migration a round trip through the old REAL column would
+// hand back the widened value, not the one written. Through the store, a
+// note now goes: Go float64 -> pgx's numeric codec -> Postgres NUMERIC(3,1)
+// -> back through the same codec -> Go float64, with no float32 anywhere in
+// that path, so the value that comes back must be bit-for-bit the value that
+// went in.
+func TestStore_AddRating_NoteRoundTripsExactly(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	for _, note := range []float64{5.6, 8.7, 0.1} {
+		t.Run(fmt.Sprintf("note %v", note), func(t *testing.T) {
+			groupId := addTestGroup(t, s)
+			titleId := "tt-movie-" + uuid.NewString()
+			userId := "user-" + uuid.NewString()
+
+			added, err := s.AddRating(ctx, newTestMovieRating(t, titleId, userId, groupId, note))
+			require.NoError(t, err)
+			require.Equal(t, note, added.Note, "the note returned by AddRating must be exactly what was written")
+
+			got, err := s.GetRatingById(ctx, added.Id, userId)
+			require.NoError(t, err)
+			require.Equal(t, note, got.Note, "the note read back by GetRatingById must be exactly what was written")
+		})
+	}
 }
 
 func TestStore_GetRatingByUserIdAndTitleId(t *testing.T) {
@@ -155,13 +188,13 @@ func TestStore_GetRatingByUserIdAndTitleId(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, inA.Id, gotA.Id, "the (user, title) lookup must resolve group A's row, not group B's")
 		require.Equal(t, groupA, gotA.GroupId)
-		require.Equal(t, float32(4.0), gotA.Note)
+		require.Equal(t, float64(4.0), gotA.Note)
 
 		gotB, err := s.GetRatingByUserIdAndTitleId(ctx, userId, titleId, groupB)
 		require.NoError(t, err)
 		require.Equal(t, inB.Id, gotB.Id, "the (user, title) lookup must resolve group B's row, not group A's")
 		require.Equal(t, groupB, gotB.GroupId)
-		require.Equal(t, float32(9.0), gotB.Note)
+		require.Equal(t, float64(9.0), gotB.Note)
 	})
 
 	t.Run("a rating in another group is not visible to this group", func(t *testing.T) {
@@ -217,13 +250,13 @@ func TestStore_AddRating_SameTitleInTwoGroups(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, ratingsA, 1, "group A must see only its own rating of the title")
 	require.Equal(t, inA.Id, ratingsA[0].Id)
-	require.Equal(t, float32(3.0), ratingsA[0].Note)
+	require.Equal(t, float64(3.0), ratingsA[0].Note)
 
 	ratingsB, err := s.GetRatingsByTitleId(ctx, titleId, groupB)
 	require.NoError(t, err)
 	require.Len(t, ratingsB, 1, "group B must see only its own rating of the title")
 	require.Equal(t, inB.Id, ratingsB[0].Id)
-	require.Equal(t, float32(10.0), ratingsB[0].Note)
+	require.Equal(t, float64(10.0), ratingsB[0].Note)
 
 	// Updating one group's rating leaves the other untouched.
 	_, err = s.UpdateRating(ctx, models.UserRating{Id: inB.Id, Note: 6.5}, userId)
@@ -231,10 +264,10 @@ func TestStore_AddRating_SameTitleInTwoGroups(t *testing.T) {
 
 	rereadA, err := s.GetRatingById(ctx, inA.Id, userId)
 	require.NoError(t, err)
-	require.Equal(t, float32(3.0), rereadA.Note, "updating group B's rating must not touch group A's")
+	require.Equal(t, float64(3.0), rereadA.Note, "updating group B's rating must not touch group A's")
 	rereadB, err := s.GetRatingById(ctx, inB.Id, userId)
 	require.NoError(t, err)
-	require.Equal(t, float32(6.5), rereadB.Note)
+	require.Equal(t, float64(6.5), rereadB.Note)
 }
 
 func TestStore_AddRating_Duplicate(t *testing.T) {
@@ -290,7 +323,7 @@ func TestStore_UpdateRating_ReplacesSeasonSet(t *testing.T) {
 	groupId := addTestGroup(t, s)
 	titleId := "tt-" + uuid.NewString()
 	userId := "user-" + uuid.NewString()
-	added, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupId, map[string]float32{
+	added, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupId, map[string]float64{
 		"1": 5.0, "2": 6.0,
 	}))
 	require.NoError(t, err)
@@ -315,9 +348,9 @@ func TestStore_UpdateRating_ReplacesSeasonSet(t *testing.T) {
 	require.NotContains(t, *updated.SeasonsRatings, "1", "season 1 must have been dropped by the whole-map replace")
 	require.Contains(t, *updated.SeasonsRatings, "2")
 	require.Contains(t, *updated.SeasonsRatings, "3")
-	require.Equal(t, float32(7.0), (*updated.SeasonsRatings)["2"].Rating)
-	require.Equal(t, float32(9.0), (*updated.SeasonsRatings)["3"].Rating)
-	require.Equal(t, float32(8.0), updated.Note)
+	require.Equal(t, float64(7.0), (*updated.SeasonsRatings)["2"].Rating)
+	require.Equal(t, float64(9.0), (*updated.SeasonsRatings)["3"].Rating)
+	require.Equal(t, float64(8.0), updated.Note)
 
 	// Re-read from scratch must reflect exactly the new map, proving the
 	// delete+reinsert was actually persisted (not just returned in-memory).
@@ -326,8 +359,8 @@ func TestStore_UpdateRating_ReplacesSeasonSet(t *testing.T) {
 	require.NotNil(t, reread.SeasonsRatings)
 	require.Len(t, *reread.SeasonsRatings, 2)
 	require.NotContains(t, *reread.SeasonsRatings, "1")
-	require.Equal(t, float32(7.0), (*reread.SeasonsRatings)["2"].Rating)
-	require.Equal(t, float32(9.0), (*reread.SeasonsRatings)["3"].Rating)
+	require.Equal(t, float64(7.0), (*reread.SeasonsRatings)["2"].Rating)
+	require.Equal(t, float64(9.0), (*reread.SeasonsRatings)["3"].Rating)
 }
 
 func TestStore_SeriesRating_PerSeasonPathsResolveTheRightGroup(t *testing.T) {
@@ -343,9 +376,9 @@ func TestStore_SeriesRating_PerSeasonPathsResolveTheRightGroup(t *testing.T) {
 	titleId := "tt-series-" + uuid.NewString()
 	userId := "user-" + uuid.NewString()
 
-	inA, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupA, map[string]float32{"1": 5.0}))
+	inA, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupA, map[string]float64{"1": 5.0}))
 	require.NoError(t, err)
-	inB, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupB, map[string]float32{"1": 9.0, "2": 8.0}))
+	inB, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupB, map[string]float64{"1": 9.0, "2": 8.0}))
 	require.NoError(t, err)
 
 	// The add path's "does this user already have a rating here?" lookup must
@@ -355,7 +388,7 @@ func TestStore_SeriesRating_PerSeasonPathsResolveTheRightGroup(t *testing.T) {
 	require.Equal(t, inA.Id, lookupA.Id)
 	require.NotNil(t, lookupA.SeasonsRatings)
 	require.Len(t, *lookupA.SeasonsRatings, 1, "group A's row must carry only group A's seasons")
-	require.Equal(t, float32(5.0), (*lookupA.SeasonsRatings)["1"].Rating)
+	require.Equal(t, float64(5.0), (*lookupA.SeasonsRatings)["1"].Rating)
 
 	lookupB, err := s.GetRatingByUserIdAndTitleId(ctx, userId, titleId, groupB)
 	require.NoError(t, err)
@@ -373,13 +406,13 @@ func TestStore_SeriesRating_PerSeasonPathsResolveTheRightGroup(t *testing.T) {
 	rereadB, err := s.GetRatingByUserIdAndTitleId(ctx, userId, titleId, groupB)
 	require.NoError(t, err)
 	require.Len(t, *rereadB.SeasonsRatings, 3)
-	require.Equal(t, float32(6.0), (*rereadB.SeasonsRatings)["3"].Rating)
+	require.Equal(t, float64(6.0), (*rereadB.SeasonsRatings)["3"].Rating)
 
 	rereadA, err := s.GetRatingByUserIdAndTitleId(ctx, userId, titleId, groupA)
 	require.NoError(t, err)
 	require.Equal(t, inA.Id, rereadA.Id)
 	require.Len(t, *rereadA.SeasonsRatings, 1, "group A's seasons must be untouched by an update in group B")
-	require.Equal(t, float32(5.0), (*rereadA.SeasonsRatings)["1"].Rating)
+	require.Equal(t, float64(5.0), (*rereadA.SeasonsRatings)["1"].Rating)
 }
 
 func TestStore_UpdateRating_MovieDropsToNilSeasons(t *testing.T) {
@@ -398,7 +431,7 @@ func TestStore_UpdateRating_MovieDropsToNilSeasons(t *testing.T) {
 	updated, err := s.UpdateRating(ctx, models.UserRating{Id: added.Id, Note: 9.0}, userId)
 	require.NoError(t, err)
 	require.Nil(t, updated.SeasonsRatings)
-	require.Equal(t, float32(9.0), updated.Note)
+	require.Equal(t, float64(9.0), updated.Note)
 	require.Equal(t, groupId, updated.GroupId)
 }
 
@@ -423,7 +456,7 @@ func TestStore_GetRatingsByTitleId(t *testing.T) {
 
 	r1, err := s.AddRating(ctx, newTestMovieRating(t, titleId, "user-1", groupId, 5.0))
 	require.NoError(t, err)
-	r2, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, "user-2", groupId, map[string]float32{"1": 8.0}))
+	r2, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, "user-2", groupId, map[string]float64{"1": 8.0}))
 	require.NoError(t, err)
 	_, err = s.AddRating(ctx, newTestMovieRating(t, otherTitleId, "user-3", groupId, 3.0))
 	require.NoError(t, err)
@@ -461,7 +494,7 @@ func TestStore_GetRatingsByTitleIds_BatchGrouping(t *testing.T) {
 	titleB := "tt-b-" + uuid.NewString()
 	titleC := "tt-c-" + uuid.NewString()
 
-	rA, err := s.AddRating(ctx, newTestSeriesRating(t, titleA, "user-1", groupId, map[string]float32{"1": 7.0, "2": 8.0}))
+	rA, err := s.AddRating(ctx, newTestSeriesRating(t, titleA, "user-1", groupId, map[string]float64{"1": 7.0, "2": 8.0}))
 	require.NoError(t, err)
 	rB, err := s.AddRating(ctx, newTestMovieRating(t, titleB, "user-2", groupId, 6.0))
 	require.NoError(t, err)
@@ -496,7 +529,7 @@ func TestStore_GetRatingsByTitleIds_OnlyRequestedGroup(t *testing.T) {
 
 	mine1, err := s.AddRating(ctx, newTestMovieRating(t, titleOne, "user-a1", groupA, 7.0))
 	require.NoError(t, err)
-	mine2, err := s.AddRating(ctx, newTestSeriesRating(t, titleTwo, "user-a2", groupA, map[string]float32{"1": 9.0}))
+	mine2, err := s.AddRating(ctx, newTestSeriesRating(t, titleTwo, "user-a2", groupA, map[string]float64{"1": 9.0}))
 	require.NoError(t, err)
 
 	// Same titles, same users, other group: all of these must stay invisible.
@@ -539,7 +572,7 @@ func TestStore_DeleteRating(t *testing.T) {
 		groupId := addTestGroup(t, s)
 		titleId := "tt-" + uuid.NewString()
 		userId := "user-" + uuid.NewString()
-		added, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupId, map[string]float32{"1": 5.0}))
+		added, err := s.AddRating(ctx, newTestSeriesRating(t, titleId, userId, groupId, map[string]float64{"1": 5.0}))
 		require.NoError(t, err)
 
 		count, err := s.DeleteRating(ctx, added.Id, userId)

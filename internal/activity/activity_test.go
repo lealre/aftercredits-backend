@@ -28,37 +28,17 @@ func TestRecorder(t *testing.T) {
 	})
 }
 
-// TestNoteValueRoundsAwayFloat32Noise pins the reason noteValue exists.
-//
-// A note is a one-decimal value by contract, but it is stored in a REAL
-// column, so float64(float32(5.6)) is 5.599999904632568 — and encoding/json
-// writes all of it. A feed line read "rated 1917 with note 5.599999904632568"
-// before this. Each case below is a value whose float32 representation is not
-// exact; the assertion is that the payload carries the note the user typed.
-func TestNoteValueRoundsAwayFloat32Noise(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		note float32
-		want float64
-	}{
-		{"the reported case", 5.6, 5.6},
-		{"another inexact tenth", 8.7, 8.7},
-		{"a half is exact in binary and must survive", 5.5, 5.5},
-		{"zero", 0, 0},
-		{"the maximum", 10, 10},
-		{"one decimal at the bottom of the range", 0.1, 0.1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := noteValue(tc.note); got != tc.want {
-				t.Errorf("noteValue(%v) = %v, want %v", tc.note, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestRatingEventsCarryRoundedNotes checks the constructors actually use it,
-// rather than the helper existing while a call site still widens directly.
-func TestRatingEventsCarryRoundedNotes(t *testing.T) {
+// TestRatingEventsCarryExactNotes pins that the four rating constructors put
+// the note straight into the payload, unrounded, now that there is nothing
+// left to round away. Before the note path became float64 end to end
+// (backed by a NUMERIC(3,1) column), these same values arrived here already
+// widened from a REAL-stored float32 — 5.6 became 5.599999904632568 — and a
+// noteValue helper rounded it back on the way into the payload. That helper
+// is gone; this test is its replacement, proving the constructors need no
+// such repair because nothing upstream of them is imprecise anymore. Each
+// value below is one that float32 could not have represented exactly, which
+// is exactly the case the old helper existed to paper over.
+func TestRatingEventsCarryExactNotes(t *testing.T) {
 	season := 2
 
 	added := RatingAdded("g", "tt1", "T", 5.6, nil)

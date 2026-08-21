@@ -105,7 +105,7 @@ type Rating struct {
 	ID        string
 	TitleID   string
 	UserID    string
-	Note      float32
+	Note      float64
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 	GroupID   string
@@ -114,7 +114,7 @@ type Rating struct {
 type RatingSeason struct {
 	RatingID  string
 	Season    string
-	Rating    float32
+	Rating    float64
 	AddedAt   pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
