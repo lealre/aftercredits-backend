@@ -150,17 +150,13 @@ func (s *Store) UpdateTitle(ctx context.Context, title models.Title) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.q.UpdateTitle(ctx, database.UpdateTitleParams{
-		ID:              params.ID,
-		PrimaryTitle:    params.PrimaryTitle,
-		Type:            params.Type,
-		StartYear:       params.StartYear,
-		RatingAggregate: params.RatingAggregate,
-		VoteCount:       params.VoteCount,
-		AddedAt:         params.AddedAt,
-		UpdatedAt:       params.UpdatedAt,
-		Metadata:        params.Metadata,
-	})
+	// A conversion, not a field-by-field literal. Both structs are generated
+	// from the same columns and are identical, so this says "the same row,
+	// for a different statement" in one line. It is also the safer of the two:
+	// a literal listing every field silently omits any column added later,
+	// storing a zero value, whereas a conversion stops compiling the moment
+	// the two shapes diverge — which is exactly when someone should look.
+	n, err := s.q.UpdateTitle(ctx, database.UpdateTitleParams(params))
 	if err != nil {
 		return err
 	}

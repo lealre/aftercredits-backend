@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -290,6 +291,25 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
+// clampToInt32 narrows a value that reaches us from the outside world into the
+// int32 the column actually is.
+//
+// StartYear and VoteCount arrive from an external title provider, so their
+// range is not ours to assume. A bare int32(x) conversion on a 64-bit build
+// silently wraps — a hostile or merely broken payload could turn a large vote
+// count into a negative one and store it without complaint. Saturating instead
+// keeps the stored value wrong-but-ordered rather than wrong-and-inverted, and
+// no real title comes anywhere near the boundary.
+func clampToInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
+}
+
 // titleToRow converts a models.Title into the params for InsertTitle. The
 // query columns (primary_title, type, start_year, ...) are denormalized
 // copies used for filtering/sorting/indexing; metadata holds the complete
@@ -303,9 +323,9 @@ func titleToRow(t models.Title) (database.InsertTitleParams, error) {
 		ID:              t.ID,
 		PrimaryTitle:    t.PrimaryTitle,
 		Type:            t.Type,
-		StartYear:       int32(t.StartYear),
+		StartYear:       clampToInt32(t.StartYear),
 		RatingAggregate: t.Rating.AggregateRating,
-		VoteCount:       int32(t.Rating.VoteCount),
+		VoteCount:       clampToInt32(t.Rating.VoteCount),
 		AddedAt:         ptrToTimestamptz(t.AddedAt),
 		UpdatedAt:       ptrToTimestamptz(t.UpdatedAt),
 		Metadata:        metadata,
