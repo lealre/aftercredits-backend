@@ -23,6 +23,22 @@ COPY --from=builder /app/routines /app/routines
 # Install ca-certificates for HTTPS requests
 RUN apk add --no-cache ca-certificates
 
+# Run unprivileged.
+#
+# Nothing this binary does needs root: it opens no listening socket at all,
+# writes no files, and logs to stdout. It talks to Postgres and to the title
+# provider over the network and exits.
+#
+# UID 1000 rather than an arbitrary non-root UID, because the cron line mounts
+# pi/.env at /app/.env and that file is mode 600 owned by the login account.
+# A different UID would trade "runs as root" for "cannot read its own
+# configuration" — and silently, since godotenv ignores a failed load and the
+# job would fall back to whatever --env-file injected.
+ARG APP_UID=1000
+ARG APP_GID=1000
+RUN addgroup -g "${APP_GID}" -S app && adduser -u "${APP_UID}" -G app -S -H -h /app app
+USER app
+
 # Set default command
 CMD ["/app/routines"]
 
