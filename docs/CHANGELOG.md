@@ -25,6 +25,29 @@ activity feed line that once read "...with note 5.599999904632568".
   precision and the widened stored value no longer matched the clean
   literal. That is fixed too — the comparison is exact now
 
+### Scheduled backups (Pi tooling, no app behaviour change)
+
+* **The backup container runs unprivileged**, as the login account's UID rather
+  than root. rclone rewrites its config on every OAuth token refresh, and that
+  config is bind-mounted from the host — so as root, each refresh left the
+  host's `rclone.conf` owned by `root`. The container was unaffected; a
+  different project on the same machine, reading the same file as the login
+  user, silently lost access to its own credentials
+* **The job reads an rclone config of its own** rather than the shared one, so a
+  refresh here cannot affect any other project's credentials. Running in a
+  container never prevented this on its own: a container still receives the
+  credential through a bind mount, so a root container pointed at a shared
+  config does the same damage
+* **The backup script separates "cannot read the config" from "the remote
+  refused us"** before doing any work, and surfaces rclone's own output instead
+  of asserting a cause. The two are indistinguishable in passing, and the wrong
+  guess sends you to re-authorize something whose authentication was never the
+  problem
+* The destination remote is configurable via `BACKUP_REMOTE`, defaulting to the
+  existing one so a deployment behaves identically without setting it
+* **Requires re-running `pi/setup-cron.sh` on the machine to take effect** — the
+  installed crontab line is rewritten there, not by this change
+
 <a name="v0.1.3"></a>
 ## [v0.1.3](https://github.com/lealre/aftercredits-backend/compare/v0.1.2...v0.1.3) (2026-08-14)
 

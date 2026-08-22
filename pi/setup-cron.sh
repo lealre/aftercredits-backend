@@ -81,8 +81,30 @@ touch "${LOG_DIR}/movies-update.log"
 log "Log files created/verified"
 
 # Get absolute paths (already absolute, but ensure it)
-RCLONE_CONFIG_DIR="${HOME}/.config/rclone"
+# A config directory of this project's own, NOT the shared ~/.config/rclone.
+#
+# The shared one is used by other projects on this machine, and sharing a single
+# credential file across projects is what caused a real outage: this backup runs
+# in a container, rclone rewrites the config on every OAuth refresh, and the
+# rewrite handed ownership to whoever was running it. A sibling project that
+# reads the same file host-side then lost access to its own credentials and its
+# weekly backup failed silently for two cycles.
+#
+# Isolating the config is the fix that actually resolves this — not the fact
+# that the job runs in a container. A containerized job still needs the
+# credential and still gets it from a bind mount, so it would have caused the
+# same damage pointed at the same shared file. Running unprivileged (below)
+# stops this job writing root-owned files anywhere; a config of its own stops
+# it touching anyone else's credentials at all. Both matter, for different
+# reasons. Override with RCLONE_CONFIG_DIR if a deployment needs to.
+RCLONE_CONFIG_DIR="${RCLONE_CONFIG_DIR:-${HOME}/.config/rclone-aftercredits}"
 RCLONE_CONFIG="${RCLONE_CONFIG_DIR}/rclone.conf"
+
+# Must match the UID the backup image is built for; the bind-mounted config has
+# to be readable by the container's unprivileged user, and anything it writes
+# back has to stay readable by this account.
+BACKUP_UID="${BACKUP_UID:-$(id -u)}"
+BACKUP_GID="${BACKUP_GID:-$(id -g)}"
 ENV_FILE_ABS="${ENV_FILE}"
 LOG_DIR_ABS="${LOG_DIR}"
 
@@ -97,15 +119,28 @@ else
     log "DEPLOY_ENV_FILE not set (or not found); using only ${ENV_FILE_ABS}"
 fi
 
-# Check if rclone config directory exists
-if [ ! -d "${RCLONE_CONFIG_DIR}" ]; then
-    error "Rclone config directory not found at ${RCLONE_CONFIG_DIR}"
-    exit 1
-fi
-
-# Check if rclone config file exists
+# This project now keeps its own rclone config, so an existing machine that has
+# only the shared one needs a one-time setup step. Authorizing a remote is
+# interactive (it opens a browser flow), so it cannot be scripted here — say
+# exactly what to run rather than failing with a bare "not found".
 if [ ! -f "${RCLONE_CONFIG}" ]; then
-    error "Rclone config file not found at ${RCLONE_CONFIG}"
+    error "No rclone config for this project at ${RCLONE_CONFIG}"
+    error ""
+    error "This is expected the first time after the config was isolated."
+    error ""
+    error "Copy the existing one across — the refresh token travels with the"
+    error "file, so no re-authorization is needed:"
+    error ""
+    error "  mkdir -p \"${RCLONE_CONFIG_DIR}\""
+    error "  cp \"${HOME}/.config/rclone/rclone.conf\" \"${RCLONE_CONFIG}\""
+    error ""
+    error "Or authorize a fresh remote instead, if you would rather the two"
+    error "configs not share a token at all:"
+    error ""
+    error "  RCLONE_CONFIG=\"${RCLONE_CONFIG}\" rclone config"
+    error ""
+    error "Either way the remote must be named as before ('drive-pi' by"
+    error "default); set BACKUP_REMOTE in the env file to use another name."
     exit 1
 fi
 
@@ -116,7 +151,9 @@ log "Building Docker images..."
 
 # Build backup image
 log "Building backup image..."
-docker build -f "${PI_DIR}/Dockerfile.backup" -t aftercredits-backup:latest "${PROJECT_ROOT}" || {
+docker build -f "${PI_DIR}/Dockerfile.backup" \
+    --build-arg "APP_UID=${BACKUP_UID}" --build-arg "APP_GID=${BACKUP_GID}" \
+    -t aftercredits-backup:latest "${PROJECT_ROOT}" || {
     error "Failed to build backup image"
     exit 1
 }
@@ -134,7 +171,11 @@ log "Docker images built successfully"
 # Use docker-compose network from aftercredits repository compose
 # The backup script in pi/backup_to_drive.sh uses env vars directly
 # The routines binary uses godotenv.Load() which reads from /app/.env (mounted)
-BACKUP_CRON="${BACKUP_SCHEDULE} docker run --rm ${ENV_FILE_ARGS} -v ${RCLONE_CONFIG_DIR}:/root/.config/rclone:rw --network ${DOCKER_NETWORK} aftercredits-backup:latest >> ${LOG_DIR_ABS}/backup.log 2>&1"
+# --user pins the container to this account, and the config is mounted at the
+# image's HOME rather than root's. Still :rw, because rclone must persist a
+# refreshed token — but a refresh now writes as this user, so the file stays
+# readable by the host afterwards instead of flipping to root.
+BACKUP_CRON="${BACKUP_SCHEDULE} docker run --rm --user ${BACKUP_UID}:${BACKUP_GID} ${ENV_FILE_ARGS} -v ${RCLONE_CONFIG_DIR}:/home/backup/.config/rclone:rw --network ${DOCKER_NETWORK} aftercredits-backup:latest >> ${LOG_DIR_ABS}/backup.log 2>&1"
 
 MOVIES_CRON="${MOVIES_UPDATE_SCHEDULE} docker run --rm ${ENV_FILE_ARGS} -v ${ENV_FILE_ABS}:/app/.env:ro --network ${DOCKER_NETWORK} aftercredits-routines:latest >> ${LOG_DIR_ABS}/movies-update.log 2>&1"
 

@@ -8,15 +8,36 @@ RUN apk add --no-cache \
     tar \
     gzip
 
-# Create app directory
+# Run as an unprivileged user whose UID matches the Pi's login account, NOT as
+# root.
+#
+# This is not hardening for its own sake. rclone rewrites its config file
+# whenever it refreshes an OAuth token, and that file is bind-mounted from the
+# host. As root, every refresh left the host's rclone.conf owned by root — the
+# container carried on fine (it is root) while the host user silently lost the
+# ability to read its own credentials. It broke a *different* project on the
+# same Pi, whose backup runs host-side as that user, and it did so invisibly:
+# the failure surfaced as "auth expired", which it was not.
+#
+# Matching UID 1000 is what makes the bind mount work in both directions. An
+# arbitrary non-root UID would fix the root-ownership problem and replace it
+# with a can't-read-the-mount problem.
+ARG APP_UID=1000
+ARG APP_GID=1000
+RUN addgroup -g "${APP_GID}" -S backup \
+    && adduser -u "${APP_UID}" -G backup -S -h /home/backup backup
+
 WORKDIR /app
 
-# Copy backup script from pi folder (simplified version that uses env vars)
 COPY pi/backup_to_drive.sh /app/backup_to_drive.sh
-
-# Make script executable
 RUN chmod +x /app/backup_to_drive.sh
 
-# Set default command
-CMD ["/app/backup_to_drive.sh"]
+# rclone looks for its config under $HOME. Setting HOME explicitly means the
+# caller mounts to a predictable path (/home/backup/.config/rclone) rather than
+# to root's, and means the container never needs to be told where its config is.
+ENV HOME=/home/backup
+RUN mkdir -p /home/backup/.config/rclone && chown -R backup:backup /home/backup
 
+USER backup
+
+CMD ["/app/backup_to_drive.sh"]

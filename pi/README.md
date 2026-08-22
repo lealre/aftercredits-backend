@@ -138,6 +138,69 @@ cd pi
 8. **Postgres connection**: Uses `POSTGRES_HOST` from the deploy `.env` (set to
    `aftercredits-postgres`, the container name on the compose network)
 
+## Credentials and the unprivileged container
+
+The backup job runs as an **unprivileged user** (UID matching the login account)
+and reads a **config of its own** at `~/.config/rclone-aftercredits/`, not the
+shared `~/.config/rclone/`.
+
+Both choices exist because of a real incident. rclone rewrites its config
+whenever it refreshes an OAuth token, and that config is bind-mounted from the
+host. While this job ran as root, every refresh left the host's shared
+`rclone.conf` owned by `root`. This job carried on working — it was root — but
+another project on the same machine, whose backup runs host-side as the login
+user, silently lost the ability to read its own credentials. Its weekly backup
+failed for two cycles and reported the failure as *"auth expired"*, which it was
+not: the file simply could not be opened.
+
+The two changes fix different halves, and it is worth keeping them apart:
+
+- **Unprivileged** means this job cannot leave root-owned files anywhere, under
+  any mount.
+- **A separate config** means a token refresh here cannot touch another
+  project's credentials, whoever performs it.
+
+Containerizing a job does not by itself prevent this. A container still needs
+the credential and still gets it from a bind mount, so a root container pointed
+at a shared config causes exactly the same damage.
+
+### First run after the config was isolated
+
+`setup-cron.sh` stops with instructions if the new config is missing. Copying
+the existing file is enough — the refresh token travels with it:
+
+```bash
+mkdir -p ~/.config/rclone-aftercredits
+cp ~/.config/rclone/rclone.conf ~/.config/rclone-aftercredits/rclone.conf
+```
+
+Authorizing a fresh remote instead also works, if you would rather the two
+configs not share a token:
+
+```bash
+RCLONE_CONFIG=~/.config/rclone-aftercredits/rclone.conf rclone config
+```
+
+Either way the remote keeps its usual name (`drive-pi`); set `BACKUP_REMOTE` in
+the env file to point at a different remote or folder.
+
+**The crontab is not updated until `setup-cron.sh` is re-run on the machine.**
+Until then the previously installed line stays in place, still running as root
+against the shared config.
+
+### If a backup fails on credentials
+
+The script now separates the two cases before doing any work, because they look
+alike and confusing them costs time:
+
+- *"Cannot READ the rclone config"* — a permissions problem. Check the file's
+  owner; something running as root has probably rewritten it.
+- *"Remote '…' is not configured"* — the config is readable but does not define
+  that remote.
+
+An authentication failure proper surfaces rclone's own output rather than a
+guess about what went wrong.
+
 ## Troubleshooting
 
 ### Check if cron jobs are installed:
