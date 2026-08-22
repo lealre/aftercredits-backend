@@ -1,0 +1,76 @@
+name: ci
+
+# Runs on pull requests, and on main after a merge. The push trigger is not
+# redundant: a PR is tested against a *merge* of itself into main, so two PRs
+# that are each green can still break main together. Testing main directly is
+# what catches that.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The suite spins up real Postgres containers with testcontainers rather
+      # than mocking the database, which is why it needs a Docker daemon —
+      # present by default on ubuntu-latest, so nothing extra is required.
+      # It also needs no secrets: nothing in the tests reads an API key or a
+      # .env, so a fork's pull request runs it exactly as main does.
+      - name: Run tests
+        run: go test -cover ./...
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      # -severity medium is a deliberate threshold, not a way to dodge the
+      # gate. The 236 findings below it are all G104 "errors unhandled", and
+      # essentially all of them are the same line: `respondWithError(...)`,
+      # whose returned error there is nothing useful to do with — the response
+      # has already failed to write. Failing the build on those would train
+      # everyone to ignore the tool. Everything at medium or above is treated
+      # as a defect and the build fails on it.
+      - name: Run gosec
+        run: gosec -quiet -severity medium ./...
+
+  style:
+    name: Style
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # `gofmt -l` lists files that are not formatted, so an empty result is
+      # the pass condition. Note the quotes around the substitution: unquoted,
+      # `test -z $(...)` passes for zero or one unformatted file and then dies
+      # with "too many arguments" on two — reporting a shell error instead of
+      # the formatting problem it found.
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        run: staticcheck ./...
+
+      - name: Vet
+        run: go vet ./...

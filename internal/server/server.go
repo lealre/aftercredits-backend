@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/api"
@@ -172,6 +173,19 @@ func ListenAndServe(st store.Store) error {
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: handler,
+		// A header-read deadline, so a client cannot hold a connection open by
+		// dribbling out request headers forever (Slowloris). Ten seconds is far
+		// more than any real client needs to send them.
+		ReadHeaderTimeout: 10 * time.Second,
+		// Idle keep-alive connections are reaped, which costs nothing and
+		// bounds the number of sockets a stalled client can accumulate.
+		IdleTimeout: 120 * time.Second,
+		// WriteTimeout is deliberately NOT set. It is an absolute deadline on
+		// the whole response, and the activity feed streams Server-Sent Events
+		// over a connection that stays open indefinitely by design — any value
+		// here would sever every live feed on a timer. ReadTimeout is likewise
+		// left off: it would cap the same long-lived requests, and there are no
+		// request bodies large enough to need it.
 	}
 	log.Println("Server running on :8080")
 	if err := server.ListenAndServe(); err != nil {
