@@ -46,6 +46,14 @@ func (s *Store) assembleGroupTitles(ctx context.Context, groupId string) (models
 // in group.Users (the owner) in a single transaction. The id and timestamps are
 // generated here, not taken from the caller-supplied group. A violation of the (owner_id, name) partial
 // unique index is reported as store.ErrDuplicatedRecord.
+func (s *Store) CountOwnedGroups(ctx context.Context, ownerId string) (int64, error) {
+	return s.q.CountOwnedGroups(ctx, ownerId)
+}
+
+func (s *Store) CountGroupTitleEntries(ctx context.Context, groupId string) (int64, error) {
+	return s.q.CountAllGroupTitles(ctx, groupId)
+}
+
 func (s *Store) CreateGroup(ctx context.Context, group models.Group) (models.Group, error) {
 	var result models.Group
 	err := s.inTx(ctx, func(q *database.Queries) error {

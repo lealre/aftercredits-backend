@@ -134,9 +134,19 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clamp the caller-supplied limit. Unclamped, this value became the
+	// capacity of a make([]T, 0, limit) inside the provider clients, so one
+	// request like ?limit=2000000000 asked the runtime for a multi-gigabyte
+	// allocation and OOM-killed the process. An omitted/non-positive limit
+	// keeps the search default (not the page default); anything above the page
+	// max is capped. Not routed through NormalizePageParams, which would
+	// substitute the larger page default and quadruple provider spend.
 	limit := generics.StringToInt(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = config.DefaultSearchLimit()
+	}
+	if maxLimit := config.MaxPageSize(); limit > maxLimit {
+		limit = maxLimit
 	}
 
 	titles, err := titles.SearchTitles(api.Provider, r.Context(), searchQuery, limit)

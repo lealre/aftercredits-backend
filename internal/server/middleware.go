@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/lealre/movies-backend/internal/api"
@@ -19,6 +21,50 @@ import (
 type contextKey string
 
 const requestIdKey contextKey = "requestId"
+const requestMetaKey contextKey = "requestMeta"
+
+// maxRequestBodyBytes caps every request body read through RequestIdMiddleware.
+const maxRequestBodyBytes = 64 << 10
+
+// requestMeta is a mutable per-request holder so a middleware that runs later
+// (AuthMiddleware) can record the authenticated user id for the completion log
+// line emitted by a middleware that runs earlier (RequestIdMiddleware) —
+// context values do not propagate back up the chain, but a pointer's target
+// does.
+type requestMeta struct {
+	userId string
+}
+
+// clientIP returns the caller's address for logging. nginx sets X-Real-IP to
+// the real client after its real_ip config resolves the Cloudflare header;
+// falling back to RemoteAddr keeps a sane value in local/dev runs. The value is
+// sanitized before it reaches a log line.
+func clientIP(r *http.Request) string {
+	if xr := strings.TrimSpace(r.Header.Get("X-Real-IP")); xr != "" {
+		return sanitizeForLog(xr, 45)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return sanitizeForLog(host, 45)
+}
+
+// sanitizeForLog strips characters that could forge a log line — CR and LF
+// above all, since a decoded %0a would otherwise inject a whole fake entry —
+// and truncates to max bytes so an attacker cannot choose the log volume.
+func sanitizeForLog(s string, max int) string {
+	s = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r < 0x20 {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > max {
+		return s[:max]
+	}
+	return s
+}
 
 ////////////////////////////////////////////////////////////////////////////
 //  LOGGER MIDDLEWARE
@@ -66,14 +112,33 @@ Returns an http.Handler that wraps the next handler.
 */
 func RequestIdMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Cap the request body every handler will read. 64 KiB is comfortably
+		// above any legitimate request this API takes (the largest is a title
+		// import) and turns an unbounded-JSON memory-exhaustion attempt into a
+		// 413. This runs first, so it protects every route including login and
+		// registration. The SSE stream is a body-less GET, so the cap is inert
+		// for it.
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
 		requestId := generateRequestId()
 		startTime := time.Now()
+		ip := clientIP(r)
 
-		logger := log.New(os.Stdout, "["+requestId+"]["+r.Method+":"+r.URL.Path+"] - ", log.LstdFlags)
+		// The path is kept OUT of the log prefix and sanitized: it is
+		// attacker-controlled, and the previous code spliced the DECODED path
+		// into the prefix, so a request to /x%0a... injected a newline and a
+		// forged log line before any auth ran. EscapedPath keeps it in its
+		// wire form; sanitizeForLog strips any residual control bytes and caps
+		// the length.
+		method := sanitizeForLog(r.Method, 8)
+		path := sanitizeForLog(r.URL.EscapedPath(), 256)
 
-		logger.Printf("Request received...")
+		logger := log.New(os.Stdout, "["+requestId+"] - ", log.LstdFlags)
+		logger.Printf("Request received: %s %s from %s", method, path, ip)
 
+		meta := &requestMeta{}
 		ctx := context.WithValue(r.Context(), requestIdKey, requestId)
+		ctx = context.WithValue(ctx, requestMetaKey, meta)
 		ctx = logx.WithLogger(ctx, logger)
 		r = r.WithContext(ctx)
 
@@ -82,10 +147,21 @@ func RequestIdMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(recorder, r)
 
 		duration := time.Since(startTime)
+		userId := meta.userId
+		if userId == "" {
+			userId = "-"
+		}
+		// A single completion line per request, carrying who and from where, so
+		// a sweep is attributable. A forbidden/unauthorized outcome is logged at
+		// WARN so auth failures are greppable.
+		level := "INFO"
+		if recorder.statusCode == http.StatusUnauthorized || recorder.statusCode == http.StatusForbidden {
+			level = "WARN"
+		}
 		if duration > time.Second {
-			logger.Printf("Request completed in %.2fs (status %d)", duration.Seconds(), recorder.statusCode)
+			logger.Printf("%s: %s %s -> %d in %.2fs (ip=%s user=%s)", level, method, path, recorder.statusCode, duration.Seconds(), ip, userId)
 		} else {
-			logger.Printf("Request completed in %dms (status %d)", duration.Milliseconds(), recorder.statusCode)
+			logger.Printf("%s: %s %s -> %d in %dms (ip=%s user=%s)", level, method, path, recorder.statusCode, duration.Milliseconds(), ip, userId)
 		}
 	})
 }
@@ -152,6 +228,12 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 			if tokenVersion != userDb.TokenVersion {
 				http.Error(w, "Token has been revoked", http.StatusUnauthorized)
 				return
+			}
+
+			// Record the authenticated user id for the request-completion log
+			// line (see requestMeta), so every request is attributable.
+			if m, ok := r.Context().Value(requestMetaKey).(*requestMeta); ok {
+				m.userId = userDb.Id
 			}
 
 			// Put userId into context

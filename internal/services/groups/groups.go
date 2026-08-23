@@ -17,14 +17,24 @@ import (
 )
 
 func CreateGroup(db store.Store, ctx context.Context, req CreateGroupRequest, userId string) (GroupResponse, error) {
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	if err := validateGroupStrings(name, description); err != nil {
+		return GroupResponse{}, err
+	}
 
-	if strings.TrimSpace(req.Name) == "" {
-		return GroupResponse{}, ErrGroupNameInvalid
+	// Per-owner group quota: a free account cannot create unbounded groups.
+	owned, err := db.CountOwnedGroups(ctx, userId)
+	if err != nil {
+		return GroupResponse{}, err
+	}
+	if owned >= int64(config.MaxGroupsPerUser()) {
+		return GroupResponse{}, ErrGroupQuotaExceeded
 	}
 
 	group := models.Group{
-		Name:        req.Name,
-		Description: strings.TrimSpace(req.Description),
+		Name:        name,
+		Description: description,
 		OwnerId:     userId,
 		Users:       []string{userId},
 		Titles:      models.GroupTitles{},
@@ -62,10 +72,10 @@ func GetGroupById(db store.Store, ctx context.Context, groupId, userId string) (
 // name and maps a duplicate name to ErrGroupDuplicatedName.
 func UpdateGroupInfo(db store.Store, ctx context.Context, groupId, ownerId, name, description string) (GroupResponse, error) {
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return GroupResponse{}, ErrGroupNameInvalid
-	}
 	description = strings.TrimSpace(description)
+	if err := validateGroupStrings(name, description); err != nil {
+		return GroupResponse{}, err
+	}
 
 	group, err := db.GetGroupById(ctx, groupId, ownerId)
 	if err != nil {
@@ -324,6 +334,19 @@ func AddTitleToGroup(db store.Store, ctx context.Context, groupId, titleId, user
 
 	if _, exists := group.Titles[titleId]; exists {
 		return ErrTitleAlreadyInGroup
+	}
+
+	// Per-group title ceiling: bounds how large the shared catalogue one account
+	// can grow (titles only enter the catalogue by being added to a group), so a
+	// free account cannot fill the Pi's disk. Rejecting over-quota with 429
+	// before the provider fan-out means an over-quota request costs no upstream
+	// call.
+	count, err := db.CountGroupTitleEntries(ctx, groupId)
+	if err != nil {
+		return err
+	}
+	if count >= int64(config.MaxTitlesPerGroup()) {
+		return ErrGroupTitleQuotaExceeded
 	}
 
 	err = db.AddNewGroupTitle(ctx, groupId, titleId)
@@ -601,23 +624,34 @@ func SoftDeleteGroup(db store.Store, ctx context.Context, groupId, ownerId strin
 	return nil
 }
 
-// LeaveGroup removes a non-owner member from a group (and the group from their
-// group list). The owner cannot leave (must delete instead).
-func LeaveGroup(db store.Store, ctx context.Context, groupId, userId string) error {
-	group, err := db.GetGroupById(ctx, groupId, userId)
+// RemoveMember removes targetId from the group. It is permitted when the caller
+// is removing themselves (leaving) OR the caller is the group's owner (evicting
+// a member) — the latter is what lets a compromised account actually be kicked
+// out. The owner cannot be removed this way (they must delete the group), so a
+// group is never left ownerless.
+//
+// The group is loaded under the target's membership, which both confirms the
+// target is a member and yields the owner id for the caller check.
+func RemoveMember(db store.Store, ctx context.Context, groupId, targetId, callerId string) error {
+	group, err := db.GetGroupById(ctx, groupId, targetId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
 			return ErrGroupNotFound
 		}
 		return err
 	}
-	if group.OwnerId == userId {
+
+	if callerId != targetId && group.OwnerId != callerId {
+		return ErrGroupNotOwnedByUser
+	}
+	if group.OwnerId == targetId {
 		return ErrOwnerCannotLeaveGroup
 	}
-	if err := db.RemoveUserFromGroup(ctx, groupId, userId); err != nil {
+
+	if err := db.RemoveUserFromGroup(ctx, groupId, targetId); err != nil {
 		return err
 	}
-	return db.RemoveGroupFromUser(ctx, userId, groupId)
+	return db.RemoveGroupFromUser(ctx, targetId, groupId)
 }
 
 // GroupExists reports whether the group exists for the given user. Thin service

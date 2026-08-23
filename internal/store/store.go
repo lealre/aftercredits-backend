@@ -70,6 +70,8 @@ type Store interface {
 	// ----- Groups -----
 
 	CreateGroup(ctx context.Context, group models.Group) (models.Group, error)
+	CountOwnedGroups(ctx context.Context, ownerId string) (int64, error)
+	CountGroupTitleEntries(ctx context.Context, groupId string) (int64, error)
 	GroupExists(ctx context.Context, groupId, userId string) (bool, error)
 	GroupContainsTitle(ctx context.Context, groupId, titleId, userId string) (bool, error)
 	GetGroupById(ctx context.Context, groupId, userId string) (models.Group, error)

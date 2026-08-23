@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/api"
@@ -175,6 +176,25 @@ func ListenAndServe(st store.Store) error {
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: handler,
+
+		// Timeouts, so a slow or idle client cannot hold a connection (and the
+		// goroutine and any DB work behind it) open forever — a real concern on
+		// a Pi facing the open internet.
+		//
+		// WriteTimeout is deliberately UNSET: it is an absolute deadline from
+		// the start of the request, so any non-zero value would sever the SSE
+		// activity stream (GET /activity/stream) mid-stream. If one is ever
+		// wanted, it must be paired with an http.ResponseController write
+		// deadline reset on each flush inside StreamActivity.
+		//
+		// ReadHeaderTimeout closes the Slowloris hole. ReadTimeout is safe for
+		// the stream: it is a body-less GET whose body read completes at once.
+		// IdleTimeout applies only between keep-alive requests, never during a
+		// response.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 16,
 	}
 	log.Println("Server running on :8080")
 	if err := server.ListenAndServe(); err != nil {

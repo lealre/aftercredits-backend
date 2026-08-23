@@ -128,13 +128,10 @@ func (api *API) RemoveUserFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This version supports self-removal (leave) only; removing other members is deferred.
-	if userId != currentUser.Id {
-		respondWithForbidden(w)
-		return
-	}
-
-	if err := groups.LeaveGroup(api.Db, r.Context(), groupId, userId); err != nil {
+	// Self-removal (leaving) OR the owner evicting a member. The service
+	// enforces the caller-is-owner-or-self rule and refuses to remove the
+	// owner; anything else is a forbidden/404 mapped below.
+	if err := groups.RemoveMember(api.Db, r.Context(), groupId, userId, currentUser.Id); err != nil {
 		if code, ok := groups.ErrorMap[err]; ok {
 			respondWithError(w, code, formatErrorMessage(err))
 			return
@@ -143,7 +140,11 @@ func (api *API) RemoveUserFromGroup(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
-	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Left group"})
+	msg := "Left group"
+	if userId != currentUser.Id {
+		msg = "Member removed from group"
+	}
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: msg})
 }
 
 func (api *API) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
