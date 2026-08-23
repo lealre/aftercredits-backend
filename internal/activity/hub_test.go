@@ -13,7 +13,7 @@ import (
 func TestHub(t *testing.T) {
 	t.Run("subscriber in the group receives", func(t *testing.T) {
 		h := NewHub()
-		sub := h.Subscribe("alice", []string{"g1"})
+		sub, _ := h.Subscribe("alice", []string{"g1"})
 		defer h.Unsubscribe(sub)
 
 		event := models.ActivityEvent{Id: "e1", GroupId: "g1", ActorId: "bob"}
@@ -29,7 +29,7 @@ func TestHub(t *testing.T) {
 
 	t.Run("subscriber in a different group does not receive", func(t *testing.T) {
 		h := NewHub()
-		sub := h.Subscribe("alice", []string{"g2"})
+		sub, _ := h.Subscribe("alice", []string{"g2"})
 		defer h.Unsubscribe(sub)
 
 		h.Publish(models.ActivityEvent{Id: "e1", GroupId: "g1", ActorId: "bob"})
@@ -43,7 +43,7 @@ func TestHub(t *testing.T) {
 
 	t.Run("the actor does not receive their own event", func(t *testing.T) {
 		h := NewHub()
-		sub := h.Subscribe("alice", []string{"g1"})
+		sub, _ := h.Subscribe("alice", []string{"g1"})
 		defer h.Unsubscribe(sub)
 
 		h.Publish(models.ActivityEvent{Id: "e1", GroupId: "g1", ActorId: "alice"})
@@ -57,7 +57,7 @@ func TestHub(t *testing.T) {
 
 	t.Run("a full channel drops rather than blocking", func(t *testing.T) {
 		h := NewHub()
-		sub := h.Subscribe("alice", []string{"g1"})
+		sub, _ := h.Subscribe("alice", []string{"g1"})
 		defer h.Unsubscribe(sub)
 
 		for i := range subscriberBufferSize {
@@ -82,7 +82,7 @@ func TestHub(t *testing.T) {
 
 	t.Run("Unsubscribe closes the channel and is safe to call twice", func(t *testing.T) {
 		h := NewHub()
-		sub := h.Subscribe("alice", []string{"g1"})
+		sub, _ := h.Subscribe("alice", []string{"g1"})
 
 		h.Unsubscribe(sub)
 
@@ -125,7 +125,7 @@ func TestHub(t *testing.T) {
 					case <-stop:
 						return
 					default:
-						sub := h.Subscribe(fmt.Sprintf("user%d", i), []string{"g1"})
+						sub, _ := h.Subscribe(fmt.Sprintf("user%d", i), []string{"g1"})
 						select {
 						case <-sub.Events:
 						default:

@@ -95,7 +95,14 @@ func (s *Streamer) OpenStream(db store.Store, ctx context.Context, ticket string
 		return nil, ErrInvalidTicket
 	}
 
-	return s.hub.Subscribe(user.Id, user.Groups), nil
+	sub, err := s.hub.Subscribe(user.Id, user.Groups)
+	if err != nil {
+		if errors.Is(err, activitycore.ErrTooManySubscribers) {
+			return nil, ErrTooManyStreams
+		}
+		return nil, err
+	}
+	return sub, nil
 }
 
 // CloseStream removes a subscriber from the hub. It is safe to call more than

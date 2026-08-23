@@ -52,7 +52,7 @@ func New(apiKey string) *Provider {
 	return &Provider{
 		baseURL:     defaultBaseURL,
 		apiKey:      apiKey,
-		client:      http.DefaultClient,
+		client:      &http.Client{Timeout: 15 * time.Second},
 		maxRetries:  defaultMaxRetries,
 		sleep:       time.Sleep,
 		minInterval: time.Second / maxRequestsPerSecond,
@@ -65,7 +65,7 @@ func newWithBaseURL(baseURL, apiKey string) *Provider {
 	return &Provider{
 		baseURL:    baseURL,
 		apiKey:     apiKey,
-		client:     http.DefaultClient,
+		client:     &http.Client{Timeout: 15 * time.Second},
 		maxRetries: defaultMaxRetries,
 		sleep:      time.Sleep,
 	}
@@ -105,13 +105,23 @@ func (p *Provider) throttle(ctx context.Context) error {
 // Retry-After header (delay-seconds or HTTP-date); otherwise it falls back to
 // capped exponential backoff keyed on the attempt number.
 func retryAfterDelay(header string, attempt int) time.Duration {
+	// A server-supplied Retry-After is clamped to maxBackoff: an upstream (or a
+	// hostile response injected in front of it) could otherwise name an
+	// arbitrarily large delay and park this request — and the pool slot behind
+	// it — for minutes.
+	clamp := func(d time.Duration) time.Duration {
+		if d > maxBackoff {
+			return maxBackoff
+		}
+		return d
+	}
 	if header = strings.TrimSpace(header); header != "" {
 		if secs, err := strconv.Atoi(header); err == nil && secs >= 0 {
-			return time.Duration(secs) * time.Second
+			return clamp(time.Duration(secs) * time.Second)
 		}
 		if t, err := http.ParseTime(header); err == nil {
 			if d := time.Until(t); d > 0 {
-				return d
+				return clamp(d)
 			}
 		}
 	}
@@ -165,7 +175,7 @@ func (p *Provider) getJSON(ctx context.Context, path string, query url.Values, o
 			return fmt.Errorf("tmdb: non-2xx status %s for %s - %s", resp.Status, path, string(body))
 		}
 
-		err = json.NewDecoder(resp.Body).Decode(out)
+		err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 		resp.Body.Close()
 		return err
 	}

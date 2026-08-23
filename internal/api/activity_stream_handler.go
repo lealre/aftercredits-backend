@@ -20,6 +20,14 @@ import (
 // one ping is not a test, it is a hang.
 var streamPingInterval = 25 * time.Second
 
+// maxStreamLifetime bounds how long a single SSE connection is held open. When
+// it elapses the handler closes the stream; EventSource reconnects on its own,
+// and OpenStream re-reads the caller's groups on that reconnect — so a member
+// removed from a group stops receiving its activity within this window instead
+// of for as long as they keep one connection open. A var so a test can shorten
+// it.
+var maxStreamLifetime = 30 * time.Minute
+
 // IssueActivityStreamTicket exchanges the caller's Bearer token for a
 // single-use ticket the SSE endpoint accepts. This route is deliberately not
 // in PublicPaths — it is the authentication step the stream route delegates
@@ -84,8 +92,16 @@ func (api *API) StreamActivity(w http.ResponseWriter, r *http.Request) {
 	ping := time.NewTicker(streamPingInterval)
 	defer ping.Stop()
 
+	lifetime := time.NewTimer(maxStreamLifetime)
+	defer lifetime.Stop()
+
 	for {
 		select {
+		case <-lifetime.C:
+			// Bounded lifetime reached. Close the stream; the client reconnects
+			// and OpenStream re-scopes it to the caller's current groups.
+			return
+
 		case <-r.Context().Done():
 			// The client went away (closed tab, dropped network, shutdown).
 			// Returning runs the deferred unsubscribe; staying would hold a
