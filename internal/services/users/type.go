@@ -24,6 +24,23 @@ type AllUsersResponse struct {
 	Users []UserResponse `json:"users"`
 }
 
+// MemberResponse is the co-member view: what one group member may see about
+// another. Deliberately narrower than UserResponse — no email, and no list of
+// the other groups they belong to — so a single group membership does not leak
+// every co-member's email address and cross-group id graph.
+type MemberResponse struct {
+	Id        string  `json:"id"`
+	Username  string  `json:"username"`
+	Name      string  `json:"name,omitempty"`
+	AvatarURL *string `json:"avatarUrl,omitempty"`
+}
+
+// GroupMembersResponse keeps the historical {"users": [...]} envelope so
+// existing clients keep parsing it; only each element is narrowed.
+type GroupMembersResponse struct {
+	Users []MemberResponse `json:"users"`
+}
+
 type NewUserRequest struct {
 	Username string `json:"username"`
 	Name     string `json:"name"`

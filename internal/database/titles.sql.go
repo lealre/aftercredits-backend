@@ -235,3 +235,26 @@ func (q *Queries) UpdateTitle(ctx context.Context, arg UpdateTitleParams) (int64
 	}
 	return result.RowsAffected(), nil
 }
+
+const userCanAccessTitle = `-- name: UserCanAccessTitle :one
+SELECT EXISTS (
+    SELECT 1 FROM group_titles gt
+    JOIN group_members m ON m.group_id = gt.group_id
+    WHERE gt.title_id = $1 AND m.user_id = $2
+)
+`
+
+type UserCanAccessTitleParams struct {
+	TitleID string
+	UserID  string
+}
+
+// Whether the caller shares a group with this title, i.e. the title is in a
+// group they are a member of. Gates the otherwise-unscoped episodes read, which
+// let a stranger walk title ids to reconstruct every group's watchlist.
+func (q *Queries) UserCanAccessTitle(ctx context.Context, arg UserCanAccessTitleParams) (bool, error) {
+	row := q.db.QueryRow(ctx, userCanAccessTitle, arg.TitleID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}

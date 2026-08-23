@@ -12,6 +12,16 @@ SELECT * FROM titles WHERE id = $1;
 -- name: TitleExists :one
 SELECT EXISTS(SELECT 1 FROM titles WHERE id = $1);
 
+-- name: UserCanAccessTitle :one
+-- Whether the caller shares a group with this title, i.e. the title is in a
+-- group they are a member of. Gates the otherwise-unscoped episodes read, which
+-- let a stranger walk title ids to reconstruct every group's watchlist.
+SELECT EXISTS (
+    SELECT 1 FROM group_titles gt
+    JOIN group_members m ON m.group_id = gt.group_id
+    WHERE gt.title_id = $1 AND m.user_id = $2
+);
+
 -- name: DeleteTitle :execrows
 DELETE FROM titles WHERE id = $1;
 

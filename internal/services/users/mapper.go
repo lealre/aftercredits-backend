@@ -19,6 +19,16 @@ func MapDbUserToApiUserResponse(userDb models.User) UserResponse {
 	}
 }
 
+// MapDbUserToMemberResponse projects a user into the narrow co-member view.
+func MapDbUserToMemberResponse(userDb models.User) MemberResponse {
+	return MemberResponse{
+		Id:        userDb.Id,
+		Username:  userDb.Username,
+		Name:      userDb.Name,
+		AvatarURL: userDb.AvatarURL,
+	}
+}
+
 func MapDbUserToApiLoginResponse(userResponse UserResponse, token string) auth.LoginResponse {
 	return auth.LoginResponse{
 		Id:          userResponse.Id,

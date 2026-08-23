@@ -160,13 +160,25 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTitleEpisodes returns a title's episodes on demand (lazy-loaded by the UI
-// when a movie modal opens). Any authenticated user may call it.
+// when a movie modal opens). Scoped: the caller must share a group with the
+// title, otherwise a stranger could walk title ids to reconstruct every group's
+// watchlist. "Not yours" and "no such title" return the same 404.
 func (api *API) GetTitleEpisodes(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	titleId := r.PathValue("id")
 	if titleId == "" {
 		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	if ok, err := titles.UserCanAccessTitle(api.Db, r.Context(), titleId, currentUser.Id); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch episodes")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
 		return
 	}
 

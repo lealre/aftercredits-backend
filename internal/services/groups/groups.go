@@ -306,18 +306,18 @@ func GetGroupTitleDetail(db store.Store, ctx context.Context, groupId, titleId s
 	return details[0], nil
 }
 
-func GetUsersFromGroup(db store.Store, ctx context.Context, groupId, userId string) ([]users.UserResponse, error) {
+func GetUsersFromGroup(db store.Store, ctx context.Context, groupId, userId string) ([]users.MemberResponse, error) {
 	usersFromGroup, err := db.GetUsersFromGroup(ctx, groupId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
-			return []users.UserResponse{}, ErrGroupNotFound
+			return []users.MemberResponse{}, ErrGroupNotFound
 		}
-		return []users.UserResponse{}, err
+		return []users.MemberResponse{}, err
 	}
 
-	var usersResponse []users.UserResponse
+	usersResponse := make([]users.MemberResponse, 0, len(usersFromGroup))
 	for _, user := range usersFromGroup {
-		usersResponse = append(usersResponse, users.MapDbUserToApiUserResponse(user))
+		usersResponse = append(usersResponse, users.MapDbUserToMemberResponse(user))
 	}
 
 	return usersResponse, nil

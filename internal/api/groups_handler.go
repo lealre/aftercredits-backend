@@ -332,7 +332,7 @@ func (api *API) GetUsersFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, users.AllUsersResponse{Users: groupUsers})
+	respondWithJSON(w, http.StatusOK, users.GroupMembersResponse{Users: groupUsers})
 }
 
 func (api *API) AddTitleToGroup(w http.ResponseWriter, r *http.Request) {

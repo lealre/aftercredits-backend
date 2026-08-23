@@ -167,6 +167,32 @@ func RequestIdMiddleware(next http.Handler) http.Handler {
 }
 
 ////////////////////////////////////////////////////////////////////////////
+//  REQUEST TIMEOUT MIDDLEWARE
+////////////////////////////////////////////////////////////////////////////
+
+// requestTimeout bounds how long any ordinary request's context lives, so a
+// slow query cannot pin a pool connection indefinitely.
+const requestTimeout = 10 * time.Second
+
+// RequestTimeoutMiddleware puts a deadline on the request context so database
+// work started by a handler is cancelled if it overruns.
+//
+// The SSE activity stream is exempt BY PATH: it is a deliberately long-lived
+// response, and a 10-second deadline on its context would tear it down. It has
+// its own lifetime handling instead.
+func RequestTimeoutMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/activity/stream" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+////////////////////////////////////////////////////////////////////////////
 //  AUTHENTICATION MIDDLEWARE
 ////////////////////////////////////////////////////////////////////////////
 

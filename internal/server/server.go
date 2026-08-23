@@ -129,6 +129,10 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 	}
 
 	var handler http.Handler = mux
+	// Innermost: bound each handler's context so a slow query cannot pin a pool
+	// connection. Exempts GET /activity/stream by path. Sits inside the activity
+	// middleware so the post-response event flush is not cancelled by it.
+	handler = RequestTimeoutMiddleware(handler)
 	if activityFeedEnabled {
 		handler = ActivityMiddleware(activity.NewStoreSink(st))(handler)
 	}
