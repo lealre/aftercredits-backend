@@ -1,13 +1,13 @@
 package imdbapi
 
 import (
-	"time"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )

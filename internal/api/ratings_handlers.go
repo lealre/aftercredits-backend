@@ -96,6 +96,14 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Membership guard: ownership alone (enforced in the store) let a user who
+	// was removed from the group keep editing ratings they had authored there.
+	// Require the caller to still be a member of the rating's group before
+	// writing — the same guard AddRating and every comment write already apply.
+	if !api.ratingMembershipOK(w, r, ratingId, currentuser.Id) {
+		return
+	}
+
 	// UpdateRating hands back the rating as it stood immediately before the
 	// update, from the same read that drove the write — not a second,
 	// independently-timed snapshot a concurrent update could race with.
@@ -144,6 +152,10 @@ func (api *API) DeleteRating(w http.ResponseWriter, r *http.Request) {
 		}
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting rating")
+		return
+	}
+
+	if !api.ratingInGroupForUser(w, r, rating.GroupId, rating.TitleId, currentuser.Id) {
 		return
 	}
 
@@ -197,6 +209,10 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !api.ratingInGroupForUser(w, r, rating.GroupId, rating.TitleId, currentuser.Id) {
+		return
+	}
+
 	// Get the title to validate season
 	title, err := titles.GetTitleById(api.Db, r.Context(), rating.TitleId)
 	if err != nil {
@@ -236,4 +252,42 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 	activity.Record(r.Context(), activity.RatingSeasonDeleted(rating.GroupId, rating.TitleId, title.PrimaryTitle, season, previousNote))
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("Season %s from rating %s deleted successfully", seasonStr, ratingId)})
+}
+
+// ratingMembershipOK resolves a rating (user-scoped) and verifies the caller is
+// still a member of its group. It writes the response and returns false when
+// the caller should stop: a 404 for a rating that is not theirs / not in a
+// group they belong to (the two are deliberately indistinguishable), or a 500
+// on an unexpected error.
+func (api *API) ratingMembershipOK(w http.ResponseWriter, r *http.Request, ratingId, userId string) bool {
+	logger := logx.FromContext(r.Context())
+	rating, err := ratings.GetRatingById(api.Db, r.Context(), ratingId, userId)
+	if err != nil {
+		if statusCode, ok := ratings.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return false
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return false
+	}
+	return api.ratingInGroupForUser(w, r, rating.GroupId, rating.TitleId, userId)
+}
+
+// ratingInGroupForUser verifies the caller shares the rating's group and that
+// the title is in it, using the same GroupContainsTitle guard the comment
+// routes use. Writes a 404/500 and returns false when access is denied.
+func (api *API) ratingInGroupForUser(w http.ResponseWriter, r *http.Request, groupId, titleId, userId string) bool {
+	logger := logx.FromContext(r.Context())
+	ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, userId)
+	if err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+		return false
+	}
+	if !ok {
+		respondWithError(w, http.StatusNotFound, "Rating not found")
+		return false
+	}
+	return true
 }

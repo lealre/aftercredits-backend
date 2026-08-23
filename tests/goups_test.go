@@ -2137,14 +2137,36 @@ func TestLeaveGroup(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	})
 
-	t.Run("Cannot remove another user (member management deferred) and gets 403", func(t *testing.T) {
+	t.Run("Owner can evict a member", func(t *testing.T) {
 		resetDB(t)
 		_, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
-		member, _ := addUser(t, users.NewUserRequest{Username: "lgmember", Password: "testpass"})
+		member, memberTok := addUser(t, users.NewUserRequest{Username: "lgmember", Password: "testpass"})
 		group := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
 		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: member.Id}, group.Id, ownerTok)
 
+		// The owner removing a member now succeeds (self-or-owner eviction).
 		resp := removeUserFromGroupApi(t, group.Id, member.Id, ownerTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// The evicted member no longer sees the group.
+		getResp := getGroupFromApi(t, group.Id, memberTok)
+		defer getResp.Body.Close()
+		require.Equal(t, http.StatusNotFound, getResp.StatusCode)
+		require.NotContains(t, getGroup(t, group.Id).Users, member.Id)
+	})
+
+	t.Run("A non-owner member cannot evict another member and gets 403", func(t *testing.T) {
+		resetDB(t)
+		_, ownerTok := addUser(t, users.NewUserRequest{Username: "lgowner", Password: "testpass"})
+		memberA, memberATok := addUser(t, users.NewUserRequest{Username: "lgmembera", Password: "testpass"})
+		memberB, _ := addUser(t, users.NewUserRequest{Username: "lgmemberb", Password: "testpass"})
+		group := createGroup(t, groups.CreateGroupRequest{Name: "Leave Grp"}, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: memberA.Id}, group.Id, ownerTok)
+		addUserToGroup(t, groups.AddUserToGroupRequest{UserId: memberB.Id}, group.Id, ownerTok)
+
+		// memberA (not the owner) tries to remove memberB → forbidden.
+		resp := removeUserFromGroupApi(t, group.Id, memberB.Id, memberATok)
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	})

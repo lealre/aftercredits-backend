@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -258,8 +259,9 @@ func TestDeleteTitlesAdmin(t *testing.T) {
 func TestGetTitleEpisodes(t *testing.T) {
 	resetDB(t)
 
-	// any authenticated (non-admin) user may read episodes
-	_, token := addUser(t, users.NewUserRequest{
+	// The caller must share a group with the title to read its episodes
+	// (the route is scoped; an unrelated title 404s).
+	user, token := addUser(t, users.NewUserRequest{
 		Username: "epuser", Email: "epuser@local.dev", Password: "Pass#12345",
 	})
 
@@ -274,6 +276,16 @@ func TestGetTitleEpisodes(t *testing.T) {
 			{ID: "ep2", Title: "Second", Season: "1", EpisodeNumber: 2},
 		},
 	}})
+
+	// Put the title in a group the user belongs to.
+	grp, err := testStore.CreateGroup(context.Background(), models.Group{
+		Name:    "ep grp",
+		OwnerId: user.Id,
+		Users:   []string{user.Id},
+		Titles:  models.GroupTitles{},
+	})
+	require.NoError(t, err)
+	require.NoError(t, testStore.AddNewGroupTitle(context.Background(), grp.Id, "tt3000001"))
 
 	req, _ := http.NewRequest(http.MethodGet, testServer.URL+"/titles/tt3000001/episodes", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

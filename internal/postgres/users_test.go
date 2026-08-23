@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,12 +18,16 @@ import (
 func newTestUser(t *testing.T) models.User {
 	t.Helper()
 	suffix := uuid.NewString()
+	// Username has a 32-char ceiling (migration 010's CHECK), so it cannot carry
+	// the full dashed UUID the id/email use. A dash-stripped 31-hex slice keeps
+	// it unique while staying within the cap.
+	shortSuffix := strings.ReplaceAll(suffix, "-", "")[:31]
 	now := time.Now().UTC().Truncate(time.Second)
 	return models.User{
 		Id:           "user-" + suffix,
 		Name:         "Test User",
 		Email:        "user-" + suffix + "@example.com",
-		Username:     "user-" + suffix,
+		Username:     "u" + shortSuffix,
 		PasswordHash: "hashed-password",
 		Role:         models.RoleUser,
 		IsActive:     true,
@@ -195,7 +200,7 @@ func TestStore_UpdateUserInfo(t *testing.T) {
 	update := user
 	update.Name = "Updated Name"
 	update.Email = "updated-" + user.Email
-	update.Username = "updated-" + user.Username
+	update.Username = "upd" + user.Username[4:] // stay within the 32-char cap
 
 	got, err := s.UpdateUserInfo(ctx, user.Id, update)
 	require.NoError(t, err)
@@ -310,6 +315,13 @@ func TestStore_DeleteUserById(t *testing.T) {
 
 	require.NoError(t, s.DeleteUserById(ctx, user.Id))
 
-	_, err := s.GetUserById(ctx, user.Id)
-	require.ErrorIs(t, err, store.ErrRecordNotFound)
+	// DeleteUserById is a soft delete: the row is kept (so authored content
+	// keeps a resolvable author) but the account is deactivated, which is what
+	// revokes access.
+	got, err := s.GetUserById(ctx, user.Id)
+	require.NoError(t, err, "soft-deleted user row should still be readable")
+	require.False(t, got.IsActive, "soft-deleted user should be inactive")
+
+	// Deleting an unknown id reports not-found.
+	require.ErrorIs(t, s.DeleteUserById(ctx, "no-such-user"), store.ErrRecordNotFound)
 }

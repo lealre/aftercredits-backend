@@ -5,7 +5,6 @@
 package omdb
 
 import (
-	"time"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )

@@ -12,9 +12,7 @@ import (
 )
 
 const deleteRatingRow = `-- name: DeleteRatingRow :execrows
-DELETE FROM ratings
-WHERE ratings.id = $1 AND ratings.user_id = $2
-  AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = ratings.group_id AND m.user_id = $2)
+DELETE FROM ratings WHERE id = $1 AND user_id = $2
 `
 
 type DeleteRatingRowParams struct {
@@ -40,9 +38,7 @@ func (q *Queries) DeleteRatingSeasons(ctx context.Context, ratingID string) erro
 }
 
 const getRatingRowById = `-- name: GetRatingRowById :one
-SELECT id, title_id, user_id, note, created_at, updated_at, group_id FROM ratings
-WHERE ratings.id = $1 AND ratings.user_id = $2
-  AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = ratings.group_id AND m.user_id = $2)
+SELECT id, title_id, user_id, note, created_at, updated_at, group_id FROM ratings WHERE id = $1 AND user_id = $2
 `
 
 type GetRatingRowByIdParams struct {
@@ -296,8 +292,7 @@ func (q *Queries) InsertRatingSeason(ctx context.Context, arg InsertRatingSeason
 const updateRatingRow = `-- name: UpdateRatingRow :one
 UPDATE ratings
 SET note = $3, updated_at = $4
-WHERE ratings.id = $1 AND ratings.user_id = $2
-  AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = ratings.group_id AND m.user_id = $2)
+WHERE id = $1 AND user_id = $2
 RETURNING id, title_id, user_id, note, created_at, updated_at, group_id
 `
 
@@ -308,11 +303,6 @@ type UpdateRatingRowParams struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
-// The membership EXISTS is what makes removal from a group revoke write access
-// to that group's ratings: ownership (user_id) alone let an ex-member keep
-// editing rows they authored and re-injecting events into a group they left.
-// The predicate is duplicated on GetRatingRowById and DeleteRatingRow so every
-// by-id path is guarded even if a caller forgets the service-level check.
 func (q *Queries) UpdateRatingRow(ctx context.Context, arg UpdateRatingRowParams) (Rating, error) {
 	row := q.db.QueryRow(ctx, updateRatingRow,
 		arg.ID,
