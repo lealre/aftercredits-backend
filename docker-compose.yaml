@@ -11,8 +11,11 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-aftercredits}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-aftercredits}
       - POSTGRES_DB=${POSTGRES_DB:-aftercredits}
+    # Loopback only. This is the local-dev database, but publishing on all
+    # interfaces means any device on the same LAN can reach it — so it is bound
+    # to 127.0.0.1 so bringing this file up anywhere never exposes Postgres.
     ports:
-      - "${POSTGRES_PORT_HOST:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT_HOST:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
