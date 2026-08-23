@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,6 +54,34 @@ func main() {
 		log.Fatalf("Failed to sync titles: %v", err)
 	}
 	log.Println("Sync completed successfully")
+
+	pruneActivityEvents(ctx, st)
+}
+
+// activityRetention is how long an activity event is kept. Nothing else deletes
+// events, so without this the table grows without bound. Overridable via
+// ACTIVITY_RETENTION_DAYS.
+func activityRetentionDays() int {
+	if v := strings.TrimSpace(os.Getenv("ACTIVITY_RETENTION_DAYS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 90
+}
+
+// pruneActivityEvents deletes activity events past the retention window. A
+// failure here is logged, not fatal: it must never take down the title sync
+// that is this job's primary purpose.
+func pruneActivityEvents(ctx context.Context, st *postgres.Store) {
+	cutoff := time.Now().AddDate(0, 0, -activityRetentionDays())
+	log.Printf("Pruning activity events older than %d days (before %s)...", activityRetentionDays(), cutoff.Format(time.RFC3339))
+	deleted, err := st.DeleteActivityEventsOlderThan(ctx, cutoff)
+	if err != nil {
+		log.Printf("WARN: failed to prune activity events: %v", err)
+		return
+	}
+	log.Printf("Pruned %d activity events", deleted)
 }
 
 func syncTitles(ctx context.Context, provider titleprovider.Provider, st *postgres.Store, titleIDs []string) error {

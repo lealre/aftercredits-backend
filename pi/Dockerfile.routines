@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY . ./
 RUN go build -o routines ./cmd/routines/main.go
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.21
 
 WORKDIR /app
 

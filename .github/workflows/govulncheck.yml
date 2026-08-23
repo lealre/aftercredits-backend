@@ -1,0 +1,28 @@
+name: govulncheck
+
+# Fails the build on a known vulnerability that this code actually reaches, so
+# the next end-of-life Go major or vulnerable dependency is a red build rather
+# than something found in an audit. govulncheck reports only vulnerabilities
+# reachable from this code's call graph.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so a newly-disclosed advisory in an unchanged dependency still
+    # turns the build red without a push.
+    - cron: "0 6 * * 1"
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          check-latest: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: govulncheck ./...

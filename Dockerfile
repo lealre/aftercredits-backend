@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN go build -o backend ./main.go
 # Build database cli
 RUN go build -o database ./cmd/database
 
-FROM alpine:latest
+FROM alpine:3.21
 
 WORKDIR /app
 

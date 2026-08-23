@@ -30,6 +30,22 @@ func (q *Queries) CountActivityUnread(ctx context.Context, userID string) (int64
 	return count, err
 }
 
+const deleteActivityEventsOlderThan = `-- name: DeleteActivityEventsOlderThan :execrows
+DELETE FROM activity_events WHERE created_at < $1
+`
+
+// Retention: activity_events grows without bound otherwise (nothing else ever
+// deletes an event, and soft-deleted groups keep theirs). Run periodically by
+// the routines binary. Deleting old rows is safe for the live path — the LISTEN
+// reader already tolerates a notified id whose row is gone.
+func (q *Queries) DeleteActivityEventsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteActivityEventsOlderThan, createdAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getActivityEventById = `-- name: GetActivityEventById :one
 SELECT e.id, e.seq, e.group_id, e.actor_id, e.actor_name, e.kind, e.title_id,
        e.title_name, e.payload, e.created_at, g.name AS group_name,
