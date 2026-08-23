@@ -102,7 +102,7 @@ func boolEnv(b bool) string {
 func streamWireToken(t *testing.T) string {
 	t.Helper()
 
-	token, err := auth.MakeJWT(streamWireUserId, streamWireSecret, time.Hour)
+	token, err := auth.MakeJWT(streamWireUserId, 0, streamWireSecret, time.Hour)
 	require.NoError(t, err, "failed to mint a test token")
 	return token
 }

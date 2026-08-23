@@ -27,6 +27,21 @@ func (q *Queries) AddGroupMember(ctx context.Context, arg AddGroupMemberParams) 
 	return err
 }
 
+const adminExists = `-- name: AdminExists :one
+SELECT EXISTS(SELECT 1 FROM users WHERE role = 'admin')
+`
+
+// Whether any admin (superuser) account exists at all. Superuser provisioning
+// keys idempotence on this rather than on a fixed username, so re-running the
+// provisioning step can never re-mint a default admin once a real one exists,
+// and deleting a compromised admin lets a fresh one be provisioned from env.
+func (q *Queries) AdminExists(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, adminExists)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (
     id, name, email, username, password_hash, avatar_url, role,
@@ -67,17 +82,25 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	return err
 }
 
-const deleteUserById = `-- name: DeleteUserById :exec
-DELETE FROM users WHERE id = $1
+const deleteUserById = `-- name: DeleteUserById :execrows
+UPDATE users SET is_active = false, updated_at = now() WHERE id = $1
 `
 
-func (q *Queries) DeleteUserById(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteUserById, id)
-	return err
+// Soft delete: the row is kept so its authored ratings, comments and owned
+// groups keep a resolvable author instead of orphaning (there are no FKs from
+// those tables to users). Deactivating also revokes access — AuthMiddleware and
+// the SSE open path both refuse an inactive user. Returns the affected row
+// count so a delete of an unknown id is reported as 404, not a silent success.
+func (q *Queries) DeleteUserById(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserById, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getAllUsers = `-- name: GetAllUsers :many
-SELECT id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at FROM users ORDER BY id
+SELECT id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at, token_version FROM users ORDER BY id
 `
 
 func (q *Queries) GetAllUsers(ctx context.Context) ([]User, error) {
@@ -101,6 +124,7 @@ func (q *Queries) GetAllUsers(ctx context.Context) ([]User, error) {
 			&i.LastLoginAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TokenVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -113,7 +137,7 @@ func (q *Queries) GetAllUsers(ctx context.Context) ([]User, error) {
 }
 
 const getUserById = `-- name: GetUserById :one
-SELECT id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at FROM users WHERE id = $1
+SELECT id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at, token_version FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserById(ctx context.Context, id string) (User, error) {
@@ -131,12 +155,13 @@ func (q *Queries) GetUserById(ctx context.Context, id string) (User, error) {
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TokenVersion,
 	)
 	return i, err
 }
 
 const getUserByUsernameOrEmail = `-- name: GetUserByUsernameOrEmail :one
-SELECT id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at FROM users
+SELECT id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at, token_version FROM users
 WHERE (username = $1 OR $1 = '') AND (email = $2 OR $2 = '')
 `
 
@@ -160,6 +185,7 @@ func (q *Queries) GetUserByUsernameOrEmail(ctx context.Context, arg GetUserByUse
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TokenVersion,
 	)
 	return i, err
 }
@@ -190,6 +216,22 @@ func (q *Queries) GetUserGroupIds(ctx context.Context, userID string) ([]string,
 	return items, nil
 }
 
+const incrementUserTokenVersion = `-- name: IncrementUserTokenVersion :execrows
+UPDATE users
+SET token_version = token_version + 1, updated_at = now()
+WHERE id = $1
+`
+
+// "Log out everywhere": invalidate every outstanding token without touching the
+// password.
+func (q *Queries) IncrementUserTokenVersion(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, incrementUserTokenVersion, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const removeGroupMember = `-- name: RemoveGroupMember :exec
 DELETE FROM group_members WHERE group_id = $1 AND user_id = $2
 `
@@ -204,11 +246,33 @@ func (q *Queries) RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberPa
 	return err
 }
 
+const setUserActive = `-- name: SetUserActive :execrows
+UPDATE users
+SET is_active = $2, updated_at = now()
+WHERE id = $1
+`
+
+type SetUserActiveParams struct {
+	ID       string
+	IsActive bool
+}
+
+// Admin kill switch / reinstate. Setting false revokes access on the next
+// request (AuthMiddleware checks is_active) and closes any open SSE stream on
+// its next reconnect.
+func (q *Queries) SetUserActive(ctx context.Context, arg SetUserActiveParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserActive, arg.ID, arg.IsActive)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateUserInfo = `-- name: UpdateUserInfo :one
 UPDATE users
 SET name = $2, email = $3, username = $4, updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at
+RETURNING id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at, token_version
 `
 
 type UpdateUserInfoParams struct {
@@ -238,6 +302,7 @@ func (q *Queries) UpdateUserInfo(ctx context.Context, arg UpdateUserInfoParams) 
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TokenVersion,
 	)
 	return i, err
 }
@@ -246,7 +311,7 @@ const updateUserLastLoginAt = `-- name: UpdateUserLastLoginAt :one
 UPDATE users
 SET last_login_at = now()
 WHERE id = $1
-RETURNING id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at
+RETURNING id, name, email, username, password_hash, avatar_url, role, is_active, last_login_at, created_at, updated_at, token_version
 `
 
 func (q *Queries) UpdateUserLastLoginAt(ctx context.Context, id string) (User, error) {
@@ -264,8 +329,30 @@ func (q *Queries) UpdateUserLastLoginAt(ctx context.Context, id string) (User, e
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TokenVersion,
 	)
 	return i, err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :execrows
+UPDATE users
+SET password_hash = $2, token_version = token_version + 1, updated_at = now()
+WHERE id = $1
+`
+
+type UpdateUserPasswordParams struct {
+	ID           string
+	PasswordHash string
+}
+
+// Rewrites the hash and bumps token_version in one statement, so changing a
+// password immediately invalidates every token minted before it.
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const userExists = `-- name: UserExists :one
@@ -274,6 +361,28 @@ SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)
 
 func (q *Queries) UserExists(ctx context.Context, id string) (bool, error) {
 	row := q.db.QueryRow(ctx, userExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const userExistsByUsernameOrEmail = `-- name: UserExistsByUsernameOrEmail :one
+SELECT EXISTS(
+    SELECT 1 FROM users
+    WHERE (username <> '' AND username = $1) OR (email <> '' AND email = $2)
+)
+`
+
+type UserExistsByUsernameOrEmailParams struct {
+	Username string
+	Email    string
+}
+
+// OR-based existence check used to reject a duplicate registration BEFORE the
+// expensive bcrypt hash, rather than hashing first and catching the unique
+// violation afterwards. The unique indexes remain the race backstop.
+func (q *Queries) UserExistsByUsernameOrEmail(ctx context.Context, arg UserExistsByUsernameOrEmailParams) (bool, error) {
+	row := q.db.QueryRow(ctx, userExistsByUsernameOrEmail, arg.Username, arg.Email)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

@@ -11,7 +11,6 @@ import (
 	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/services/users"
-	"github.com/lealre/movies-backend/internal/store"
 )
 
 func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +111,14 @@ func (api *API) UpdateUserInfo(w http.ResponseWriter, r *http.Request) {
 func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
 
+	// Registration is admin-only (see PublicPaths). AuthMiddleware has already
+	// established a valid token; here we require it to be an admin's.
+	currentUser := auth.GetUserFromContext(r.Context())
+	if currentUser.Role != models.RoleAdmin {
+		respondWithForbidden(w)
+		return
+	}
+
 	var req users.NewUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Printf("ERROR: %v", err)
@@ -159,7 +166,7 @@ func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := users.DeleteUserById(api.Db, r.Context(), userId); err != nil {
-		if errors.Is(err, store.ErrRecordNotFound) {
+		if errors.Is(err, users.ErrUserNotFound) {
 			logger.Printf("WARNING: Attempted deletion of own user ID failed because user was not found. ERROR: %v", err)
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
 			return
@@ -170,4 +177,91 @@ func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: fmt.Sprintf("User with id %s deleted successfully", userId)})
+}
+
+// ChangePassword lets a signed-in user change their own password. It verifies
+// the current password, applies the password policy, and — via the store —
+// bumps token_version, invalidating every other session.
+func (api *API) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	var req users.ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		respondWithError(w, http.StatusBadRequest, "currentPassword and newPassword are required")
+		return
+	}
+
+	if err := users.ChangePassword(api.Db, r.Context(), currentUser.Id, req.CurrentPassword, req.NewPassword); err != nil {
+		if statusCode, ok := users.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while changing password")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "Password changed. All other sessions have been signed out."})
+}
+
+// LogoutEverywhere invalidates every token the caller holds (this one included)
+// by bumping token_version. The client should discard its token after calling.
+func (api *API) LogoutEverywhere(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	if err := users.LogoutEverywhere(api.Db, r.Context(), currentUser.Id); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while signing out")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "All sessions signed out"})
+}
+
+// SetUserActive is the admin kill switch: deactivate (or reinstate) another
+// account. Deactivating revokes access on that user's next request.
+func (api *API) SetUserActive(w http.ResponseWriter, r *http.Request) {
+	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
+
+	if currentUser.Role != models.RoleAdmin {
+		respondWithForbidden(w)
+		return
+	}
+
+	userId := r.PathValue("id")
+	if userId == "" {
+		respondWithError(w, http.StatusBadRequest, "User id is required")
+		return
+	}
+
+	var req users.SetActiveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+	if req.IsActive == nil {
+		respondWithError(w, http.StatusBadRequest, "isActive is required")
+		return
+	}
+
+	if err := users.SetUserActive(api.Db, r.Context(), userId, *req.IsActive); err != nil {
+		if statusCode, ok := users.ErrorMap[err]; ok {
+			respondWithError(w, statusCode, formatErrorMessage(err))
+			return
+		}
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error while updating user")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, DefaultResponse{Message: "User updated"})
 }

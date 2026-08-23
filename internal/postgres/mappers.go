@@ -31,6 +31,7 @@ func userRowToModel(u database.User, groups []string) models.User {
 		Groups:       groups,
 		Role:         models.UserRole(u.Role),
 		IsActive:     u.IsActive,
+		TokenVersion: int(u.TokenVersion),
 		LastLoginAt:  timestamptzToPtr(u.LastLoginAt),
 		CreatedAt:    u.CreatedAt.Time,
 		UpdatedAt:    u.UpdatedAt.Time,

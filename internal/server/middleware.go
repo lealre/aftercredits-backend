@@ -116,7 +116,7 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 			}
 
 			// Validate token
-			userId, err := auth.ValidateJWT(tokenString, tokenSecret)
+			userId, tokenVersion, err := auth.ValidateJWT(tokenString, tokenSecret)
 			if err != nil {
 				if _, ok := auth.ErrorsMap[err]; ok {
 					api.RespondWithUnauthorized(w, err)
@@ -141,6 +141,16 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 			// Genuinely unknown or deactivated user: unchanged 401 body/status.
 			if errors.Is(err, store.ErrRecordNotFound) || !userDb.IsActive {
 				http.Error(w, "Invalid or inactive user", http.StatusUnauthorized)
+				return
+			}
+
+			// Revocation check: a token is only valid while it carries the
+			// user's current token_version. A password change or an explicit
+			// "log out everywhere" bumps the row, which invalidates every token
+			// minted before it without any server-side session store. The row
+			// is already loaded above, so this costs no extra query.
+			if tokenVersion != userDb.TokenVersion {
+				http.Error(w, "Token has been revoked", http.StatusUnauthorized)
 				return
 			}
 

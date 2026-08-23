@@ -58,6 +58,17 @@ func (s *Store) UserExists(ctx context.Context, id string) (bool, error) {
 	return s.q.UserExists(ctx, id)
 }
 
+func (s *Store) UserExistsByUsernameOrEmail(ctx context.Context, username, email string) (bool, error) {
+	return s.q.UserExistsByUsernameOrEmail(ctx, database.UserExistsByUsernameOrEmailParams{
+		Username: username,
+		Email:    email,
+	})
+}
+
+func (s *Store) AdminExists(ctx context.Context) (bool, error) {
+	return s.q.AdminExists(ctx)
+}
+
 func (s *Store) AddUser(ctx context.Context, user models.User) error {
 	err := s.q.CreateUser(ctx, database.CreateUserParams{
 		ID:           user.Id,
@@ -81,8 +92,63 @@ func (s *Store) AddUser(ctx context.Context, user models.User) error {
 	return nil
 }
 
+// DeleteUserById soft-deletes (deactivates) the user, reporting an unknown id
+// as store.ErrRecordNotFound so the handler can answer 404 rather than a silent
+// 200.
 func (s *Store) DeleteUserById(ctx context.Context, id string) error {
-	return s.q.DeleteUserById(ctx, id)
+	rows, err := s.q.DeleteUserById(ctx, id)
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return store.ErrRecordNotFound
+	}
+	return nil
+}
+
+// UpdateUserPassword rewrites the hash and bumps token_version in one
+// statement, invalidating every token minted before the change.
+func (s *Store) UpdateUserPassword(ctx context.Context, id, passwordHash string) error {
+	rows, err := s.q.UpdateUserPassword(ctx, database.UpdateUserPasswordParams{
+		ID:           id,
+		PasswordHash: passwordHash,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return store.ErrRecordNotFound
+	}
+	return nil
+}
+
+// IncrementUserTokenVersion invalidates every outstanding token for the user
+// without changing the password ("log out everywhere").
+func (s *Store) IncrementUserTokenVersion(ctx context.Context, id string) error {
+	rows, err := s.q.IncrementUserTokenVersion(ctx, id)
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return store.ErrRecordNotFound
+	}
+	return nil
+}
+
+// SetUserActive flips the account's active flag. Setting false revokes access
+// on the next request and closes any open stream on its next reconnect.
+func (s *Store) SetUserActive(ctx context.Context, id string, active bool) error {
+	rows, err := s.q.SetUserActive(ctx, database.SetUserActiveParams{
+		ID:       id,
+		IsActive: active,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return store.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (s *Store) UpdateUserInfo(ctx context.Context, id string, user models.User) (models.User, error) {

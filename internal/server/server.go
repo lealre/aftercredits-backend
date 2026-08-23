@@ -50,9 +50,12 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 
 	mux.HandleFunc("GET /users", a.GetUsers)
 	mux.HandleFunc("GET /users/me", a.GetUserMe)
+	mux.HandleFunc("POST /users/me/password", a.ChangePassword)
+	mux.HandleFunc("POST /users/me/logout-all", a.LogoutEverywhere)
 	mux.HandleFunc("GET /users/{id}", a.GetUserById)
 	mux.HandleFunc("POST /users", a.CreateUser)
 	mux.HandleFunc("PATCH /users/{id}", a.UpdateUserInfo)
+	mux.HandleFunc("PATCH /users/{id}/active", a.SetUserActive)
 	mux.HandleFunc("DELETE /users/{id}", a.DeleteUserById)
 
 	mux.HandleFunc("POST /groups", a.CreateGroup)

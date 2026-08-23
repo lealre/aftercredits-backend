@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,11 @@ import (
 )
 
 const defaultExpiresAt = time.Second * 60 * 60
+
+// invalidCredentialsMessage is returned, byte-identical, for every failed login
+// — unknown account, wrong password, or deactivated account — so the response
+// leaks nothing about which one it was.
+const invalidCredentialsMessage = "Invalid username or password"
 
 func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
@@ -34,8 +40,15 @@ func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	userDb, err := users.GetUserDbByUsernameOrEmail(api.Db, r.Context(), authReq.Username, authReq.Email)
 	if err != nil {
-		if statusCode, ok := users.ErrorMap[err]; ok {
-			respondWithError(w, statusCode, formatErrorMessage(err))
+		// Do NOT distinguish "no such account" from "wrong password". Returning
+		// the service's 404 here (as this used to) turns login into a
+		// username-existence oracle, and skipping bcrypt on the not-found path
+		// leaks the same fact through timing. Burn an equivalent bcrypt on the
+		// not-found path and return the identical 401 the wrong-password branch
+		// returns below.
+		if errors.Is(err, users.ErrUserNotFound) {
+			auth.FakePasswordCheck(authReq.Password)
+			respondWithError(w, http.StatusUnauthorized, invalidCredentialsMessage)
 			return
 		}
 		logger.Printf("ERROR: %v", err)
@@ -43,18 +56,20 @@ func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = auth.CheckPasswordHash(userDb.PasswordHash, authReq.Password)
-	if err != nil {
-		if statusCode, ok := auth.ErrorsMap[err]; ok {
-			respondWithError(w, statusCode, formatErrorMessage(err))
-			return
-		}
-		logger.Printf("ERROR: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
+	if err := auth.CheckPasswordHash(userDb.PasswordHash, authReq.Password); err != nil {
+		respondWithError(w, http.StatusUnauthorized, invalidCredentialsMessage)
 		return
 	}
 
-	token, err := auth.MakeJWT(userDb.Id, *api.Secret, defaultExpiresAt)
+	// A deactivated account must not be able to log in. Return the same generic
+	// 401 rather than a distinct "account disabled", so the response reveals
+	// nothing an attacker can act on.
+	if !userDb.IsActive {
+		respondWithError(w, http.StatusUnauthorized, invalidCredentialsMessage)
+		return
+	}
+
+	token, err := auth.MakeJWT(userDb.Id, userDb.TokenVersion, *api.Secret, defaultExpiresAt)
 	if err != nil {
 		logger.Printf("ERROR: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")

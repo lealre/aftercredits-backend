@@ -48,3 +48,15 @@ type UpdateUserRequest struct {
 	Name     string `json:"name,omitempty"`
 	Email    string `json:"email,omitempty"`
 }
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// SetActiveRequest carries the admin's activate/deactivate intent. IsActive is
+// a pointer so a missing field is distinguishable from an explicit false — a
+// bare {} must be rejected, not silently read as "deactivate".
+type SetActiveRequest struct {
+	IsActive *bool `json:"isActive"`
+}

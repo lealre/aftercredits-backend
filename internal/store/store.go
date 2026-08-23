@@ -22,8 +22,13 @@ type Store interface {
 	GetUserByUsernameOrEmail(ctx context.Context, username, email string) (models.User, error)
 	GetAllUsers(ctx context.Context) ([]models.User, error)
 	UserExists(ctx context.Context, id string) (bool, error)
+	UserExistsByUsernameOrEmail(ctx context.Context, username, email string) (bool, error)
+	AdminExists(ctx context.Context) (bool, error)
 	AddUser(ctx context.Context, user models.User) error
 	DeleteUserById(ctx context.Context, id string) error
+	UpdateUserPassword(ctx context.Context, id, passwordHash string) error
+	IncrementUserTokenVersion(ctx context.Context, id string) error
+	SetUserActive(ctx context.Context, id string, active bool) error
 	UpdateUserInfo(ctx context.Context, id string, user models.User) (models.User, error)
 	UpdateUserLastLoginAt(ctx context.Context, userId string) (models.User, error)
 	UpdateUserGroup(ctx context.Context, userId string, groupId string) (models.User, error)

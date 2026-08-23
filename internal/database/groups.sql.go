@@ -77,7 +77,7 @@ func (q *Queries) GetGroupMemberIds(ctx context.Context, groupID string) ([]stri
 }
 
 const getGroupMemberUsers = `-- name: GetGroupMemberUsers :many
-SELECT u.id, u.name, u.email, u.username, u.password_hash, u.avatar_url, u.role, u.is_active, u.last_login_at, u.created_at, u.updated_at FROM group_members m
+SELECT u.id, u.name, u.email, u.username, u.password_hash, u.avatar_url, u.role, u.is_active, u.last_login_at, u.created_at, u.updated_at, u.token_version FROM group_members m
 JOIN users u ON u.id = m.user_id
 WHERE m.group_id = $1
 ORDER BY u.id
@@ -104,6 +104,7 @@ func (q *Queries) GetGroupMemberUsers(ctx context.Context, groupID string) ([]Us
 			&i.LastLoginAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TokenVersion,
 		); err != nil {
 			return nil, err
 		}

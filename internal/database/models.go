@@ -143,4 +143,5 @@ type User struct {
 	LastLoginAt  pgtype.Timestamptz
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+	TokenVersion int32
 }

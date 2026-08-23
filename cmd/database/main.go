@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -59,15 +58,16 @@ func createSuperuser(ctx context.Context, db store.Store) error {
 	email := strings.TrimSpace(os.Getenv("SUPERUSER_EMAIL"))
 	password := os.Getenv("SUPERUSER_PASSWORD")
 
-	// Apply defaults
-	if username == "" {
-		username = "admin"
-	}
-	if password == "" {
-		password = "admin"
+	// No defaults. The previous admin/admin fallback created a live superuser
+	// with a guessable password whenever these were unset, which is exactly the
+	// account a scanner tries first. An empty variable is now a hard error, and
+	// `required: true` on the deploy's env_file makes a missing .env fail the
+	// deploy rather than silently defaulting through it.
+	if username == "" || password == "" {
+		return fmt.Errorf("SUPERUSER_USERNAME and SUPERUSER_PASSWORD must be set; there is no default")
 	}
 
-	// Validate username if provided
+	// Validate username
 	if len(username) < 3 {
 		return fmt.Errorf("username must have at least 3 characters")
 	}
@@ -75,24 +75,30 @@ func createSuperuser(ctx context.Context, db store.Store) error {
 		return fmt.Errorf("username must contain just letters, numbers, '-' or '_'")
 	}
 
-	// Validate email if provided (TODO: Add validation from internal package)
+	// Validate email if provided
 	if email != "" && !users.IsValidEmail(email) {
 		return fmt.Errorf("email format is not valid")
 	}
 
-	// Validate password (TODO: Add validation from internal package)
-	if len(password) < 4 {
-		return fmt.Errorf("password must have at least 4 characters")
+	// Password floor for a superuser is higher than an ordinary account's:
+	// this credential can read the whole user directory and delete titles
+	// across every group.
+	if len(password) < 16 {
+		return fmt.Errorf("superuser password must have at least 16 characters")
 	}
 
-	// Check if user already exists
-	_, err := db.GetUserByUsernameOrEmail(ctx, username, email)
-	if err == nil {
-		fmt.Printf("ℹ️  User with username '%s' or email '%s' already exists, skipping creation\n", username, email)
-		return nil
+	// Idempotence keys on "does ANY admin exist", not on this username. That
+	// way the provisioning step, which the deploy runs on every boot, is a
+	// no-op whenever a real admin is present — so it can never re-mint a
+	// superuser after one has been deleted for being compromised. It creates
+	// one only when there are zero admins, using the env-supplied credentials.
+	hasAdmin, err := db.AdminExists(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check for an existing admin: %w", err)
 	}
-	if !errors.Is(err, store.ErrRecordNotFound) {
-		return fmt.Errorf("failed to check if user exists: %w", err)
+	if hasAdmin {
+		fmt.Println("ℹ️  An admin account already exists, skipping superuser creation")
+		return nil
 	}
 
 	// Hash password
