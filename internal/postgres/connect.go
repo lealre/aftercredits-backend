@@ -33,8 +33,8 @@ func Connect(ctx context.Context) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("postgres config error: %w", err)
 	}
 
-	cfg.MaxConns = int32(envInt("POSTGRES_MAX_CONNS", defaultMaxConns))
-	cfg.MinConns = int32(envInt("POSTGRES_MIN_CONNS", defaultMinConns))
+	cfg.MaxConns = clampToInt32(envInt("POSTGRES_MAX_CONNS", defaultMaxConns))
+	cfg.MinConns = clampToInt32(envInt("POSTGRES_MIN_CONNS", defaultMinConns))
 	cfg.MaxConnLifetime = defaultMaxConnLifetime
 	cfg.MaxConnIdleTime = defaultMaxConnIdleTime
 

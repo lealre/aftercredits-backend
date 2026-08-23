@@ -93,11 +93,6 @@ func getUserToken(t *testing.T, authUser auth.LoginRequest) string {
 	return respBodyAuth.AccessToken
 }
 
-// Check if a user exists directly in the database
-func checkUserExists(userId string) (bool, error) {
-	return testStore.UserExists(context.Background(), userId)
-}
-
 func addUserAdminInDb(t *testing.T, user users.NewUserRequest) (models.User, string) {
 	ctx := context.Background()
 
