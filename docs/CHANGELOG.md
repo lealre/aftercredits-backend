@@ -72,6 +72,19 @@ activity feed line that once read "...with note 5.599999904632568".
   precision and the widened stored value no longer matched the clean
   literal. That is fixed too — the comparison is exact now
 
+### Activity feed
+
+* **Activity events are no longer pruned by default.** The weekly routines job
+  deleted events older than 90 days on every run, with no way to switch it off.
+  Nothing had aged past that window yet, so the behaviour was invisible — the
+  first sign of it would have been events vanishing three months after the feed
+  shipped. Pruning now requires `ACTIVITY_RETENTION_ENABLED` to be explicitly
+  set (`true`/`1`/`yes`/`on`); anything else, including a typo, leaves the log
+  intact. `ACTIVITY_RETENTION_DAYS` still sets the window, and is consulted only
+  once retention is on
+* The job says on every run which mode it is in. A retention step that silently
+  does nothing is indistinguishable from one that is silently broken
+
 ### Scheduled backups (Pi tooling, no app behaviour change)
 
 * **The backup container runs unprivileged**, as the login account's UID rather
