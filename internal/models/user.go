@@ -19,6 +19,7 @@ type User struct {
 	Groups       []string
 	Role         UserRole
 	IsActive     bool
+	TokenVersion int
 	LastLoginAt  *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time

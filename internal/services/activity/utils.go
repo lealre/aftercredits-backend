@@ -18,7 +18,13 @@ var ErrEventNotFound = errors.New("activity event not found")
 // report to the client than "not authorized."
 var ErrInvalidTicket = errors.New("ticket is invalid, expired, or already used")
 
+// ErrTooManyStreams is returned when a per-user or process-wide stream cap is
+// reached. Mapped to 429 so a client with too many open tabs backs off rather
+// than being logged out.
+var ErrTooManyStreams = errors.New("too many open activity streams")
+
 var ErrorMap = map[error]int{
-	ErrEventNotFound: http.StatusNotFound,
-	ErrInvalidTicket: http.StatusUnauthorized,
+	ErrEventNotFound:  http.StatusNotFound,
+	ErrInvalidTicket:  http.StatusUnauthorized,
+	ErrTooManyStreams: http.StatusTooManyRequests,
 }

@@ -76,6 +76,17 @@ if ! pg_dump -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" \
   exit 1
 fi
 
+# Verify the dump actually parses BEFORE it is the thing we rely on. An
+# unverified backup is not a backup: pg_dump can exit 0 and still leave a file
+# that pg_restore cannot read. --list reads the archive's table of contents
+# without touching any database, so it is a cheap integrity check.
+log "🔎 Verifying the dump is readable..."
+if ! pg_restore --list "${TEMP_DIR}/${BACKUP_NAME}.dump" > /dev/null 2>&1; then
+  log "❌ The dump did not parse (pg_restore --list failed) — NOT uploading a corrupt backup"
+  rm -f "${TEMP_DIR}/${BACKUP_NAME}.dump"
+  exit 1
+fi
+
 # Compress the dump file into a .tar.gz (same format as scripts/backup.sh)
 log "🗜️  Compressing backup file..."
 if ! tar -czf "${COMPRESSED_PATH}" -C "${TEMP_DIR}" "${BACKUP_NAME}.dump" 2>&1; then
@@ -83,19 +94,56 @@ if ! tar -czf "${COMPRESSED_PATH}" -C "${TEMP_DIR}" "${BACKUP_NAME}.dump" 2>&1; 
   exit 1
 fi
 
+# Optional at-rest encryption. When BACKUP_PASSPHRASE is set, the artifact is
+# gpg-symmetric-encrypted (AES-256) before it leaves the Pi, so a snapshot on
+# Drive is useless without the passphrase (keep it OFF the Pi). Unset, the
+# behavior is unchanged — a plaintext .tar.gz — with a one-line warning, so
+# existing deployments are not silently altered.
+UPLOAD_PATH="${COMPRESSED_PATH}"
+UPLOAD_NAME="${BACKUP_NAME}.tar.gz"
+if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
+  log "🔐 Encrypting backup (AES-256)..."
+  if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
+      --passphrase "${BACKUP_PASSPHRASE}" \
+      --output "${COMPRESSED_PATH}.gpg" "${COMPRESSED_PATH}" 2>&1; then
+    log "❌ Encryption failed"
+    rm -f "${TEMP_DIR}/${BACKUP_NAME}.dump" "${COMPRESSED_PATH}"
+    exit 1
+  fi
+  UPLOAD_PATH="${COMPRESSED_PATH}.gpg"
+  UPLOAD_NAME="${BACKUP_NAME}.tar.gz.gpg"
+else
+  log "⚠️  BACKUP_PASSPHRASE is not set — uploading an UNENCRYPTED backup. Set it to encrypt at rest."
+fi
+
 # Upload to Google Drive using rclone
 log "☁️  Uploading to Google Drive..."
-if ! rclone copy "${COMPRESSED_PATH}" "${BACKUP_REMOTE}" -v 2>&1; then
+if ! rclone copy "${UPLOAD_PATH}" "${BACKUP_REMOTE}" -v 2>&1; then
   log "❌ Upload to ${BACKUP_REMOTE} failed — rclone's own output is above"
   exit 1
+fi
+
+# Confirm the file actually landed, rather than trusting the copy alone.
+if ! rclone lsf "${BACKUP_REMOTE}" 2>/dev/null | grep -qxF "${UPLOAD_NAME}"; then
+  log "❌ Uploaded file ${UPLOAD_NAME} not found on the remote after copy — treating as failure"
+  exit 1
+fi
+
+# Prune snapshots past the retention window so Drive does not grow forever (and
+# old, potentially weakly-protected snapshots do not linger). Non-fatal: a prune
+# failure must not fail an otherwise-good backup.
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-90}"
+log "🗑️  Pruning backups older than ${RETENTION_DAYS} days on ${BACKUP_REMOTE}..."
+if ! rclone delete --min-age "${RETENTION_DAYS}d" "${BACKUP_REMOTE}" -v 2>&1; then
+  log "⚠️  Prune step failed (non-fatal) — check the remote's retention manually"
 fi
 
 # Cleanup
 log "🧹 Cleaning up temporary files..."
 rm -f "${TEMP_DIR}/${BACKUP_NAME}.dump"
-rm -f "${COMPRESSED_PATH}"
+rm -f "${COMPRESSED_PATH}" "${COMPRESSED_PATH}.gpg"
 
 log "✅ Backup completed and uploaded to Google Drive:"
-log "   ${BACKUP_REMOTE}/${BACKUP_NAME}.tar.gz"
+log "   ${BACKUP_REMOTE}/${UPLOAD_NAME}"
 log "=========================================="
 

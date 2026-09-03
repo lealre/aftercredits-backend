@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
@@ -28,11 +29,11 @@ type Provider struct {
 
 // New returns an OMDb provider. apiKey is a free OMDb API key (omdbapi.com/apikey.aspx).
 func New(apiKey string) *Provider {
-	return &Provider{baseURL: defaultBaseURL, apiKey: apiKey, client: http.DefaultClient}
+	return &Provider{baseURL: defaultBaseURL, apiKey: apiKey, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
 func newWithBaseURL(baseURL, apiKey string) *Provider {
-	return &Provider{baseURL: baseURL, apiKey: apiKey, client: http.DefaultClient}
+	return &Provider{baseURL: baseURL, apiKey: apiKey, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
 func (p *Provider) Name() string { return "omdb" }
@@ -60,7 +61,7 @@ func (p *Provider) get(ctx context.Context, params url.Values, out any) error {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("omdb: non-2xx status %s - %s", resp.Status, string(body))
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 }
 
 // omdbErr classifies an OMDb "Response":"False" body: genuine not-found becomes

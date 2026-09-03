@@ -1,6 +1,53 @@
 <a name="unreleased"></a>
 ## Unreleased
 
+### Security hardening for public internet exposure
+
+This version makes the backend safe to expose on the open internet. **Operator
+actions are required at deploy time** — see the end of this section.
+
+* **Sessions are now revocable.** A token carries a `token_version` that
+  `AuthMiddleware` checks against the user row on every request (migration 010
+  adds the column). Changing a password bumps it, invalidating every other
+  session. New routes: `POST /users/me/password` (change own password),
+  `POST /users/me/logout-all`, and admin-only `PATCH /users/{id}/active`
+  (deactivate/reinstate). `POST /login` now refuses a deactivated account.
+* **Registration is admin-only.** `POST /users` is no longer public; new
+  accounts are created by an admin.
+* **The superuser is no longer `admin`/`admin`.** `database -superuser` refuses
+  to run without `SUPERUSER_USERNAME`/`SUPERUSER_PASSWORD` (16-char floor) and
+  is idempotent on "any admin exists", so it can never re-mint a default admin.
+* **Password policy** is 12–72 characters. **Login no longer leaks** whether an
+  account exists (identical 401 and timing for unknown/wrong/inactive).
+* **Authorization gaps closed:** editing/deleting a rating now requires current
+  group membership; a group owner can evict a member; the episodes route is
+  scoped to the caller's groups; the group-members response no longer exposes
+  emails or cross-group ids.
+* **JWT hardening:** pinned to HS256, expiry required, issuer verified.
+* **Abuse/DoS limits:** 64 KiB request-body cap; HTTP server timeouts
+  (the SSE stream is intentionally exempt from a write deadline); a clamp on
+  `?limit` for title search; per-request DB deadline; explicit pgx pool sizing;
+  per-user and per-group quotas; SSE per-user/global stream caps and a bounded
+  stream lifetime; title-provider HTTP timeouts and response-size caps;
+  request logging now records client IP + user id and cannot be forged via the
+  URL path.
+* **Input validation & retention:** length/character validation on all
+  user-supplied strings (backed by DB `CHECK` constraints in migration 010);
+  the routines job now prunes activity events past `ACTIVITY_RETENTION_DAYS`
+  (default 90). Deleting a user is now a soft delete (deactivation).
+* **Dependencies/toolchain:** Go 1.26; pgx, x/text, x/crypto bumped;
+  `.dockerignore` added; a `govulncheck` CI workflow added.
+
+**Operator actions required (not in code):** rotate the production
+`JWT_SECRET`, `POSTGRES_PASSWORD`, and the TMDB/OMDb keys; set
+`SUPERUSER_USERNAME`/`SUPERUSER_PASSWORD`; delete any `admin`/`admin` row from
+the production database; move the DB role off cluster-superuser. Migration 010
+adds `token_version`, a `group_members(user_id)` index, and length `CHECK`
+constraints (it truncates any over-long existing values first, so it is safe to
+apply).
+
+### Rating note precision (earlier in this version)
+
 A rating note is now stored exactly, closing the class of bug behind the
 activity feed line that once read "...with note 5.599999904632568".
 
@@ -24,6 +71,19 @@ activity feed line that once read "...with note 5.599999904632568".
   comparing `REAL` to a decimal literal promoted both sides to double
   precision and the widened stored value no longer matched the clean
   literal. That is fixed too — the comparison is exact now
+
+### Activity feed
+
+* **Activity events are no longer pruned by default.** The weekly routines job
+  deleted events older than 90 days on every run, with no way to switch it off.
+  Nothing had aged past that window yet, so the behaviour was invisible — the
+  first sign of it would have been events vanishing three months after the feed
+  shipped. Pruning now requires `ACTIVITY_RETENTION_ENABLED` to be explicitly
+  set (`true`/`1`/`yes`/`on`); anything else, including a typo, leaves the log
+  intact. `ACTIVITY_RETENTION_DAYS` still sets the window, and is consulted only
+  once retention is on
+* The job says on every run which mode it is in. A retention step that silently
+  does nothing is indistinguishable from one that is silently broken
 
 ### Scheduled backups (Pi tooling, no app behaviour change)
 

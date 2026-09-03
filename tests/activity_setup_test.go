@@ -350,12 +350,10 @@ func buildGroupWithTitleAgainst(t *testing.T, baseURL string) (groupId, token st
 
 	client := &http.Client{}
 
-	registerBody, err := json.Marshal(users.NewUserRequest{Username: "offuser", Password: "pass"})
-	require.NoError(t, err)
-	registerResp, err := client.Post(baseURL+"/users", "application/json", bytes.NewBuffer(registerBody))
-	require.NoError(t, err)
-	defer registerResp.Body.Close()
-	require.Equal(t, http.StatusCreated, registerResp.StatusCode)
+	// Registration is admin-only now, so seed the user directly in the shared
+	// store (testStore is the same store the off-server was built on) rather
+	// than through the gated POST /users route.
+	seedUserInStore(t, users.NewUserRequest{Username: "offuser", Password: "pass"})
 
 	loginBody, err := json.Marshal(auth.LoginRequest{Username: "offuser", Password: "pass"})
 	require.NoError(t, err)

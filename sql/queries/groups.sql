@@ -3,6 +3,17 @@ INSERT INTO groups (id, name, description, owner_id, deleted, created_at, update
 VALUES ($1, $2, $3, $4, false, $5, $6)
 RETURNING *;
 
+-- name: CountOwnedGroups :one
+-- How many non-deleted groups this user owns. Used to cap group creation so a
+-- single account cannot spin up unlimited groups (each of which can hold titles
+-- and members), which is cheap disk/DB abuse from a free account.
+SELECT count(*) FROM groups WHERE owner_id = $1 AND NOT deleted;
+
+-- name: CountAllGroupTitles :one
+-- Total title entries in a group, unfiltered — the per-group ceiling check when
+-- adding a title. Counts entries even if the title later left the catalogue.
+SELECT count(*) FROM group_titles WHERE group_id = $1;
+
 -- name: GetGroupRow :one
 SELECT * FROM groups
 WHERE id = $1 AND NOT deleted

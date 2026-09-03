@@ -108,14 +108,48 @@ BACKUP_GID="${BACKUP_GID:-$(id -g)}"
 ENV_FILE_ABS="${ENV_FILE}"
 LOG_DIR_ABS="${LOG_DIR}"
 
-# Build the --env-file list: deploy env first (credentials/app config), pi/.env
-# second (schedules, network).
+# Build the per-job --env-file lists.
+#
+# The cron containers must NOT receive the whole deploy .env: it holds
+# JWT_SECRET (and, for backup, the provider keys) that neither job needs, and a
+# compromise of a cron container should not hand those over. So rather than pass
+# the full deploy env to both, derive a minimal per-job env file containing only
+# the keys that job actually uses:
+#   backup   → POSTGRES_* (+ BACKUP_REMOTE / BACKUP_PASSPHRASE / retention)
+#   routines → POSTGRES_* + the title-provider config (+ activity retention)
+# Neither gets JWT_SECRET. pi/.env (schedules, network) is still layered second.
+#
+# The derived files are named .env.backup / .env.routines so the repo's
+# `.env*` ignore rule keeps them untracked, and are chmod 600 since they hold
+# credentials.
+extract_keys() {
+    # $1 src env file, $2 dest file, remaining args: keys to copy through.
+    local src="$1" dest="$2"; shift 2
+    : > "${dest}"; chmod 600 "${dest}"
+    local key
+    for key in "$@"; do
+        grep -E "^[[:space:]]*${key}=" "${src}" >> "${dest}" 2>/dev/null || true
+    done
+}
+
 if [ -n "${DEPLOY_ENV_FILE}" ] && [ -f "${DEPLOY_ENV_FILE}" ]; then
     DEPLOY_ENV_ABS="$(cd "$(dirname "${DEPLOY_ENV_FILE}")" && pwd)/$(basename "${DEPLOY_ENV_FILE}")"
-    ENV_FILE_ARGS="--env-file ${DEPLOY_ENV_ABS} --env-file ${ENV_FILE_ABS}"
-    log "Using deploy env ${DEPLOY_ENV_ABS} for database credentials"
+
+    BACKUP_ENV_DERIVED="${SCRIPT_DIR}/.env.backup"
+    ROUTINES_ENV_DERIVED="${SCRIPT_DIR}/.env.routines"
+    extract_keys "${DEPLOY_ENV_ABS}" "${BACKUP_ENV_DERIVED}" \
+        POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST POSTGRES_PORT \
+        BACKUP_REMOTE BACKUP_PASSPHRASE BACKUP_RETENTION_DAYS
+    extract_keys "${DEPLOY_ENV_ABS}" "${ROUTINES_ENV_DERIVED}" \
+        POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST POSTGRES_PORT \
+        TITLE_PROVIDER TMDB_API_KEY OMDB_API_KEY ACTIVITY_RETENTION_DAYS
+
+    BACKUP_ENV_ARGS="--env-file ${BACKUP_ENV_DERIVED} --env-file ${ENV_FILE_ABS}"
+    ROUTINES_ENV_ARGS="--env-file ${ROUTINES_ENV_DERIVED} --env-file ${ENV_FILE_ABS}"
+    log "Using deploy env ${DEPLOY_ENV_ABS}; derived minimal per-job env files (no JWT_SECRET)"
 else
-    ENV_FILE_ARGS="--env-file ${ENV_FILE_ABS}"
+    BACKUP_ENV_ARGS="--env-file ${ENV_FILE_ABS}"
+    ROUTINES_ENV_ARGS="--env-file ${ENV_FILE_ABS}"
     log "DEPLOY_ENV_FILE not set (or not found); using only ${ENV_FILE_ABS}"
 fi
 
@@ -175,9 +209,9 @@ log "Docker images built successfully"
 # image's HOME rather than root's. Still :rw, because rclone must persist a
 # refreshed token — but a refresh now writes as this user, so the file stays
 # readable by the host afterwards instead of flipping to root.
-BACKUP_CRON="${BACKUP_SCHEDULE} docker run --rm --user ${BACKUP_UID}:${BACKUP_GID} ${ENV_FILE_ARGS} -v ${RCLONE_CONFIG_DIR}:/home/backup/.config/rclone:rw --network ${DOCKER_NETWORK} aftercredits-backup:latest >> ${LOG_DIR_ABS}/backup.log 2>&1"
+BACKUP_CRON="${BACKUP_SCHEDULE} docker run --rm --user ${BACKUP_UID}:${BACKUP_GID} ${BACKUP_ENV_ARGS} -v ${RCLONE_CONFIG_DIR}:/home/backup/.config/rclone:rw --network ${DOCKER_NETWORK} aftercredits-backup:latest >> ${LOG_DIR_ABS}/backup.log 2>&1"
 
-MOVIES_CRON="${MOVIES_UPDATE_SCHEDULE} docker run --rm ${ENV_FILE_ARGS} -v ${ENV_FILE_ABS}:/app/.env:ro --network ${DOCKER_NETWORK} aftercredits-routines:latest >> ${LOG_DIR_ABS}/movies-update.log 2>&1"
+MOVIES_CRON="${MOVIES_UPDATE_SCHEDULE} docker run --rm ${ROUTINES_ENV_ARGS} -v ${ENV_FILE_ABS}:/app/.env:ro --network ${DOCKER_NETWORK} aftercredits-routines:latest >> ${LOG_DIR_ABS}/movies-update.log 2>&1"
 
 # Create temporary crontab file
 TEMP_CRONTAB=$(mktemp)

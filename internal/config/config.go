@@ -16,6 +16,22 @@ const (
 	defaultSearchLimit = 5
 )
 
+// Abuse ceilings (used when the corresponding env var is unset/invalid). These
+// bound what one account can create so a free account cannot exhaust the Pi's
+// disk. Generous for a family, tiny for an abuser.
+const (
+	defaultMaxGroupsPerUser  = 25
+	defaultMaxTitlesPerGroup = 1000
+)
+
+// MaxGroupsPerUser caps how many non-deleted groups one user may own.
+// Override with MAX_GROUPS_PER_USER.
+func MaxGroupsPerUser() int { return envInt("MAX_GROUPS_PER_USER", defaultMaxGroupsPerUser) }
+
+// MaxTitlesPerGroup caps how many titles one group may hold.
+// Override with MAX_TITLES_PER_GROUP.
+func MaxTitlesPerGroup() int { return envInt("MAX_TITLES_PER_GROUP", defaultMaxTitlesPerGroup) }
+
 // DefaultPageSize is the page size used when a request omits/zeroes it.
 // Override with DEFAULT_PAGE_SIZE.
 func DefaultPageSize() int { return envInt("DEFAULT_PAGE_SIZE", defaultPageSize) }

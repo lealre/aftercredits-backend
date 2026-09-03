@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAllGroupTitles = `-- name: CountAllGroupTitles :one
+SELECT count(*) FROM group_titles WHERE group_id = $1
+`
+
+// Total title entries in a group, unfiltered — the per-group ceiling check when
+// adding a title. Counts entries even if the title later left the catalogue.
+func (q *Queries) CountAllGroupTitles(ctx context.Context, groupID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllGroupTitles, groupID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countGroupTitles = `-- name: CountGroupTitles :one
 SELECT count(*) FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
@@ -30,6 +43,20 @@ type CountGroupTitlesParams struct {
 // this (same WHERE) only in that case. Hot path stays one round trip.
 func (q *Queries) CountGroupTitles(ctx context.Context, arg CountGroupTitlesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countGroupTitles, arg.GroupID, arg.Watched, arg.TitleTypes)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOwnedGroups = `-- name: CountOwnedGroups :one
+SELECT count(*) FROM groups WHERE owner_id = $1 AND NOT deleted
+`
+
+// How many non-deleted groups this user owns. Used to cap group creation so a
+// single account cannot spin up unlimited groups (each of which can hold titles
+// and members), which is cheap disk/DB abuse from a free account.
+func (q *Queries) CountOwnedGroups(ctx context.Context, ownerID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countOwnedGroups, ownerID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -77,7 +104,7 @@ func (q *Queries) GetGroupMemberIds(ctx context.Context, groupID string) ([]stri
 }
 
 const getGroupMemberUsers = `-- name: GetGroupMemberUsers :many
-SELECT u.id, u.name, u.email, u.username, u.password_hash, u.avatar_url, u.role, u.is_active, u.last_login_at, u.created_at, u.updated_at FROM group_members m
+SELECT u.id, u.name, u.email, u.username, u.password_hash, u.avatar_url, u.role, u.is_active, u.last_login_at, u.created_at, u.updated_at, u.token_version FROM group_members m
 JOIN users u ON u.id = m.user_id
 WHERE m.group_id = $1
 ORDER BY u.id
@@ -104,6 +131,7 @@ func (q *Queries) GetGroupMemberUsers(ctx context.Context, groupID string) ([]Us
 			&i.LastLoginAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TokenVersion,
 		); err != nil {
 			return nil, err
 		}

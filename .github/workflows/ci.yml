@@ -43,7 +43,12 @@ jobs:
       # everyone to ignore the tool. Everything at medium or above is treated
       # as a defect and the build fails on it.
       - name: Run gosec
-        run: gosec -quiet -severity medium ./...
+        # -exclude-generated: sqlc-generated files (internal/database) carry the
+        # standard "Code generated ... DO NOT EDIT" header and cannot be
+        # annotated; their SQL constants trip G101 (a query named
+        # updateUserPassword "looks like" a hardcoded credential) with no real
+        # finding. Scan the code we actually write.
+        run: gosec -quiet -severity medium -exclude-generated ./...
 
   style:
     name: Style

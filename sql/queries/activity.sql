@@ -125,3 +125,10 @@ SELECT e.id, e.seq, e.group_id, e.actor_id, e.actor_name, e.kind, e.title_id,
 FROM activity_events e
 JOIN groups g ON g.id = e.group_id
 WHERE e.id = $1;
+
+-- name: DeleteActivityEventsOlderThan :execrows
+-- Retention: activity_events grows without bound otherwise (nothing else ever
+-- deletes an event, and soft-deleted groups keep theirs). Run periodically by
+-- the routines binary. Deleting old rows is safe for the live path — the LISTEN
+-- reader already tolerates a notified id whose row is gone.
+DELETE FROM activity_events WHERE created_at < $1;

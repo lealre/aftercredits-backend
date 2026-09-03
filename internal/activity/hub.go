@@ -1,10 +1,23 @@
 package activity
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/lealre/movies-backend/internal/models"
 )
+
+// Subscriber caps. maxSubscribersPerUser is per user id (a real browser opens a
+// few tabs, so 1 would be wrong); maxSubscribersTotal bounds the whole process
+// so no combination of accounts can exhaust memory/connections on the Pi.
+const (
+	maxSubscribersPerUser = 3
+	maxSubscribersTotal   = 200
+)
+
+// ErrTooManySubscribers is returned by Subscribe when a cap is reached. The SSE
+// handler maps it to 429.
+var ErrTooManySubscribers = errors.New("too many open activity streams")
 
 // subscriberBufferSize is the per-subscriber channel capacity. It is small on
 // purpose: the buffer only needs to absorb the gap between one event landing
@@ -37,27 +50,40 @@ type Subscriber struct {
 type Hub struct {
 	mu          sync.RWMutex
 	subscribers map[*Subscriber]struct{}
+	perUser     map[string]int
 }
 
 func NewHub() *Hub {
-	return &Hub{subscribers: make(map[*Subscriber]struct{})}
+	return &Hub{
+		subscribers: make(map[*Subscriber]struct{}),
+		perUser:     make(map[string]int),
+	}
 }
 
-// Subscribe registers a new subscriber and returns its mailbox. Callers must
+// Subscribe registers a new subscriber and returns its mailbox, unless a
+// per-user or process-wide cap is reached (ErrTooManySubscribers). Callers must
 // Unsubscribe when the connection ends, or the entry — and its channel — leaks
 // for the life of the process.
-func (h *Hub) Subscribe(userId string, groupIds []string) *Subscriber {
+func (h *Hub) Subscribe(userId string, groupIds []string) (*Subscriber, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if len(h.subscribers) >= maxSubscribersTotal {
+		return nil, ErrTooManySubscribers
+	}
+	if h.perUser[userId] >= maxSubscribersPerUser {
+		return nil, ErrTooManySubscribers
+	}
+
 	s := &Subscriber{
 		UserId:   userId,
 		GroupIds: append([]string(nil), groupIds...),
 		Events:   make(chan models.ActivityEvent, subscriberBufferSize),
 	}
-
-	h.mu.Lock()
 	h.subscribers[s] = struct{}{}
-	h.mu.Unlock()
+	h.perUser[userId]++
 
-	return s
+	return s, nil
 }
 
 // Unsubscribe removes s from the hub and closes its channel. It is safe to
@@ -66,7 +92,14 @@ func (h *Hub) Subscribe(userId string, groupIds []string) *Subscriber {
 // without the guard.
 func (h *Hub) Unsubscribe(s *Subscriber) {
 	h.mu.Lock()
-	delete(h.subscribers, s)
+	if _, ok := h.subscribers[s]; ok {
+		delete(h.subscribers, s)
+		if h.perUser[s.UserId] <= 1 {
+			delete(h.perUser, s.UserId)
+		} else {
+			h.perUser[s.UserId]--
+		}
+	}
 	h.mu.Unlock()
 
 	s.closeOnce.Do(func() { close(s.Events) })

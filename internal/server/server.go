@@ -51,9 +51,12 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 
 	mux.HandleFunc("GET /users", a.GetUsers)
 	mux.HandleFunc("GET /users/me", a.GetUserMe)
+	mux.HandleFunc("POST /users/me/password", a.ChangePassword)
+	mux.HandleFunc("POST /users/me/logout-all", a.LogoutEverywhere)
 	mux.HandleFunc("GET /users/{id}", a.GetUserById)
 	mux.HandleFunc("POST /users", a.CreateUser)
 	mux.HandleFunc("PATCH /users/{id}", a.UpdateUserInfo)
+	mux.HandleFunc("PATCH /users/{id}/active", a.SetUserActive)
 	mux.HandleFunc("DELETE /users/{id}", a.DeleteUserById)
 
 	mux.HandleFunc("POST /groups", a.CreateGroup)
@@ -126,6 +129,10 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 	}
 
 	var handler http.Handler = mux
+	// Innermost: bound each handler's context so a slow query cannot pin a pool
+	// connection. Exempts GET /activity/stream by path. Sits inside the activity
+	// middleware so the post-response event flush is not cancelled by it.
+	handler = RequestTimeoutMiddleware(handler)
 	if activityFeedEnabled {
 		handler = ActivityMiddleware(activity.NewStoreSink(st))(handler)
 	}
@@ -180,12 +187,15 @@ func ListenAndServe(st store.Store) error {
 		// Idle keep-alive connections are reaped, which costs nothing and
 		// bounds the number of sockets a stalled client can accumulate.
 		IdleTimeout: 120 * time.Second,
+		// Cap the header size a client can send.
+		MaxHeaderBytes: 1 << 16,
 		// WriteTimeout is deliberately NOT set. It is an absolute deadline on
 		// the whole response, and the activity feed streams Server-Sent Events
 		// over a connection that stays open indefinitely by design — any value
 		// here would sever every live feed on a timer. ReadTimeout is likewise
-		// left off: it would cap the same long-lived requests, and there are no
-		// request bodies large enough to need it.
+		// left off: it would cap the same long-lived requests, and the request
+		// body is already bounded by MaxBytesReader in RequestIdMiddleware and
+		// each handler's context by RequestTimeoutMiddleware.
 	}
 	log.Println("Server running on :8080")
 	if err := server.ListenAndServe(); err != nil {

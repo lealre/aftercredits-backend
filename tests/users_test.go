@@ -12,49 +12,69 @@ import (
 )
 
 func TestAddUsers(t *testing.T) {
+	// Registration is admin-only, so every POST /users below carries an admin
+	// token. Helper posts a NewUserRequest as the given admin and returns the
+	// raw response.
+	postUserAs := func(t *testing.T, user users.NewUserRequest, token string) *http.Response {
+		t.Helper()
+		body, err := json.Marshal(user)
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodPost, testServer.URL+"/users", bytes.NewBuffer(body))
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := (&http.Client{}).Do(req)
+		require.NoError(t, err)
+		return resp
+	}
+
+	// A password that satisfies the policy (>= 12 chars), used wherever a
+	// registration is expected to succeed.
+	const validPassword = "Valid#Pass1234"
+
 	t.Run("Adding a user successfully", func(t *testing.T) {
 		resetDB(t)
+		_, adminTok := addUserAdminInDb(t, users.NewUserRequest{Username: "adminreg", Password: validPassword})
 
 		newUser := users.NewUserRequest{
 			Name:     "testname",
 			Username: "testuser",
-			Password: "testpass",
+			Password: validPassword,
 		}
-		postBody, err := json.Marshal(newUser)
-		require.NoError(t, err)
-
-		resp, err := http.Post(
-			testServer.URL+"/users",
-			"application/json",
-			bytes.NewBuffer(postBody),
-		)
-		require.NoError(t, err)
+		resp := postUserAs(t, newUser, adminTok)
 		defer resp.Body.Close()
-
-		require.NoError(t, err)
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		var respBody users.UserResponse
-		err = json.NewDecoder(resp.Body).Decode(&respBody)
-		require.NoError(t, err)
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
 		require.NotEmpty(t, respBody.Id, "id should not be empty")
 		require.NotEmpty(t, respBody.Name, "name should not be empty")
 		require.NotEmpty(t, respBody.CreatedAt, "createdAt should not be empty")
 		require.NotEmpty(t, respBody.UpdatedAt, "updatedAt should not be empty")
-		require.Equal(t, respBody.Name, newUser.Name, "username returned should be the same in post body")
+		require.Equal(t, respBody.Name, newUser.Name, "name returned should be the same in post body")
 		require.Empty(t, respBody.LastLoginAt, "lastLoginAt should be empty")
 		require.Empty(t, respBody.AvatarURL, "avatarURL should be empty")
 		require.Empty(t, respBody.Groups, "groups should be empty")
 		require.Empty(t, respBody.Email, "email should be empty")
 	})
 
+	t.Run("Registration requires an admin token", func(t *testing.T) {
+		resetDB(t)
+		// A regular user's token must not be able to register accounts.
+		_, userTok := addUser(t, users.NewUserRequest{Username: "plainuser", Password: validPassword})
+		resp := postUserAs(t, users.NewUserRequest{Username: "shouldfail", Password: validPassword}, userTok)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+
 	t.Run("Adding a user with validation cases", func(t *testing.T) {
 		resetDB(t)
+		_, adminTok := addUserAdminInDb(t, users.NewUserRequest{Username: "adminreg", Password: validPassword})
 
 		firstUser := users.NewUserRequest{
 			Username: "testname",
 			Email:    "test@email.com",
-			Password: "testpass",
+			Password: validPassword,
 		}
 
 		cases := []struct {
@@ -64,55 +84,37 @@ func TestAddUsers(t *testing.T) {
 			testErrorMessage  string
 		}{
 			{
-				user: users.NewUserRequest{
-					Username: firstUser.Username,
-					Password: "testpass",
-				},
+				user:              users.NewUserRequest{Username: firstUser.Username, Password: validPassword},
 				apiError:          users.ErrCredentialsAlreadyExists,
 				stausCodeExpected: http.StatusConflict,
 				testErrorMessage:  "Failed validating duplicated username",
 			},
 			{
-				user: users.NewUserRequest{
-					Email:    firstUser.Email,
-					Password: "testpass",
-				},
+				user:              users.NewUserRequest{Email: firstUser.Email, Password: validPassword},
 				apiError:          users.ErrCredentialsAlreadyExists,
 				stausCodeExpected: http.StatusConflict,
 				testErrorMessage:  "Failed validating duplicated email",
 			},
 			{
-				user: users.NewUserRequest{
-					Email:    "emailasstring",
-					Password: "testpass",
-				},
+				user:              users.NewUserRequest{Email: "emailasstring", Password: validPassword},
 				apiError:          users.ErrInvalidEmail,
 				stausCodeExpected: http.StatusBadRequest,
 				testErrorMessage:  "Failed validating email format",
 			},
 			{
-				user: users.NewUserRequest{
-					Username: "1",
-					Password: "testpass",
-				},
+				user:              users.NewUserRequest{Username: "1", Password: validPassword},
 				apiError:          users.ErrInvalidUsernameSize,
 				stausCodeExpected: http.StatusBadRequest,
 				testErrorMessage:  "Failed validating username size",
 			},
 			{
-				user: users.NewUserRequest{
-					Username: "@test&/",
-					Password: "testpass",
-				},
+				user:              users.NewUserRequest{Username: "@test&/", Password: validPassword},
 				apiError:          users.ErrInvalidUsername,
 				stausCodeExpected: http.StatusBadRequest,
 				testErrorMessage:  "Failed validating username special characters",
 			},
 			{
-				user: users.NewUserRequest{
-					Username: "test-name",
-					Password: "1",
-				},
+				user:              users.NewUserRequest{Username: "test-name", Password: "1"},
 				apiError:          users.ErrInvalidPassword,
 				stausCodeExpected: http.StatusBadRequest,
 				testErrorMessage:  "Failed validating password size",
@@ -120,30 +122,13 @@ func TestAddUsers(t *testing.T) {
 		}
 
 		// Add first user
-		postBody, err := json.Marshal(firstUser)
-		require.NoError(t, err)
-
-		resp, err := http.Post(
-			testServer.URL+"/users",
-			"application/json",
-			bytes.NewBuffer(postBody),
-		)
-		require.NoError(t, err)
+		resp := postUserAs(t, firstUser, adminTok)
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		// Run validation cases
 		for _, testCase := range cases {
-			newUser := testCase.user
-			postBody, err := json.Marshal(newUser)
-			require.NoError(t, err)
-
-			resp, err := http.Post(
-				testServer.URL+"/users",
-				"application/json",
-				bytes.NewBuffer(postBody),
-			)
-			require.NoError(t, err)
+			resp := postUserAs(t, testCase.user, adminTok)
 			defer resp.Body.Close()
 			require.Equal(t, testCase.stausCodeExpected, resp.StatusCode, testCase.testErrorMessage)
 
@@ -179,9 +164,11 @@ func TestDeleteUser(t *testing.T) {
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		ok, err := checkUserExists(user.Id)
-		require.NoError(t, err)
-		require.False(t, ok, "user should not exist after deletion")
+		// Delete is a soft delete: the row remains (so authored content keeps a
+		// resolvable author) but the account is deactivated, which revokes
+		// access.
+		deleted := getUserFromDb(t, user.Id)
+		require.False(t, deleted.IsActive, "deleted user should be deactivated")
 	})
 
 	t.Run("Attempting to delete another user's account returns 403 Forbidden", func(t *testing.T) {

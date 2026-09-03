@@ -64,7 +64,7 @@ func TestAuthMiddleware_UserLookup(t *testing.T) {
 	const secret = "middleware-test-secret"
 	const userId = "11111111-1111-1111-1111-111111111111"
 
-	token, err := auth.MakeJWT(userId, secret, time.Hour)
+	token, err := auth.MakeJWT(userId, 0, secret, time.Hour)
 	require.NoError(t, err, "failed to mint a test token")
 
 	activeUser := models.User{Id: userId, Username: "active", IsActive: true}

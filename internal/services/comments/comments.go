@@ -47,6 +47,9 @@ func AddComment(db store.Store, ctx context.Context, newComment NewComment, user
 	if strings.TrimSpace(newComment.Comment) == "" {
 		return Comment{}, ErrCommentIsNull
 	}
+	if err := validateCommentText(newComment.Comment); err != nil {
+		return Comment{}, err
+	}
 
 	if newComment.Season != nil && *newComment.Season <= 0 {
 		return Comment{}, ErrInvalidSeasonValue
@@ -203,6 +206,9 @@ func UpdateComment(db store.Store, ctx context.Context, groupId, commentId, user
 	logger := logx.FromContext(ctx)
 	if strings.TrimSpace(updateReq.Comment) == "" {
 		return Comment{}, ErrCommentIsNull
+	}
+	if err := validateCommentText(updateReq.Comment); err != nil {
+		return Comment{}, err
 	}
 
 	if updateReq.Season != nil && *updateReq.Season <= 0 {

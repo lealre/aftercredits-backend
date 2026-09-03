@@ -33,7 +33,12 @@ func NewAPI(db store.Store, provider titleprovider.Provider) *API {
 
 var PublicPaths = map[string]bool{
 	"POST /login": true,
-	"POST /users": true,
+	// Registration is NOT public. Once the API faces the open internet an
+	// unauthenticated POST /users is a free account for every attacker, which is
+	// the precondition for most of the authenticated-only attack surface. New
+	// accounts are created by an admin (CreateUser enforces the role), so this
+	// route now requires a valid admin token like everything else.
+	//
 	// Public to AuthMiddleware only: EventSource cannot send an Authorization
 	// header, so the stream authenticates with a single-use ticket inside the
 	// handler instead. POST /activity/stream-ticket, which mints those tickets,

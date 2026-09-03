@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM alpine:3.21
 
 # Install required tools
 RUN apk add --no-cache \
@@ -6,7 +6,8 @@ RUN apk add --no-cache \
     rclone \
     bash \
     tar \
-    gzip
+    gzip \
+    gnupg
 
 # Run as an unprivileged user whose UID matches the Pi's login account, NOT as
 # root.

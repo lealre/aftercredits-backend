@@ -44,6 +44,13 @@ func (s *Store) TitleExists(ctx context.Context, id string) (bool, error) {
 	return s.q.TitleExists(ctx, id)
 }
 
+func (s *Store) UserCanAccessTitle(ctx context.Context, titleId, userId string) (bool, error) {
+	return s.q.UserCanAccessTitle(ctx, database.UserCanAccessTitleParams{
+		TitleID: titleId,
+		UserID:  userId,
+	})
+}
+
 // titleOrderKeys is the sort-key whitelist for GetTitlesPage. Unknown keys
 // normalize to "" (primary_title), keeping the requested direction — the
 // same fallback GetGroupTitlesPage applies. The actual column mapping now

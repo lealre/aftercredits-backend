@@ -48,3 +48,8 @@ docs/*
 /backend
 /database
 /mongo-to-postgres
+
+# Derived per-job cron env files (contain credentials)
+pi/.env
+pi/.env.*
+!pi/.env.example

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,6 +54,64 @@ func main() {
 		log.Fatalf("Failed to sync titles: %v", err)
 	}
 	log.Println("Sync completed successfully")
+
+	pruneActivityEvents(ctx, st)
+}
+
+// activityRetentionEnabled reports whether the prune below is allowed to delete
+// anything at all. It is OFF unless explicitly switched on.
+//
+// The feed is an append-only log, and the owner's position is that an event is
+// worth keeping until there is a reason not to — a watchlist for a handful of
+// people produces a trickle of rows, so unbounded growth is a theoretical
+// problem here long before it is a real one. Deleting history is also the one
+// operation in this job that cannot be undone: a bad cutoff, a clock skew or a
+// mistyped ACTIVITY_RETENTION_DAYS destroys events with no backup of their own.
+// So the default is to keep everything, and turning pruning on is a deliberate
+// act rather than something that happens because nobody looked at the default.
+//
+// Set ACTIVITY_RETENTION_ENABLED to one of true/1/yes/on to enable it.
+func activityRetentionEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ACTIVITY_RETENTION_ENABLED"))) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// activityRetentionDays is how long an activity event is kept ONCE pruning is
+// enabled. Ignored entirely while activityRetentionEnabled reports false.
+// Overridable via ACTIVITY_RETENTION_DAYS.
+func activityRetentionDays() int {
+	if v := strings.TrimSpace(os.Getenv("ACTIVITY_RETENTION_DAYS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 90
+}
+
+// pruneActivityEvents deletes activity events past the retention window. A
+// failure here is logged, not fatal: it must never take down the title sync
+// that is this job's primary purpose.
+func pruneActivityEvents(ctx context.Context, st *postgres.Store) {
+	if !activityRetentionEnabled() {
+		// Said out loud on every run. A retention job that silently does nothing
+		// is indistinguishable from one that is silently broken, and the day
+		// someone turns this on they will want to find this line in the log.
+		log.Println("Activity retention is disabled (ACTIVITY_RETENTION_ENABLED is not set); keeping all events")
+		return
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -activityRetentionDays())
+	log.Printf("Pruning activity events older than %d days (before %s)...", activityRetentionDays(), cutoff.Format(time.RFC3339))
+	deleted, err := st.DeleteActivityEventsOlderThan(ctx, cutoff)
+	if err != nil {
+		log.Printf("WARN: failed to prune activity events: %v", err)
+		return
+	}
+	log.Printf("Pruned %d activity events", deleted)
 }
 
 func syncTitles(ctx context.Context, provider titleprovider.Provider, st *postgres.Store, titleIDs []string) error {

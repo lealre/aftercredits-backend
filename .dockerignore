@@ -1,0 +1,22 @@
+# Keep secrets and bulky/irrelevant files out of the Docker build context. The
+# images are pushed to a PUBLIC registry, and `COPY . .` in the Dockerfiles
+# would otherwise pull all of this into the build context (and the builder
+# layer), one careless COPY or --cache-to away from being published.
+.env
+.env.*
+!.env.example
+
+# Real database dumps live here and contain real user data / password hashes.
+backups/
+
+.git
+.github
+.gitignore
+docs/
+.superpowers/
+*.md
+
+# Local tooling / editor noise
+.vscode/
+.idea/
+*.log

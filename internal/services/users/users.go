@@ -5,11 +5,13 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/store"
+	"github.com/lealre/movies-backend/internal/validate"
 )
 
 func GetAllUsers(db store.Store, ctx context.Context) ([]UserResponse, error) {
@@ -48,21 +50,23 @@ func GetUserById(db store.Store, ctx context.Context, id string) (UserResponse, 
 }
 
 func AddUser(db store.Store, ctx context.Context, newUser NewUserRequest) (UserResponse, error) {
-	if newUser.Email != "" && !IsValidEmail(newUser.Email) {
-		return UserResponse{}, ErrInvalidEmail
+	if err := validateUserStrings(newUser.Name, newUser.Email, newUser.Username); err != nil {
+		return UserResponse{}, err
 	}
 
-	if newUser.Username != "" {
-		if len(newUser.Username) < 3 {
-			return UserResponse{}, ErrInvalidUsernameSize
-		}
-		if !IsValidUsername(newUser.Username) {
-			return UserResponse{}, ErrInvalidUsername
-		}
+	if err := validatePassword(newUser.Password); err != nil {
+		return UserResponse{}, err
 	}
 
-	if len(newUser.Password) < 4 {
-		return UserResponse{}, ErrInvalidPassword
+	// Reject a duplicate BEFORE hashing, so a replayed registration does not
+	// cost a full bcrypt before the collision is detected. The unique indexes
+	// remain the race backstop (handled below).
+	exists, err := db.UserExistsByUsernameOrEmail(ctx, newUser.Username, newUser.Email)
+	if err != nil {
+		return UserResponse{}, err
+	}
+	if exists {
+		return UserResponse{}, ErrCredentialsAlreadyExists
 	}
 
 	passorHash, err := auth.HashPassword(newUser.Password)
@@ -105,6 +109,9 @@ func UpdateUserInfo(db store.Store, ctx context.Context, userId string, userUpda
 	}
 
 	if newEmail != "" {
+		if validate.TooLong(newEmail, validate.EmailMax) {
+			return UserResponse{}, ErrInvalidEmailSize
+		}
 		if !IsValidEmail(newEmail) {
 			return UserResponse{}, ErrInvalidEmail
 		}
@@ -112,7 +119,7 @@ func UpdateUserInfo(db store.Store, ctx context.Context, userId string, userUpda
 	}
 
 	if newUsername != "" {
-		if len(newUsername) < 3 {
+		if utf8.RuneCountInString(newUsername) < validate.UsernameMin || validate.TooLong(newUsername, validate.UsernameMax) {
 			return UserResponse{}, ErrInvalidUsernameSize
 		}
 		if !IsValidUsername(newUsername) {
@@ -122,6 +129,9 @@ func UpdateUserInfo(db store.Store, ctx context.Context, userId string, userUpda
 	}
 
 	if newName != "" {
+		if validate.TooLong(newName, validate.NameMax) || validate.HasControlChars(newName) {
+			return UserResponse{}, ErrInvalidNameSize
+		}
 		userToUpdateDb.Name = newName
 	}
 
@@ -137,7 +147,64 @@ func UpdateUserInfo(db store.Store, ctx context.Context, userId string, userUpda
 }
 
 func DeleteUserById(db store.Store, ctx context.Context, id string) error {
-	return db.DeleteUserById(ctx, id)
+	err := db.DeleteUserById(ctx, id)
+	if errors.Is(err, store.ErrRecordNotFound) {
+		return ErrUserNotFound
+	}
+	return err
+}
+
+// ChangePassword verifies the caller's current password, enforces the password
+// policy on the new one, and rewrites the hash — which also bumps the user's
+// token_version, logging out every other session.
+func ChangePassword(db store.Store, ctx context.Context, userId, currentPassword, newPassword string) error {
+	userDb, err := db.GetUserById(ctx, userId)
+	if err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return ErrUserNotFound
+		}
+		return err
+	}
+
+	if err := auth.CheckPasswordHash(userDb.PasswordHash, currentPassword); err != nil {
+		return ErrInvalidCurrentPassword
+	}
+
+	if err := validatePassword(newPassword); err != nil {
+		return err
+	}
+
+	newHash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	if err := db.UpdateUserPassword(ctx, userId, newHash); err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return ErrUserNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+// LogoutEverywhere invalidates every outstanding token for the user by bumping
+// token_version, without changing the password.
+func LogoutEverywhere(db store.Store, ctx context.Context, userId string) error {
+	err := db.IncrementUserTokenVersion(ctx, userId)
+	if errors.Is(err, store.ErrRecordNotFound) {
+		return ErrUserNotFound
+	}
+	return err
+}
+
+// SetUserActive is the admin kill switch / reinstate.
+func SetUserActive(db store.Store, ctx context.Context, targetUserId string, active bool) error {
+	err := db.SetUserActive(ctx, targetUserId, active)
+	if errors.Is(err, store.ErrRecordNotFound) {
+		return ErrUserNotFound
+	}
+	return err
 }
 
 func UpdateUserLastLoginAt(db store.Store, ctx context.Context, userId string) (UserResponse, error) {

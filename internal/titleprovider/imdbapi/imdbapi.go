@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/lealre/movies-backend/internal/titleprovider"
 )
@@ -21,11 +22,11 @@ type Provider struct {
 
 // New returns an imdbapi.dev provider using the public base URL.
 func New() *Provider {
-	return &Provider{baseURL: defaultBaseURL, client: http.DefaultClient}
+	return &Provider{baseURL: defaultBaseURL, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
 func newWithBaseURL(baseURL string) *Provider {
-	return &Provider{baseURL: baseURL, client: http.DefaultClient}
+	return &Provider{baseURL: baseURL, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
 func (p *Provider) Name() string { return "imdbapi" }
@@ -54,7 +55,7 @@ func (p *Provider) getJSON(ctx context.Context, path string, query url.Values, o
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("imdbapi: non-2xx status %s for %s - %s", resp.Status, path, string(body))
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 }
 
 func (p *Provider) GetTitle(ctx context.Context, imdbID string) (*titleprovider.Title, error) {

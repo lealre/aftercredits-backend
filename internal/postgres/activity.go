@@ -108,6 +108,12 @@ func (s *Store) GetActivityUnreadCount(ctx context.Context, userId string) (int6
 	return s.q.CountActivityUnread(ctx, userId)
 }
 
+// DeleteActivityEventsOlderThan removes events created before cutoff and returns
+// how many were deleted. Retention, run by the routines binary.
+func (s *Store) DeleteActivityEventsOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	return s.q.DeleteActivityEventsOlderThan(ctx, timeToTimestamptz(cutoff))
+}
+
 // MarkActivityEventRead records that userId has read exactly one event, leaving
 // every other event's state alone. It is idempotent: marking an event already
 // read succeeds and changes nothing.

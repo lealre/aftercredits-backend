@@ -126,3 +126,9 @@ func SearchTitles(provider titleprovider.Provider, ctx context.Context, searchQu
 func TitleExists(db store.Store, ctx context.Context, titleId string) (bool, error) {
 	return db.TitleExists(ctx, titleId)
 }
+
+// UserCanAccessTitle reports whether the caller shares a group with the title.
+// Thin service passthrough used to scope the episodes read.
+func UserCanAccessTitle(db store.Store, ctx context.Context, titleId, userId string) (bool, error) {
+	return db.UserCanAccessTitle(ctx, titleId, userId)
+}

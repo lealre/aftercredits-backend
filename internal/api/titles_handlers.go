@@ -134,9 +134,19 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clamp the caller-supplied limit. Unclamped, this value became the
+	// capacity of a make([]T, 0, limit) inside the provider clients, so one
+	// request like ?limit=2000000000 asked the runtime for a multi-gigabyte
+	// allocation and OOM-killed the process. An omitted/non-positive limit
+	// keeps the search default (not the page default); anything above the page
+	// max is capped. Not routed through NormalizePageParams, which would
+	// substitute the larger page default and quadruple provider spend.
 	limit := generics.StringToInt(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = config.DefaultSearchLimit()
+	}
+	if maxLimit := config.MaxPageSize(); limit > maxLimit {
+		limit = maxLimit
 	}
 
 	titles, err := titles.SearchTitles(api.Provider, r.Context(), searchQuery, limit)
@@ -150,13 +160,25 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTitleEpisodes returns a title's episodes on demand (lazy-loaded by the UI
-// when a movie modal opens). Any authenticated user may call it.
+// when a movie modal opens). Scoped: the caller must share a group with the
+// title, otherwise a stranger could walk title ids to reconstruct every group's
+// watchlist. "Not yours" and "no such title" return the same 404.
 func (api *API) GetTitleEpisodes(w http.ResponseWriter, r *http.Request) {
 	logger := logx.FromContext(r.Context())
+	currentUser := auth.GetUserFromContext(r.Context())
 
 	titleId := r.PathValue("id")
 	if titleId == "" {
 		respondWithError(w, http.StatusBadRequest, "Title id is required")
+		return
+	}
+
+	if ok, err := titles.UserCanAccessTitle(api.Db, r.Context(), titleId, currentUser.Id); err != nil {
+		logger.Printf("ERROR: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch episodes")
+		return
+	} else if !ok {
+		respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
 		return
 	}
 
