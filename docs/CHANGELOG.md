@@ -32,19 +32,23 @@ application one.
 **Operator actions when deploying:**
 
 - The stock deploy needs no new variables. The listener is on by default on
-  `:9090`; set `METRICS_ADDR` only to move it, or `METRICS_ENABLED=false` to
-  turn it off
+  `:9090`; `METRICS_ENABLED=false` turns it off. `METRICS_ADDR` does move it,
+  but not on its own: Prometheus's target is the fixed `backend:9090`, and the
+  local port publish maps to container port 9090 as well
 - **To run the dashboards**, copy `docker-compose.observability.yaml` and the
   `observability/` directory to the machine, then set
   `STACK_NETWORK=aftercredits_default` (the network the application stack
   creates) and `GRAFANA_ADMIN_PASSWORD` in the deploy `.env` and bring that
   file up. Without the password the stack refuses to start — that is deliberate
-- If the default host ports are already taken, remap them in `.env` with
-  `API_PORT_HOST`, `METRICS_PORT_HOST` or `GRAFANA_PORT_HOST` — the same escape
-  hatch `POSTGRES_PORT_HOST` already provides, and not hypothetical: 8080, 9090
-  and 3000 were all held by unrelated projects on the machine this was built on.
-  Only the host side moves; the containers and Prometheus's scrape config are
-  unaffected
+- If a default host port is already taken, this repo's local compose lets you
+  remap it in `.env` with `API_PORT_HOST`, `METRICS_PORT_HOST` or
+  `GRAFANA_PORT_HOST` — the same escape hatch `POSTGRES_PORT_HOST` already
+  provides, and not hypothetical: 8080, 9090 and 3000 were all held by unrelated
+  projects on the machine this was built on. Only the host side moves; the
+  containers and Prometheus's scrape config are unaffected. **On the Pi, only
+  `GRAFANA_PORT_HOST` applies**: the application stack there is the frontend
+  repo's compose, which fixes 8080 and publishes no metrics port at all, so
+  setting the other two is a silent no-op
 
 There is no change to the frontend repository's compose file.
 

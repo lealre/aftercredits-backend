@@ -103,9 +103,24 @@ docker compose up -d                                       # postgres, migration
 docker compose -f docker-compose.observability.yaml up -d  # prometheus, grafana
 ```
 
-- Metrics (raw, loopback only): `curl localhost:9090/metrics` — or
-  `curl localhost:<METRICS_PORT_HOST>/metrics` if you remapped the port
-- Grafana: http://localhost:3000 (password from `GRAFANA_ADMIN_PASSWORD`)
+**Raw metrics** (loopback only) — the port comes from `METRICS_PORT_HOST` in
+`.env`, which is 9090 unless you remapped it:
+
+```bash
+# From the repo root, where .env lives:
+port=$(grep -oE '^METRICS_PORT_HOST=[0-9]+' .env | cut -d= -f2)
+curl -s "localhost:${port:-9090}/metrics" | head -3
+```
+
+The response must be `text/plain` and begin with `# HELP`. A `text/html` body
+means an unrelated service already holds that port and you are reading *its*
+metrics — a 200 from someone else's server is not a pass. (The default 9090 does
+exactly that on the machine this was built on.)
+
+**Grafana** is at http://localhost:3000 (port from `GRAFANA_PORT_HOST`, password
+from `GRAFANA_ADMIN_PASSWORD`). The instance you want carries a dashboard named
+**Aftercredits Backend**; another project's Grafana on the same port looks
+entirely plausible and has no such dashboard.
 
 Those are the default host ports. Set `API_PORT_HOST`, `METRICS_PORT_HOST` or
 `GRAFANA_PORT_HOST` in `.env` to change one — the same escape hatch
@@ -143,6 +158,10 @@ Set `STACK_NETWORK=aftercredits_default` in the deploy `.env` so the stack joins
 the application network, and set `GRAFANA_ADMIN_PASSWORD`. No change to the
 frontend repo's compose file is needed: Prometheus reaches the backend over the
 shared network, so the metrics port never has to be published.
+
+Prometheus keeps its samples for 15 days or 512MB, whichever comes first, in its
+own volume — bounded on both axes so a growing number of series cannot fill the
+disk.
 
 ## Running Tests
 
