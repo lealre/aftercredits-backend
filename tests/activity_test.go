@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lealre/movies-backend/internal/metrics"
 	"github.com/lealre/movies-backend/internal/server"
 	"github.com/lealre/movies-backend/internal/services/groups"
 	"github.com/lealre/movies-backend/internal/services/ratings"
@@ -778,7 +779,7 @@ func TestActivityFeedDisabled(t *testing.T) {
 	resetDB(t)
 	t.Setenv("ACTIVITY_FEED_ENABLED", "false")
 
-	off := httptest.NewServer(server.NewServerWithProvider(t.Context(), testStore, newFakeTitleProvider(), "test-secret"))
+	off := httptest.NewServer(server.NewServerWithProvider(t.Context(), testStore, newFakeTitleProvider(), "test-secret", metrics.New(nil)))
 	defer off.Close()
 
 	// A mutating, event-emitting request (adding a title to a group) against

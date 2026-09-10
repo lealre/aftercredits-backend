@@ -29,7 +29,9 @@ type PoolSnapshot struct {
 }
 
 // PoolStatsFunc reads the pool's current snapshot. It is called once per
-// scrape.
+// scrape — and scrapes are served concurrently, so it may be called from
+// several goroutines at once and the implementation must be safe for
+// concurrent use.
 type PoolStatsFunc func() PoolSnapshot
 
 // registerPool adds one series per connection state plus the cumulative

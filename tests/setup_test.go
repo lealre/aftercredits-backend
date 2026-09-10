@@ -14,6 +14,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/lealre/movies-backend/internal/database"
+	"github.com/lealre/movies-backend/internal/metrics"
 	pgstore "github.com/lealre/movies-backend/internal/postgres"
 	"github.com/lealre/movies-backend/internal/server"
 )
@@ -68,7 +69,7 @@ func TestMain(m *testing.M) {
 	// outliving the pool they are using.
 	serverCtx, stopServerWork := context.WithCancel(ctx)
 
-	handler := server.NewServerWithProvider(serverCtx, testStore, newFakeTitleProvider(), "test-secret")
+	handler := server.NewServerWithProvider(serverCtx, testStore, newFakeTitleProvider(), "test-secret", metrics.New(nil))
 	testServer = httptest.NewServer(handler)
 
 	code := m.Run()
