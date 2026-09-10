@@ -17,6 +17,26 @@ import (
 // "unmatched" than by echoing back whatever was asked for.
 const unmatchedRoute = "unmatched"
 
+// methodLabel returns a bounded label for the request method.
+//
+// r.Method is whatever token the caller sent, and HTTP permits arbitrary
+// tokens, so using it raw would let anyone mint unlimited time series — the
+// same hazard that keeps the raw request path out of the route label, and a
+// sharper one on a Raspberry Pi, where an unbounded label set is memory rather
+// than noise. Anything outside the standard set is reported as "other", which
+// still answers "were these ordinary requests or something else" without
+// letting the caller choose the label.
+func methodLabel(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodConnect,
+		http.MethodOptions, http.MethodTrace:
+		return method
+	default:
+		return "other"
+	}
+}
+
 type contextKey string
 
 const metricsMetaKey contextKey = "metricsMeta"
@@ -76,8 +96,9 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 			if route == "" {
 				route = unmatchedRoute
 			}
-			m.requests.WithLabelValues(r.Method, route, strconv.Itoa(recorder.status)).Inc()
-			m.duration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+			method := methodLabel(r.Method)
+			m.requests.WithLabelValues(method, route, strconv.Itoa(recorder.status)).Inc()
+			m.duration.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
 		})
 	}
 }

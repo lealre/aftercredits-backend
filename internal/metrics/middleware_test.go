@@ -96,6 +96,34 @@ func TestMiddleware_UnmatchedRouteIsLabelled(t *testing.T) {
 	neverExposes(t, m, "definitely-not-a-route", "the raw path must never reach a label")
 }
 
+// The other half of the cardinality rule. `route` is bounded because the mux
+// decides it; `method` is bounded only if the middleware refuses to take the
+// caller's word for it. HTTP permits arbitrary method tokens, so labelling by
+// r.Method raw would let a caller mint a permanent time series per token — and
+// this process runs on a Raspberry Pi, where that is memory, not just noise.
+//
+// The token is bucketed to "other" rather than dropped, so the question "is
+// this ordinary traffic or something else" stays answerable.
+//
+// http.Get cannot send a custom method, hence the explicit request.
+func TestMiddleware_NonStandardMethodIsBucketed(t *testing.T) {
+	srv, m := buildServer(t, func(mux *http.ServeMux) {
+		// Registered without a method so it matches any method token.
+		mux.HandleFunc("/anything", func(w http.ResponseWriter, r *http.Request) {})
+	})
+	defer srv.Close()
+
+	req, err := http.NewRequest("FOOBAR", srv.URL+"/anything", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	eventuallyExposes(t, m, `method="other"`, "a non-standard method token must be bucketed")
+	neverExposes(t, m, "FOOBAR", "the raw method token must never reach a label")
+}
+
 // A middleware between the metrics middleware and the mux can reject a request
 // before the handler ever runs — AuthMiddleware does exactly this, and a 401
 // rate is precisely what we want to see. Those requests must still be counted,
