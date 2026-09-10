@@ -90,3 +90,24 @@ func envBool(key string, def bool) bool {
 	}
 	return v
 }
+
+// envString returns the value of the named env var, or def when the var is
+// unset or blank. Trimmed, so whitespace does not read as a value.
+func envString(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+// MetricsEnabled reports whether the metrics listener runs. It defaults to ON.
+//
+// The listener binds an address reachable only from the container network, so
+// it is inert from the network's point of view whether or not it is enabled —
+// and a deployment then needs no extra configuration to start being scraped.
+func MetricsEnabled() bool { return envBool("METRICS_ENABLED", true) }
+
+// MetricsAddr is the address the metrics listener binds. Override with
+// METRICS_ADDR. Note this is a separate listener from the API's :8080, so the
+// two cannot expose each other.
+func MetricsAddr() string { return envString("METRICS_ADDR", ":9090") }
