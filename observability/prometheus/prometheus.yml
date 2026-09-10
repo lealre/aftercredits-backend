@@ -1,0 +1,16 @@
+# Scrape configuration for the aftercredits backend.
+#
+# The target is the backend service's name on the shared compose network, not a
+# host port: the metrics listener is never published on the Pi, so this is the
+# only route to it.
+#
+# 30s rather than the 15s default: this runs on a Raspberry Pi's SD card, and
+# halving the write rate costs nothing for metrics that are read by a human.
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: aftercredits-backend
+    static_configs:
+      - targets: ['backend:9090']

@@ -1,0 +1,81 @@
+# Observability stack: Prometheus scrapes the backend's metrics listener and
+# Grafana renders it.
+#
+# Separate from docker-compose.yaml on purpose. The application stack runs
+# whether or not this one is up, and taking the observability stack down for
+# maintenance must not touch the API. Locally:
+#
+#   docker compose up -d
+#   docker compose -f docker-compose.observability.yaml up -d
+#
+# On the Pi, set STACK_NETWORK=aftercredits_default so this joins the
+# application stack's network instead of the local one.
+name: aftercredits-observability
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.3
+    container_name: aftercredits-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Bounded on both axes. Time alone does not bound disk if the number of
+      # series grows; the size cap is the hard backstop. This matters because
+      # the Pi's disk is already a documented concern.
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=512MB
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - stack
+    # Publishes nothing on purpose: Prometheus needs no host presence, and not
+    # publishing it removes the question entirely.
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    container_name: aftercredits-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      # No fallback, on purpose: a missing password must stop the stack rather
+      # than leave admin/admin on a reachable port. Same stance as
+      # POSTGRES_PASSWORD, which deliberately lost its published default.
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in the environment or .env}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      # The only published port in this stack, because this is the UI. LAN-only
+      # on the Pi; nothing here is reachable from the internet.
+      #
+      # Host side is overridable for the same reason the backend's ports are:
+      # on the machine this was built on, 3000 is already held by a DIFFERENT
+      # project's Grafana, so the fixed form would fail to start and any
+      # "open localhost:3000" instruction would show that project's dashboards
+      # instead of these. Set GRAFANA_PORT_HOST in .env to remap.
+      - "${GRAFANA_PORT_HOST:-3000}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - stack
+
+networks:
+  # The application stack's network, created by whatever brings that stack up.
+  # Locally that is this repo's compose default; on the Pi it is
+  # aftercredits_default, owned by the frontend repo's stack — which is why the
+  # name is a variable rather than a constant. Containers on a shared network
+  # reach each other on any listening port whether or not it is published, so
+  # this is all the wiring Prometheus needs.
+  stack:
+    external: true
+    name: ${STACK_NETWORK:-aftercredits-backend_default}
+
+volumes:
+  prometheus_data:
+    name: aftercredits-prometheus-data
+  grafana_data:
+    name: aftercredits-grafana-data
