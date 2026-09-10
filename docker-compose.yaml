@@ -24,6 +24,62 @@ services:
       timeout: 5s
       retries: 5
 
+  # Applies the embedded goose migrations, then exits. Schema is a deploy step
+  # run before the server starts, never by the running application
+  # (CONVENTIONS §7) — a failed migration is a failed deploy rather than a
+  # crash-looping container.
+  db-setup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aftercredits-db-setup
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # .env carries host-oriented values: the hostname, and the port the
+      # database is published on. Inside the compose network neither holds —
+      # it answers to its service name on its own container port. Overriding
+      # the host alone leaves the published port in the URI and every
+      # connection is refused.
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+    command: ["/app/database", "-migrate"]
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aftercredits-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-setup:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      # Same host-oriented .env override as db-setup: the published port is not
+      # the port the database answers on inside the network.
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      # Defaulted here as well as in .env so it can be overridden from the
+      # shell for a one-off run — which is how Task 10 exercises the metrics
+      # listener's bind-failure path.
+      - METRICS_ADDR=${METRICS_ADDR:-:9090}
+    ports:
+      - "8080:8080"
+      # Loopback only. Prometheus scrapes the backend container directly over
+      # the compose network, so this binding exists solely so
+      # `curl localhost:9090/metrics` works here. Bound to 127.0.0.1 so nothing
+      # on the LAN can reach it, and it is absent entirely from the Pi's
+      # compose file.
+      - "127.0.0.1:9090:9090"
+
 volumes:
   postgres_data:
     name: aftercredits-postgres-data
