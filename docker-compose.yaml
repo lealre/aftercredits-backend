@@ -79,9 +79,10 @@ services:
       - "${API_PORT_HOST:-8080}:8080"
       # Loopback only. Prometheus scrapes the backend container directly over
       # the compose network, so this binding exists solely so
-      # `curl localhost:<METRICS_PORT_HOST>/metrics` works here. Bound to
-      # 127.0.0.1 so nothing on the LAN can reach it, and it is absent entirely
-      # from the Pi's compose file.
+      # `curl localhost:$METRICS_PORT_HOST/metrics` works here. Bound to
+      # 127.0.0.1 so nothing on the LAN can reach it. (Checked 2026-09-10: the
+      # frontend repo's compose file does not publish this port at all — a
+      # dated observation about another repo, not something this file enforces.)
       - "127.0.0.1:${METRICS_PORT_HOST:-9090}:9090"
 
 volumes:

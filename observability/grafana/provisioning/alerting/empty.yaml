@@ -1,0 +1,7 @@
+# No alerting rules are provisioned from this repository. This file exists so
+# Grafana finds the alerting provisioning path and logs no error for it.
+#
+# It is YAML rather than a .gitkeep because Grafana scans this directory for
+# files and warns about any name without a .yaml/.yml/.json suffix.
+apiVersion: 1
+groups: []

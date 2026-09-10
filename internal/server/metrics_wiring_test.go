@@ -100,3 +100,34 @@ func TestMetricsWiring_LabelsTheMatchedRoutePattern(t *testing.T) {
 	require.NotContains(t, exposition(t, m), `route="unmatched"`,
 		"a request that matched a route must not be labelled unmatched")
 }
+
+// MetricsMiddleware must sit OUTSIDE AuthMiddleware.
+//
+// Nothing pinned that position until now. Moving m.Middleware() inside
+// AuthMiddleware in internal/server/server.go leaves the whole suite green,
+// yet it silently removes the status="401" series: the rejecter returns without
+// calling next, so the recorder's own code never runs and no implementation
+// could count the request. The 401 rate is exactly what the design wants
+// visible — the listener is outside auth so a burst of rejections shows up
+// instead of hiding — so its absence has to fail a test, not just a review.
+//
+// The request is deliberately untokened. GET /users/{id} is not in
+// api.PublicPaths, so the chain's AuthMiddleware turns it away before the mux,
+// and only a metrics middleware wrapped around the rejecter can report it.
+func TestMetricsWiring_CountsAuthRejectionsOutsideAuthMiddleware(t *testing.T) {
+	srv, m := newMetricsWiredServer(t)
+
+	resp := do(t, http.MethodGet, srv.URL+"/users/"+streamWireUserId, "")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
+		"an untokened request to a protected route must be rejected by auth")
+
+	eventuallyExposes(t, m, `status="401"`,
+		"auth rejections must still be counted — "+
+			"an unmoved metrics middleware inside AuthMiddleware would drop this series entirely")
+	// The rejection happened before the mux, so no pattern was ever assigned.
+	// Together with the label above this pins that the request was counted by
+	// the metrics middleware, not merely that some 401 once existed.
+	eventuallyExposes(t, m, `route="unmatched"`,
+		"a request rejected before the mux has no pattern to report")
+}

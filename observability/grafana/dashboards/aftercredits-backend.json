@@ -19,6 +19,13 @@
       "targets": [ { "refId": "A", "expr": "up{job=\"aftercredits-backend\"}", "legendFormat": "target" } ]
     },
     {
+      "id": 12, "type": "timeseries", "title": "GC pause",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "rate(go_gc_duration_seconds_sum[5m]) / rate(go_gc_duration_seconds_count[5m])", "legendFormat": "mean pause" } ]
+    },
+    {
       "id": 2, "type": "timeseries", "title": "Goroutines",
       "gridPos": { "h": 8, "w": 10, "x": 4, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -46,7 +53,7 @@
       "id": 5, "type": "timeseries", "title": "CPU",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "targets": [ { "refId": "A", "expr": "rate(process_cpu_seconds_total[5m])", "legendFormat": "cores" } ]
     },
     {

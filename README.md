@@ -93,7 +93,11 @@ default, `METRICS_ADDR`) — not a route on the API, and on by default
 never published on the Pi, and the local dev compose publishes it on `127.0.0.1`
 only. Prometheus reaches it container-to-container, and nginx never sees it.
 There is no authentication on it: it is safe because it is not published, which
-is exactly why publishing it would expose it.
+is exactly why publishing it would expose it. That safety belongs to the
+container run, not to the address — `METRICS_ADDR` defaults to `:9090`, which
+binds every interface, so a bare `go run .` on a machine on a shared network
+serves the whole exposition to anyone who asks. For non-container runs there,
+set `METRICS_ADDR=127.0.0.1:9090`.
 
 Prometheus and Grafana run as their own stack, deliberately separate from the
 application one:
@@ -132,9 +136,12 @@ scrape config changes.
 The backend only ever *answers* a scrape. It never contacts Prometheus or
 Grafana, so stopping the observability stack cannot affect the API.
 
-Grafana's own log is not a clean error signal: it prints two `level=error` lines
-on every start (`provisioning.plugins` and `provisioning.alerting`) because
-those two provisioning directories do not exist. They are expected and harmless.
+Grafana's log is a clean error signal here: the two `level=error` lines it used
+to print on every start (`provisioning.plugins` and `provisioning.alerting`)
+were "directory does not exist", and both directories are now tracked with a
+placeholder — `provisioning/plugins/.gitkeep` and
+`provisioning/alerting/empty.yaml`. Anything at `level=error` in that log is
+therefore worth reading.
 
 ### What is collected
 

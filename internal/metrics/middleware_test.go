@@ -74,6 +74,13 @@ func TestMiddleware_LabelsByRoutePattern(t *testing.T) {
 	resp.Body.Close()
 
 	eventuallyExposes(t, m, `route="GET /users/{id}"`, "route label must be the pattern")
+	// The other half of the allowlist: a standard method passes through as
+	// itself. Without this the bucketing test alone is satisfied by a
+	// methodLabel that returns "other" for EVERY token — the route label would
+	// still carry GET from the registered pattern, so nothing else in the suite
+	// would notice, and the "is this ordinary traffic" question would be
+	// unanswerable for all traffic.
+	eventuallyExposes(t, m, `method="GET"`, "a standard method must pass through as itself")
 	neverExposes(t, m, "abc-123", "the concrete id must never reach a label")
 }
 

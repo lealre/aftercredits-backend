@@ -158,8 +158,16 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 // separate from the API's.
 //
 // The separation is the point: :8080 sits behind nginx and an auth allowlist,
-// while this address is reachable only from the container network. Nothing
-// proxies it by accident, and the auth middleware needs no new exception.
+// and the metrics endpoint has no authentication of its own — it serves every
+// path to anyone who can connect. What keeps it out of reach is that the
+// container deployments never publish this port: Prometheus scrapes the
+// container directly over the compose network, and nothing proxies it by
+// accident, so the auth middleware needs no new exception.
+//
+// That safety is a property of the deployment, not of the address. METRICS_ADDR
+// defaults to :9090, which binds EVERY interface, so a bare `go run .` on a
+// machine on a shared network exposes the whole exposition unauthenticated.
+// For non-container runs, set METRICS_ADDR=127.0.0.1:9090.
 //
 // Failure to bind is deliberately NOT fatal. An observability endpoint that
 // cannot bind must not stop the API from serving, so a failure is logged and
@@ -182,8 +190,11 @@ func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
 
 	srv := &http.Server{
 		Handler: m.Handler(),
-		// Same bounds as the API server. ReadTimeout/WriteTimeout are
-		// deliberately absent for the same reason they are absent there.
+		// These two bounds match the API server's. IdleTimeout deliberately
+		// does not: the API server sets 120s, this listener leaves it unset, so
+		// an idle keep-alive connection here is never reaped on a timer.
+		// ReadTimeout/WriteTimeout are absent for the same reason they are
+		// absent there.
 		ReadHeaderTimeout: 10 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 	}

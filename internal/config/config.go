@@ -102,12 +102,19 @@ func envString(key, def string) string {
 
 // MetricsEnabled reports whether the metrics listener runs. It defaults to ON.
 //
-// The listener binds an address reachable only from the container network, so
-// it is inert from the network's point of view whether or not it is enabled —
-// and a deployment then needs no extra configuration to start being scraped.
+// The listener has no authentication, and the container deployments are what
+// keep it out of reach: they never publish its port, and Prometheus scrapes the
+// container over the compose network. So it is inert from the network's point
+// of view whether or not it is enabled — and a deployment then needs no extra
+// configuration to start being scraped.
 func MetricsEnabled() bool { return envBool("METRICS_ENABLED", true) }
 
 // MetricsAddr is the address the metrics listener binds. Override with
 // METRICS_ADDR. Note this is a separate listener from the API's :8080, so the
 // two cannot expose each other.
+//
+// The default binds every interface. Being unpublished is what keeps that
+// harmless in the container deployments; a bare `go run .` is not protected by
+// anything, so a non-container run on a shared network should set
+// METRICS_ADDR=127.0.0.1:9090.
 func MetricsAddr() string { return envString("METRICS_ADDR", ":9090") }
