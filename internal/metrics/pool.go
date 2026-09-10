@@ -42,14 +42,13 @@ type PoolStatsFunc func() PoolSnapshot
 func registerPool(r prometheus.Registerer, stats PoolStatsFunc) {
 	states := []struct {
 		state string
-		help  string
 		read  func(PoolSnapshot) float64
 	}{
-		{"max", "Ceiling the pool may open.", func(s PoolSnapshot) float64 { return float64(s.MaxConns) }},
-		{"total", "Connections currently open.", func(s PoolSnapshot) float64 { return float64(s.TotalConns) }},
-		{"acquired", "Connections currently checked out.", func(s PoolSnapshot) float64 { return float64(s.AcquiredConns) }},
-		{"idle", "Connections open and unused.", func(s PoolSnapshot) float64 { return float64(s.IdleConns) }},
-		{"constructing", "Connections being opened.", func(s PoolSnapshot) float64 { return float64(s.ConstructingConns) }},
+		{"max", func(s PoolSnapshot) float64 { return float64(s.MaxConns) }},
+		{"total", func(s PoolSnapshot) float64 { return float64(s.TotalConns) }},
+		{"acquired", func(s PoolSnapshot) float64 { return float64(s.AcquiredConns) }},
+		{"idle", func(s PoolSnapshot) float64 { return float64(s.IdleConns) }},
+		{"constructing", func(s PoolSnapshot) float64 { return float64(s.ConstructingConns) }},
 	}
 	for _, s := range states {
 		r.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
