@@ -1,0 +1,102 @@
+{
+  "uid": "aftercredits-backend",
+  "title": "Aftercredits Backend",
+  "tags": ["aftercredits"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Up",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "mappings": [
+        { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+      ] }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "up{job=\"aftercredits-backend\"}", "legendFormat": "target" } ]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Goroutines",
+      "gridPos": { "h": 8, "w": 10, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "go_goroutines", "legendFormat": "goroutines" } ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Heap in use / allocated",
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "go_memstats_heap_inuse_bytes", "legendFormat": "heap in use" },
+        { "refId": "B", "expr": "go_memstats_heap_alloc_bytes", "legendFormat": "heap allocated" }
+      ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Resident memory (RSS)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "process_resident_memory_bytes", "legendFormat": "RSS" } ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "CPU",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "rate(process_cpu_seconds_total[5m])", "legendFormat": "cores" } ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Requests in flight",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "aftercredits_http_requests_in_flight", "legendFormat": "in flight" } ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Request rate by route",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "sum by (route) (rate(aftercredits_http_requests_total[5m]))", "legendFormat": "{{route}}" } ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Latency percentiles",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(aftercredits_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(aftercredits_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(aftercredits_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Response status",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "sum by (status) (rate(aftercredits_http_requests_total[5m]))", "legendFormat": "{{status}}" } ]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "DB pool connections by state",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "aftercredits_db_pool_connections", "legendFormat": "{{state}}" } ]
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "DB pool waits and cancellations",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "rate(aftercredits_db_pool_empty_acquires_total[5m])", "legendFormat": "had to wait" },
+        { "refId": "B", "expr": "rate(aftercredits_db_pool_canceled_acquires_total[5m])", "legendFormat": "cancelled" }
+      ]
+    }
+  ]
+}
