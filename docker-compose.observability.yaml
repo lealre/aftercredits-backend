@@ -46,6 +46,12 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in the environment or .env}
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_USERS_ALLOW_SIGN_UP=false
+      # Land on our dashboard instead of Grafana's default home. Without this,
+      # opening Grafana drops you into the built-in Metrics Drilldown app —
+      # /a/grafana-metricsdrilldown-app/drilldown — which renders one tiny chart
+      # per raw metric and looks nothing like a curated dashboard. The path is
+      # the file we already mount, so this works unchanged on the Pi.
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/aftercredits-backend.json
     ports:
       # The only published port in this stack, because this is the UI. LAN-only
       # on the Pi; nothing here is reachable from the internet.
