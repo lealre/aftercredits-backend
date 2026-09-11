@@ -49,6 +49,12 @@ application one.
   `GRAFANA_PORT_HOST` applies**: the application stack there is the frontend
   repo's compose, which fixes 8080 and publishes no metrics port at all, so
   setting the other two is a silent no-op
+- Grafana's published port now also honours `GRAFANA_BIND_IP`, which defaults to
+  all interfaces. Only set it to `127.0.0.1` on a development machine: on the Pi
+  the dashboards must stay reachable from another device. Grafana is the one
+  service in this stack with a login page, so it is the one worth deciding this
+  for — a password chosen for convenience should not sit on a network you do not
+  control. Unlike the password, this does not affect the Pi unless you set it
 
 There is no change to the frontend repository's compose file.
 

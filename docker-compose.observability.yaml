@@ -55,7 +55,13 @@ services:
       # project's Grafana, so the fixed form would fail to start and any
       # "open localhost:3000" instruction would show that project's dashboards
       # instead of these. Set GRAFANA_PORT_HOST in .env to remap.
-      - "${GRAFANA_PORT_HOST:-3000}:3000"
+      #
+      # GRAFANA_BIND_IP defaults to all interfaces because the Pi needs to be
+      # reachable from a laptop — that is the whole point there. Locally it
+      # should be 127.0.0.1: this is the one service in the stack whose login
+      # page a whole network could otherwise reach, and a development password
+      # is chosen for convenience, not for a network you do not control.
+      - "${GRAFANA_BIND_IP:-0.0.0.0}:${GRAFANA_PORT_HOST:-3000}:3000"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
