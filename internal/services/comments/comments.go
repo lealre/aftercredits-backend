@@ -161,7 +161,6 @@ func addCommentForTVSeries(db store.Store, ctx context.Context, newComment NewCo
 		// 5.1. Checks if a comment for this specific season already exists
 		if existingComment.SeasonsComments != nil {
 			if _, exists := (*existingComment.SeasonsComments)[seasonAsString]; exists {
-				// 5.2. Returns ErrSeasonCommentAlreadyExists
 				return Comment{}, ErrSeasonCommentAlreadyExists
 			}
 			// 5.3. Adds the new season comment to the existing comment
@@ -415,7 +414,6 @@ func DeleteCommentSeason(db store.Store, ctx context.Context, groupId, commentId
 		return ErrCommentNotFound
 	}
 
-	// Delete season entry
 	delete(*existingComment.SeasonsComments, seasonAsString)
 
 	// If no seasons left, delete the whole comment document

@@ -219,7 +219,6 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 				return
 			}
 
-			// Extract token
 			tokenString, err := auth.GetBearerToken(r.Header)
 			if err != nil {
 				if _, ok := auth.ErrorsMap[err]; ok {
@@ -230,7 +229,6 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 				return
 			}
 
-			// Validate token
 			userId, tokenVersion, err := auth.ValidateJWT(tokenString, tokenSecret)
 			if err != nil {
 				if _, ok := auth.ErrorsMap[err]; ok {
