@@ -154,25 +154,20 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 	return handler
 }
 
-// startMetricsListener serves the metrics endpoint on its own listener,
-// separate from the API's.
+// startMetricsListener serves the metrics endpoint on its own listener.
 //
 // The separation is the point: :8080 sits behind nginx and an auth allowlist,
-// and the metrics endpoint has no authentication of its own — it serves every
-// path to anyone who can connect. What keeps it out of reach is that the
-// container deployments never publish this port: Prometheus scrapes the
-// container directly over the compose network, and nothing proxies it by
-// accident, so the auth middleware needs no new exception.
+// while this endpoint has no authentication at all. What keeps it out of reach
+// is that container deployments never publish the port — Prometheus scrapes
+// over the compose network — so the auth middleware needs no new exception.
 //
-// That safety is a property of the deployment, not of the address. METRICS_ADDR
+// That safety is a property of the deployment, not the address. METRICS_ADDR
 // defaults to :9090, which binds EVERY interface, so a bare `go run .` on a
-// machine on a shared network exposes the whole exposition unauthenticated.
-// For non-container runs, set METRICS_ADDR=127.0.0.1:9090.
+// shared network exposes the whole exposition. Set METRICS_ADDR=127.0.0.1:9090
+// for non-container runs.
 //
-// Failure to bind is deliberately NOT fatal. An observability endpoint that
-// cannot bind must not stop the API from serving, so a failure is logged and
-// the process carries on without metrics — the same call made for a store that
-// cannot push activity events.
+// Failing to bind is deliberately not fatal: observability must not stop the
+// API from serving.
 func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
 	if !config.MetricsEnabled() {
 		log.Printf("Metrics listener disabled (METRICS_ENABLED=false)")

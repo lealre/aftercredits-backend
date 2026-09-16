@@ -29,24 +29,15 @@ type PoolSnapshot struct {
 }
 
 // PoolStatsFunc reads the pool's current snapshot. It is called once per
-// SERIES per scrape, not once per scrape: registerPool declares five state
-// gauges and five counters with NewGaugeFunc/NewCounterFunc, and each one calls
-// this function from its own Collect. One scrape therefore calls it ten times,
-// and the registry may run those collections in parallel.
+// SERIES per scrape, not once per scrape — ten gauges and counters each call it
+// from their own Collect, possibly in parallel — so it must be safe for
+// concurrent use.
 //
-// The ten readings are ten independent snapshots, not one coherent view of the
-// pool. That is visible on the dashboard and is not a bug in the pool: the
-// `state="acquired"` and `state="idle"` values can differ from each other by
-// more than one connection, and they need not add up to `state="total"`. Each
-// series is correct on its own; only arithmetic ACROSS series within a single
-// scrape is approximate.
-//
-// (One collector snapshotting once and emitting all ten series would remove
-// even that, at the cost of the one-declaration-per-series shape above. That is
-// a design change, deliberately not made here.)
-//
-// Because scrapes are also served concurrently, several of these calls can be
-// in flight at once, so the implementation must be safe for concurrent use.
+// Those ten readings are ten independent snapshots, not one coherent view. So
+// `acquired` and `idle` can differ by more than one connection and need not sum
+// to `total`. Each series is correct alone; only arithmetic ACROSS series
+// within one scrape is approximate. Collecting once and emitting all ten would
+// remove that, at the cost of the per-series declaration shape.
 type PoolStatsFunc func() PoolSnapshot
 
 // registerPool adds one series per connection state plus the cumulative

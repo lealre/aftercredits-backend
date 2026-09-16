@@ -7,25 +7,20 @@ import (
 	"time"
 )
 
-// unmatchedRoute labels a request whose route could not be determined: one
-// that never reached the mux (rejected by a middleware above it, so the
-// handler never ran) or that matched no pattern (404).
+// unmatchedRoute labels a request that never reached the mux (rejected by a
+// middleware above it) or matched no pattern (404).
 //
-// It is a fixed string rather than the request path on purpose. The path is
-// caller-controlled, so a label carrying it would let anyone grow the time
-// series without limit — and a 401 on an unknown path is better described as
-// "unmatched" than by echoing back whatever was asked for.
+// A fixed string rather than the request path: the path is caller-controlled,
+// so a label carrying it would let anyone grow the series count without limit.
 const unmatchedRoute = "unmatched"
 
-// methodLabel returns a bounded label for the request method.
+// methodLabel bounds the method label to the standard set, reporting anything
+// else as "other".
 //
-// r.Method is whatever token the caller sent, and HTTP permits arbitrary
-// tokens, so using it raw would let anyone mint unlimited time series — the
-// same hazard that keeps the raw request path out of the route label, and a
-// sharper one on a Raspberry Pi, where an unbounded label set is memory rather
-// than noise. Anything outside the standard set is reported as "other", which
-// still answers "were these ordinary requests or something else" without
-// letting the caller choose the label.
+// HTTP permits arbitrary method tokens, so using r.Method raw would let a
+// caller mint unlimited time series — the same hazard that keeps the raw path
+// out of the route label, and a sharper one on a Pi, where an unbounded label
+// set is memory rather than noise.
 func methodLabel(method string) string {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
