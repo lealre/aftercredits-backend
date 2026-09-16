@@ -62,33 +62,17 @@ var titleOrderKeys = map[string]bool{
 	"type": true, "voteCount": true, "addedAt": true, "updatedAt": true,
 }
 
-// GetTitlesPage pages and sorts titles against the
-// hybrid JSONB titles table:
+// GetTitlesPage pages and sorts titles against the hybrid JSONB titles table.
 //
-//   - total is COUNT(*) over the whole table (CountTitles), fetched
-//     unconditionally, same shape as before.
-//   - ORDER BY is static in SQL, CASE-paired per whitelisted sort key with
-//     direction from ascending (default ASC — see GetTitlesPage in
-//     sql/queries/titles.sql). No NULLS FIRST/LAST is added: Postgres'
-//     defaults (NULLS LAST for ASC, NULLS FIRST for DESC) keep deciding where
-//     rows with a NULL sort value land, so nothing a client sees moves.
-//     added_at and updated_at are the only nullable sort keys
-//     (rating_aggregate and vote_count are NOT NULL DEFAULT 0, so a "missing"
-//     rating sorts as 0, not as NULL).
-//   - Every result ends in a deterministic "id ASC" tie-break, so the order is
-//     total and paging cannot repeat or skip a row (CONVENTIONS §6): a
-//     non-total order under paging lets Postgres return the same row on two
-//     pages while never returning another. id is the primary key — unique
-//     and NOT NULL — so appending it makes the order total. The tie-break is
-//     pinned to ASC and never flipped with the requested direction: its only
-//     job is to make ties deterministic, and a fixed direction keeps the rule
-//     simple and identical for every sort key.
-//   - LIMIT size OFFSET (page-1)*size, matching the previous skip/limit
-//     computation verbatim (no extra clamping here; that's the service
-//     layer's job). The offset is computed by the shared pageOffset helper,
-//     which also decides when a request can select no row at all (a
-//     non-positive size, or an offset past int64) and so must yield an empty
-//     page instead of a query.
+// ORDER BY is static SQL, CASE-paired per whitelisted sort key. No NULLS
+// FIRST/LAST is specified, so Postgres' defaults keep deciding where NULL sort
+// values land and nothing a client sees moves; added_at and updated_at are the
+// only nullable sort keys.
+//
+// Every order ends in "id ASC" (CONVENTIONS §6). Without a total order, paging
+// lets Postgres return the same row on two pages while never returning
+// another. The tie-break is pinned ASC and never flipped with the requested
+// direction — its only job is determinism.
 func (s *Store) GetTitlesPage(
 	ctx context.Context,
 	orderBy string,

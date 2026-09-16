@@ -23,13 +23,11 @@ func TestAddComment(t *testing.T) {
 	// 		TEST SETUP - ADDING COMMENTS
 	// ======================================================================
 
-	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -43,7 +41,6 @@ func TestAddComment(t *testing.T) {
 	expectedTVSeriesTitle := tvSeriesTitles[0]
 	expectedMovieTitleNotIngroup := titles[1]
 
-	// Add expected title to group
 	for _, title := range []models.Title{expectedMovieTitle, expectedTVSeriesTitle} {
 		addTitleToGroup(t, groups.AddTitleToGroupRequest{
 			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
@@ -338,13 +335,11 @@ func TestGetComments(t *testing.T) {
 	// 		TEST SETUP
 	// ======================================================================
 
-	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -355,7 +350,6 @@ func TestGetComments(t *testing.T) {
 	expectedTitle := titles[0]
 	titleNotIngroup := titles[1]
 
-	// Add expected title to group
 	addTitleToGroup(t, groups.AddTitleToGroupRequest{
 		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
 		GroupId: group.Id,
@@ -446,13 +440,11 @@ func TestUpdateComment(t *testing.T) {
 	// 		TEST SETUP
 	// ======================================================================
 
-	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -467,7 +459,6 @@ func TestUpdateComment(t *testing.T) {
 	expectedTVSeriesTitleNotInGroup := tvSeriesTitles[1]
 	// titleNotIngroup := titles[1]
 
-	// Add expected title to group
 	for _, title := range []models.Title{expectedMovieTitle, expectedTVSeriesTitle} {
 		addTitleToGroup(t, groups.AddTitleToGroupRequest{
 			URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", title.ID),
@@ -643,7 +634,6 @@ func TestDeleteComment(t *testing.T) {
 	// 		TEST SETUP
 	// ======================================================================
 
-	// Create a new user (group owner)
 	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
@@ -655,12 +645,10 @@ func TestDeleteComment(t *testing.T) {
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
 
-	// Add user to group
 	addUserToGroup(t, groups.AddUserToGroupRequest{
 		UserId: userFromGroup.Id,
 	}, group.Id, tokenOwnerUser)
@@ -671,7 +659,6 @@ func TestDeleteComment(t *testing.T) {
 	expectedTitle := titles[0]
 	// titleNotIngroup := titles[1]
 
-	// Add expected title to group
 	addTitleToGroup(t, groups.AddTitleToGroupRequest{
 		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
 		GroupId: group.Id,
@@ -712,7 +699,6 @@ func TestDeleteComment(t *testing.T) {
 	// ======================================================================
 
 	t.Run("Deleting a comment sucessfully", func(t *testing.T) {
-		// Delete owner's comment
 		respDeletedComment := deleteCommentFromApi(t, group.Id, expectedTitle.ID, commentCreatedOwner.Id, tokenOwnerUser)
 		defer respDeletedComment.Body.Close()
 		require.Equal(t, http.StatusOK, respDeletedComment.StatusCode)
@@ -780,7 +766,6 @@ func TestDeleteCommentSeason(t *testing.T) {
 	// 		TEST SETUP
 	// ======================================================================
 
-	// Create a new user (group owner)
 	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
@@ -792,12 +777,10 @@ func TestDeleteCommentSeason(t *testing.T) {
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
 
-	// Add user to group
 	addUserToGroup(t, groups.AddUserToGroupRequest{
 		UserId: userFromGroup.Id,
 	}, group.Id, tokenOwnerUser)
@@ -808,7 +791,6 @@ func TestDeleteCommentSeason(t *testing.T) {
 		Password: "testpass",
 	})
 
-	// Seed titles
 	movieTitles := loadTitlesFixture(t)
 	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
 	allTitles := append(movieTitles, tvSeriesTitles...)
@@ -974,13 +956,11 @@ func TestGetCommentsForTVSeries(t *testing.T) {
 	// 		TEST SETUP
 	// ======================================================================
 
-	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)

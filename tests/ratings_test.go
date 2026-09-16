@@ -25,13 +25,11 @@ func TestGetRatingById(t *testing.T) {
 	// 		TEST SETUP - GETTING RATINGS BY ID
 	// =========================================================
 
-	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -41,16 +39,13 @@ func TestGetRatingById(t *testing.T) {
 	seedTitles(t, movieTitles)
 	expectedMovieTitle := movieTitles[0]
 
-	// Add title to group
 	addTitleToGroup(t, groups.AddTitleToGroupRequest{
 		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedMovieTitle.ID),
 		GroupId: group.Id,
 	}, tokenOwnerUser)
 
-	// Add a rating
 	ratingCreated := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float64(7), nil, tokenOwnerUser)
 
-	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
 		Username: "othertestname",
 		Password: "testpass",
@@ -128,13 +123,11 @@ func TestAddRating(t *testing.T) {
 	// 		TEST SETUP - ADDING RATINGS
 	// =========================================================
 
-	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -158,7 +151,6 @@ func TestAddRating(t *testing.T) {
 		}, tokenOwnerUser)
 	}
 
-	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
 		Username: "othertestname",
 		Password: "testpass",
@@ -456,13 +448,11 @@ func TestUpdateRating(t *testing.T) {
 	// 		TEST SETUP - UPDATING RATINGS
 	// =========================================================
 
-	// Create a new user
 	user, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -483,13 +473,11 @@ func TestUpdateRating(t *testing.T) {
 		}, tokenOwnerUser)
 	}
 
-	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
 		Username: "othertestname",
 		Password: "testpass",
 	})
 
-	// Add a rating for the movie
 	ratingToUpdateMovie := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float64(5), nil, tokenOwnerUser)
 
 	// Add ratings for the TV series (season 1 and season 2)
@@ -709,13 +697,11 @@ func TestDeleteRating(t *testing.T) {
 	// 		TEST SETUP - DELETING RATINGS
 	// =========================================================
 
-	// Create a new user
 	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -737,7 +723,6 @@ func TestDeleteRating(t *testing.T) {
 		}, tokenOwnerUser)
 	}
 
-	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
 		Username: "othertestname",
 		Password: "testpass",
@@ -748,10 +733,8 @@ func TestDeleteRating(t *testing.T) {
 	// =========================================================
 
 	t.Run("Deleting a movie rating successfully", func(t *testing.T) {
-		// Add a rating for the movie
 		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedMovieTitle.ID, float64(5), nil, tokenOwnerUser)
 
-		// Delete the rating
 		respDeleted := deleteRating(t, ratingToDelete.Id, tokenOwnerUser)
 		defer respDeleted.Body.Close()
 		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
@@ -803,7 +786,6 @@ func TestDeleteRating(t *testing.T) {
 		ratingToDelete := addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float64(5), &season1, tokenOwnerUser)
 		_ = addRatingAndGetResult(t, group.Id, expectedTVSeriesTitle.ID, float64(8), &season2, tokenOwnerUser)
 
-		// Delete the entire rating
 		respDeleted := deleteRating(t, ratingToDelete.Id, tokenOwnerUser)
 		defer respDeleted.Body.Close()
 		require.Equal(t, http.StatusOK, respDeleted.StatusCode)
@@ -1130,13 +1112,11 @@ func TestDeleteRatingSeason(t *testing.T) {
 	// 		TEST SETUP - DELETING SEASON RATINGS
 	// =========================================================
 
-	// Create a new user
 	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testname",
 		Password: "testpass",
 	})
 
-	// Create a group for user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -1156,7 +1136,6 @@ func TestDeleteRatingSeason(t *testing.T) {
 		}, tokenOwnerUser)
 	}
 
-	// User not in group
 	_, tokenUserNotInGroup := addUser(t, users.NewUserRequest{
 		Username: "othertestname",
 		Password: "testpass",

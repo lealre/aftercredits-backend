@@ -121,7 +121,6 @@ func TestAddUsers(t *testing.T) {
 			},
 		}
 
-		// Add first user
 		resp := postUserAs(t, firstUser, adminTok)
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -209,7 +208,6 @@ func TestGetUsers(t *testing.T) {
 	t.Run("Get all user as admin sucessfully", func(t *testing.T) {
 		resetDB(t)
 
-		// Admin user
 		adminUser, token := addUserAdminInDb(t, users.NewUserRequest{
 			Name:     "testname",
 			Username: "testuser",

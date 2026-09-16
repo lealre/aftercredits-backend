@@ -67,7 +67,6 @@ func createSuperuser(ctx context.Context, db store.Store) error {
 		return fmt.Errorf("SUPERUSER_USERNAME and SUPERUSER_PASSWORD must be set; there is no default")
 	}
 
-	// Validate username
 	if len(username) < 3 {
 		return fmt.Errorf("username must have at least 3 characters")
 	}
@@ -101,7 +100,6 @@ func createSuperuser(ctx context.Context, db store.Store) error {
 		return nil
 	}
 
-	// Hash password
 	passwordHash, err := auth.HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)

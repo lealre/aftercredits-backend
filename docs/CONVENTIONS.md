@@ -160,6 +160,58 @@ the file from commit messages. It was removed: it overwrote hand-written
 entries, emitted merge commits as changelog lines, and silently dropped any
 release that was never tagged.
 
+## 10. Comments earn their place
+
+A comment is read every time the code is read and is never checked by a
+compiler or a test. That asymmetry is the whole rule: a comment must tell the
+reader something the code cannot, or it is a liability — one more thing to
+keep true, and one more thing that silently lies once it drifts.
+
+**Delete a comment that restates the code.**
+
+```go
+// Get the rating to find the titleId          <- says what the next line says
+rating, err := ratings.GetRatingById(...)
+
+// Create new rating                            <- the function is called AddRating
+ratingDb, err = db.AddRating(ctx, ratingDb)
+```
+
+The name already carries this. If the call is not clear enough on its own, the
+fix is the name, not a comment above it.
+
+**Keep a comment that explains something the code cannot say.** The test is
+whether a competent reader who understands the language would still be
+surprised. Legitimate reasons:
+
+- **Why this and not the obvious alternative.** The LISTEN loop dials its own
+  connection rather than taking one from the pool, and the reason (a pooled
+  connection loses its subscription with no error) is invisible in the code.
+- **A constraint that bites.** bcrypt silently ignores bytes past 72, so the
+  password maximum is a correctness requirement, not a preference.
+- **A consequence that is not local.** Disabling collision avoidance to stop a
+  popover flipping upward also disables horizontal fitting.
+- **A deliberate omission.** Code that is missing on purpose looks like an
+  oversight unless it says so.
+
+**Lead with the point, and keep it short.** A comment that runs past a few
+lines is usually one sentence of insight wrapped in elaboration nobody needs.
+Put the conclusion first; if the full story genuinely matters, it belongs in
+the commit message or the changelog, where it is dated and does not have to
+stay true forever.
+
+```go
+// The connection is dedicated on purpose: LISTEN is connection-scoped, and a
+// pooled connection handed back between the LISTEN and the wait loses the
+// subscription silently — no error, just permanent silence.
+```
+
+That is the same knowledge as the thirty-line version it replaced.
+
+**Never leave a comment that has stopped being true.** A wrong comment is worse
+than none, because it is trusted. When code changes, its comment changes with
+it or goes.
+
 ## Related
 
 - Title metadata providers: [../internal/titleprovider/README.md](../internal/titleprovider/README.md)
