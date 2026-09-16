@@ -23,13 +23,11 @@ func TestCreateGroup(t *testing.T) {
 	t.Run("Create a group successfully", func(t *testing.T) {
 		resetDB(t)
 
-		// Create a new user
 		user, token := addUser(t, users.NewUserRequest{
 			Username: "testname",
 			Password: "testpass",
 		})
 
-		// Create the group
 		newGroup := groups.CreateGroupRequest{
 			Name: "testgroupname",
 		}
@@ -64,13 +62,11 @@ func TestCreateGroup(t *testing.T) {
 	t.Run("Creating a group with the same name and ownerId should return 400", func(t *testing.T) {
 		resetDB(t)
 
-		// Create a new user
 		user, token := addUser(t, users.NewUserRequest{
 			Username: "testname",
 			Password: "testpass",
 		})
 
-		// Create the first group
 		groupOne := groups.CreateGroupRequest{
 			Name: "testgroupname",
 		}
@@ -122,13 +118,11 @@ func TestCreateGroup(t *testing.T) {
 	t.Run("Creating a group with empty name should return 400", func(t *testing.T) {
 		resetDB(t)
 
-		// Create a new user
 		_, token := addUser(t, users.NewUserRequest{
 			Username: "testname",
 			Password: "testpass",
 		})
 
-		// Create group
 		group := groups.CreateGroupRequest{
 			Name: "",
 		}
@@ -301,13 +295,11 @@ func TestGroupUsers(t *testing.T) {
 	t.Run("Add users to a group and retrieve them successfully", func(t *testing.T) {
 		resetDB(t)
 
-		// Create User 1 (Owner)
 		ownerUser, tokenOwnerUser := addUser(t, users.NewUserRequest{
 			Username: "testNameOne",
 			Password: "testPass",
 		})
 
-		// Create User 2 (Participant)
 		participantUser, tokenParticipantUser := addUser(t, users.NewUserRequest{
 			Username: "testNameTwo",
 			Password: "testPass",
@@ -318,7 +310,6 @@ func TestGroupUsers(t *testing.T) {
 			Name: "testgroupname",
 		}, tokenOwnerUser)
 
-		// Add User 2 (Participant) to group
 		addUserToGroup := groups.AddUserToGroupRequest{
 			UserId: participantUser.Id,
 		}
@@ -430,19 +421,16 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 	// 		TEST SETUP - ADDING AND GETTING TITLES FROM GROUP
 	// =========================================================
 
-	// Create Owner User
 	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testNameOne",
 		Password: "testPass",
 	})
 
-	// Create Participant User
 	participantUser, tokenParticipantUser := addUser(t, users.NewUserRequest{
 		Username: "testNameTwo",
 		Password: "testPass",
 	})
 
-	// Create a group for owner user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -458,7 +446,6 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 		Password: "#Usernotingroup123",
 	})
 
-	// Load titles in database
 	movieTitles := loadTitlesFixture(t)
 	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
 	allTitles := append(movieTitles, tvSeriesTitles...)
@@ -785,7 +772,6 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 		require.NotNil(t, tvSeriesTitleDetail.SeasonsWatched, "Expected SeasonsWatched to not be nil for TV series")
 		require.Equal(t, 2, len(*tvSeriesTitleDetail.SeasonsWatched), "Expected 2 seasons in SeasonsWatched, got %d", len(*tvSeriesTitleDetail.SeasonsWatched))
 
-		// Verify season 1
 		season1Watched, season1Exists := (*tvSeriesTitleDetail.SeasonsWatched)["1"]
 		require.True(t, season1Exists, "Expected season 1 to exist in SeasonsWatched")
 		require.True(t, season1Watched.Watched, "Expected season 1 Watched to be true")
@@ -794,7 +780,6 @@ func TestAddAndGetTitlesFromGroup(t *testing.T) {
 		require.NotEmpty(t, season1Watched.AddedAt, "Expected season 1 AddedAt to not be empty")
 		require.NotEmpty(t, season1Watched.UpdatedAt, "Expected season 1 UpdatedAt to not be empty")
 
-		// Verify season 2
 		season2Watched, season2Exists := (*tvSeriesTitleDetail.SeasonsWatched)["2"]
 		require.True(t, season2Exists, "Expected season 2 to exist in SeasonsWatched")
 		require.True(t, season2Watched.Watched, "Expected season 2 Watched to be true")
@@ -854,13 +839,11 @@ func TestGroupTitlesPatch(t *testing.T) {
 	// 		TEST SETUP - SETTING WATCHED FIELD FROM TITLE
 	// =========================================================
 
-	// Create User One
 	_, tokenUserOne := addUser(t, users.NewUserRequest{
 		Username: "testNameOne",
 		Password: "testPass",
 	})
 
-	// Create User Two
 	userTwo, tokenUserTwo := addUser(t, users.NewUserRequest{
 		Username: "testNameTwo",
 		Password: "testPass",
@@ -882,7 +865,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		Password: "#Usernotingroup123",
 	})
 
-	// Load titles in database
 	movieTitles := loadTitlesFixture(t)
 	tvSeriesTitles := loadTVSeriesTitlesFixture(t)
 	allTitles := append(movieTitles, tvSeriesTitles...)
@@ -1109,7 +1091,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
 
-		// Verify response includes seasons watched info
 		require.NotNil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to not be nil in response")
 		require.Equal(t, 1, len(*respGroupSetWatchedBody.SeasonsWatched), "Expected 1 season in SeasonsWatched response, got %d", len(*respGroupSetWatchedBody.SeasonsWatched))
 		season1Watched, season1Exists := (*respGroupSetWatchedBody.SeasonsWatched)[strconv.Itoa(season)]
@@ -1134,7 +1115,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NotEmpty(t, seasonWatched.AddedAt, "Expected season AddedAt in db to not be empty")
 		require.NotEmpty(t, seasonWatched.UpdatedAt, "Expected season UpdatedAt in db to not be empty")
 
-		// Verify top-level watched is true
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when season is watched")
 		require.Nil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to be nil when season has no watchedAt")
 
@@ -1157,7 +1137,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
 
-		// Verify response includes seasons watched info
 		require.NotNil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to not be nil in response")
 		season1Watched, season1Exists := (*respGroupSetWatchedBody.SeasonsWatched)[strconv.Itoa(season)]
 		require.True(t, season1Exists, "Expected season %d to exist in SeasonsWatched response", season)
@@ -1176,7 +1155,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.True(t, seasonWatched.Watched, "Expected season Watched in db to be true")
 		require.True(t, seasonWatched.WatchedAt != nil && testDate.Equal(*seasonWatched.WatchedAt), "Expected season WatchedAt in db to match testDate, expected: %v, got: %v", testDate, seasonWatched.WatchedAt)
 
-		// Verify top-level watched and watchedAt
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when season is watched")
 		require.NotNil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to not be nil")
 		require.Equal(t, testDate, *respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to match season's WatchedAt")
@@ -1199,7 +1177,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 		require.Equal(t, respGroupSetWatchedBody.Id, expectedTVSeriesTitle.ID, "Expected Id to be %s, got %s", expectedTVSeriesTitle.ID, respGroupSetWatchedBody.Id)
 
-		// Verify response includes seasons watched info
 		require.NotNil(t, respGroupSetWatchedBody.SeasonsWatched, "Expected SeasonsWatched to not be nil in response")
 		season1Watched, season1Exists := (*respGroupSetWatchedBody.SeasonsWatched)[strconv.Itoa(season)]
 		require.True(t, season1Exists, "Expected season %d to exist in SeasonsWatched response", season)
@@ -1357,12 +1334,10 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.True(t, exists, "Expected TV series title to be in group titles db")
 		require.NotEmpty(t, titleToAssert.SeasonsWatched, "Expected SeasonsWatched to not be empty")
 
-		// Check season 1
 		season1Watched, season1Exists := (*titleToAssert.SeasonsWatched)["1"]
 		require.True(t, season1Exists, "Expected season 1 to exist in SeasonsWatched")
 		require.False(t, season1Watched.Watched, "Expected season 1 Watched in db to be false")
 
-		// Check season 2
 		season2Watched, season2Exists := (*titleToAssert.SeasonsWatched)["2"]
 		require.True(t, season2Exists, "Expected season 2 to exist in SeasonsWatched")
 		require.True(t, season2Watched.Watched, "Expected season 2 Watched in db to be true")
@@ -1395,7 +1370,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NoError(t, err)
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 
-		// Verify top-level watched is true
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when at least one season is watched")
 
 		// Verify top-level watchedAt matches the season's watchedAt
@@ -1449,10 +1423,8 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NoError(t, err)
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 
-		// Verify top-level watched is false
 		require.False(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be false when all seasons are unwatched")
 
-		// Verify top-level watchedAt is nil
 		require.Nil(t, respGroupSetWatchedBody.WatchedAt, "Expected top-level WatchedAt to be nil when no seasons are watched")
 
 		// Database assertion
@@ -1493,7 +1465,6 @@ func TestGroupTitlesPatch(t *testing.T) {
 		require.NoError(t, err)
 		respGroupSetWatchedBody := patchGroupTitleWatched(t, group.Id, pathBody, tokenUserOne)
 
-		// Verify top-level watched is true
 		require.True(t, respGroupSetWatchedBody.Watched, "Expected top-level Watched to be true when seasons are watched")
 
 		// Verify top-level watchedAt is the latest date (testDate2)
@@ -1573,13 +1544,11 @@ func TestGroupTitlesDelete(t *testing.T) {
 	// 		TEST SETUP - DELETING TITLE FROM GROUP
 	// =========================================================
 
-	// Create User One
 	_, tokenUserOne := addUser(t, users.NewUserRequest{
 		Username: "testNameOne",
 		Password: "testPass",
 	})
 
-	// Create User Two
 	userTwo, tokenUserTwo := addUser(t, users.NewUserRequest{
 		Username: "testNameTwo",
 		Password: "testPass",
@@ -1601,13 +1570,11 @@ func TestGroupTitlesDelete(t *testing.T) {
 		Password: "#Usernotingroup123",
 	})
 
-	// Load titles in database
 	titles := loadTitlesFixture(t)
 	seedTitles(t, titles)
 	expectedTitle := titles[0]    // Title for group owner to add
 	expectedTitleTwo := titles[1] // Title for regular user to add
 
-	// Add titles to group
 	addTitleToGroup(t, groups.AddTitleToGroupRequest{
 		URL:     fmt.Sprintf("https://www.imdb.com/title/%s/", expectedTitle.ID),
 		GroupId: group.Id,
@@ -1706,13 +1673,11 @@ func TestAddTVSeriesToGroupAsOwner(t *testing.T) {
 	// 		TEST SETUP - ADDING A TV SERIES TO A GROUP
 	// =========================================================
 
-	// Create Owner User
 	_, tokenOwnerUser := addUser(t, users.NewUserRequest{
 		Username: "testNameOne",
 		Password: "testPass",
 	})
 
-	// Create a group for owner user
 	group := createGroup(t, groups.CreateGroupRequest{
 		Name: "testgroupname",
 	}, tokenOwnerUser)
@@ -2053,7 +2018,6 @@ func TestSoftDeleteGroup(t *testing.T) {
 		// owner's user.groups no longer contains the id
 		require.NotContains(t, getUserFromDb(t, owner.Id).Groups, group.Id)
 
-		// second delete -> 404
 		secondResp := deleteGroupFromApi(t, group.Id, ownerTok)
 		defer secondResp.Body.Close()
 		require.Equal(t, http.StatusNotFound, secondResp.StatusCode)

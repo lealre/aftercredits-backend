@@ -165,10 +165,10 @@ func AddRating(db store.Store, ctx context.Context, rating NewRating, userId str
 
 	// Split logic for TV series and non-TV series
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Adding rating for TV series %s", rating.TitleId)
+		logger.DebugContext(ctx, "adding rating", "kind", "series", "title_id", rating.TitleId)
 		created, err = addRatingForTVSeries(db, ctx, rating, userId, title)
 	} else {
-		logger.Printf("Adding rating for movie %s", rating.TitleId)
+		logger.DebugContext(ctx, "adding rating", "kind", "movie", "title_id", rating.TitleId)
 		created, err = addRatingForMovie(db, ctx, rating, userId)
 	}
 	if err != nil {
@@ -178,33 +178,12 @@ func AddRating(db store.Store, ctx context.Context, rating NewRating, userId str
 	return created, title, nil
 }
 
-// addRatingForTVSeries handles rating creation/update for TV series (tvSeries or tvMiniSeries).
+// addRatingForTVSeries creates or updates a rating for one season of a series.
 //
-//	1.1. Validates that a season number is provided in the rating request
-//	1.2. Validates that the season exists in the title's seasons list
-//	1.3. Checks if a rating already exists for this user/title/group combination:
-//	   - If no rating exists:
-//	     1.3.1. Creates a new rating with the season rating
-//	   - If a rating exists:
-//	     1.3.2. Checks if a rating for this specific season already exists
-//	     1.3.3. If the season rating exists: Returns ErrSeasonRatingAlreadyExists
-//	     1.3.4. If the season rating doesn't exist: Adds the new season rating to the existing rating
-//	1.4. Calculates the overall rating as the mean of all season ratings
-//	1.5. Creates a new rating OR updates the existing rating in the database
-//
-// Parameters:
-//   - db: the store
-//   - ctx: Context for the operation
-//   - rating: NewRating struct containing titleId, note, and season number
-//   - userId: ID of the user creating the rating
-//   - title: Title struct with seasons information
-//
-// Returns:
-//   - Rating: The created or updated rating with all fields populated
-//   - error: Returns various errors based on validation failures:
-//   - ErrSeasonRequired: If season is missing
-//   - ErrSeasonDoesNotExist: If the season doesn't exist in the title
-//   - ErrSeasonRatingAlreadyExists: If rating for this season already exists
+// A season number is required and must exist on the title. A season already
+// rated is ErrSeasonRatingAlreadyExists rather than an overwrite — updating is
+// a separate operation. The title's overall note is always recomputed as the
+// mean of its season notes, never set directly.
 func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRating, userId string, title titles.Title) (Rating, error) {
 	// 1.1: Validates that a season number is provided
 	if newRating.Season == nil {
@@ -250,7 +229,6 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 		// 1.3.2: Checks if a rating for this specific season already exists
 		if existingRating.SeasonsRatings != nil {
 			if _, exists := (*existingRating.SeasonsRatings)[newSeasonAsString]; exists {
-				// 1.3.3: Returns ErrSeasonRatingAlreadyExists
 				return Rating{}, ErrSeasonRatingAlreadyExists
 			}
 		}
@@ -286,7 +264,6 @@ func addRatingForTVSeries(db store.Store, ctx context.Context, newRating NewRati
 	}
 
 	if hasExistingRating {
-		// Update existing rating
 		ratingDb.Id = existingRating.Id
 		ratingDb.CreatedAt = existingRating.CreatedAt
 		updatedRatingDb, err := db.UpdateRating(ctx, ratingDb, userId)
@@ -383,10 +360,10 @@ func UpdateRating(db store.Store, ctx context.Context, ratingId, userId string, 
 	}
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Updating rating for TV series %s", previous.TitleId)
+		logger.DebugContext(ctx, "updating rating", "kind", "series", "title_id", previous.TitleId)
 		updated, err = updateRatingForTVSeries(db, ctx, previous, userId, updateReq, title)
 	} else {
-		logger.Printf("Updating rating for movie %s", previous.TitleId)
+		logger.DebugContext(ctx, "updating rating", "kind", "movie", "title_id", previous.TitleId)
 		updated, err = updateRatingForMovie(db, ctx, ratingId, userId, updateReq)
 	}
 	if err != nil {
@@ -412,29 +389,12 @@ func updateRatingForMovie(db store.Store, ctx context.Context, ratingId, userId 
 	return MapDbRatingDbToApiRating(updatedRatingDb), nil
 }
 
-// updateRatingForTVSeries updates the rating of a specific season of a TV series
-// and recalculates the overall rating accordingly.
+// updateRatingForTVSeries updates one season's note and recomputes the title's
+// overall note as the mean of its seasons.
 //
-// Steps performed by this method:
-// 1. Validate that a season number is provided in the update request.
-// 2. Validate that the season value is valid (greater than zero).
-// 3. Ensure the existing rating contains season ratings (sanity check from API model).
-// 4. Verify that the specified season already exists in the stored ratings (from API model).
-// 5. Fetch the existing rating from DB to preserve timestamps for all seasons.
-// 6. Verify that the rating contains season ratings in DB structure.
-// 7. Verify that the specified season exists in the DB structure.
-// 8. Update the rating for the specified season (preserve AddedAt, update UpdatedAt).
-// 9. Recalculate the overall rating as the average of all season ratings.
-// 10. Prepare updated rating for persistence.
-// 11. Persist the updated season ratings and overall rating to the database.
-// 12. Map the database model back to the API model and return it.
-//
-// Possible errors returned:
-//   - ErrSeasonRequired: if no season is provided in the update request.
-//   - ErrInvalidSeasonValue: if the season value is invalid (less than or equal to zero).
-//   - ErrRatingNotFound: if the rating does not contain season ratings.
-//   - ErrSeasonDoesNotExist: if the specified season is not present in the rating.
-//   - Any error returned by db.GetRatingById or db.UpdateRating when fetching or persisting the update.
+// The season must already be rated — this updates, it does not create. The
+// stored rating is re-fetched rather than trusted from the request so the other
+// seasons keep their original AddedAt timestamps.
 func updateRatingForTVSeries(
 	db store.Store,
 	ctx context.Context,
@@ -586,7 +546,6 @@ func DeleteRatingSeason(db store.Store, ctx context.Context, ratingId, userId st
 		return ErrSeasonDoesNotExist
 	}
 
-	// 4. Get the existing rating
 	existingRating, err := db.GetRatingById(ctx, ratingId, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
@@ -605,7 +564,6 @@ func DeleteRatingSeason(db store.Store, ctx context.Context, ratingId, userId st
 		return ErrRatingNotFound
 	}
 
-	// 7. Delete the season rating
 	delete((*existingRating.SeasonsRatings), seasonAsString)
 
 	// 8. If no other season ratings left, delete the whole document

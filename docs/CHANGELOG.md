@@ -58,6 +58,17 @@ application one.
 
 There is no change to the frontend repository's compose file.
 
+<a name="v0.1.4"></a>
+## [v0.1.4](https://github.com/lealre/aftercredits-backend/compare/v0.1.3...v0.1.4) (2026-09-15)
+
+The release that makes this safe to put on the open internet: sessions became
+revocable, self-registration closed, and the bootstrap stopped inventing an
+`admin`/`admin` superuser. Rating notes are now stored exactly, and activity
+events are kept forever unless you opt into pruning.
+
+**Operator actions are required at deploy time** — see the end of the security
+section.
+
 ### Security hardening for public internet exposure
 
 This version makes the backend safe to expose on the open internet. **Operator

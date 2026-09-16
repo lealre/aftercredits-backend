@@ -2,20 +2,29 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/lealre/movies-backend/internal/logx"
 	"github.com/lealre/movies-backend/internal/metrics"
 	"github.com/lealre/movies-backend/internal/postgres"
 	"github.com/lealre/movies-backend/internal/server"
 )
 
 func main() {
+	// The process default, used by anything logging outside a request: startup,
+	// the activity LISTEN loop, and any library reaching for slog.Default().
+	// Request-scoped logs get their own logger from the middleware, but they
+	// share this handler so the output has one shape.
+	slog.SetDefault(slog.New(logx.NewHandler(os.Stdout, logx.LevelFromEnv())))
+
 	_ = godotenv.Load()
 
 	pool, err := postgres.Connect(context.Background())
 	if err != nil {
-		log.Fatalf("Failed to connect: %v", err)
+		slog.Error("failed to connect to the database", "err", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
@@ -40,6 +49,7 @@ func main() {
 	})
 
 	if err = server.ListenAndServe(postgres.New(pool), m); err != nil {
-		log.Fatalf("error while starting server: %v", err)
+		slog.Error("server stopped", "err", err)
+		os.Exit(1)
 	}
 }

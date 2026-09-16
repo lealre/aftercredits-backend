@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,43 +25,25 @@ const (
 )
 
 // ListenActivity is the LISTEN loop backing real-time activity push: it
-// dials its own standalone connection (never the shared pool), LISTENs on
-// listenChannel, and turns every notified id into a row (via
-// GetActivityEventById) handed to publish.
+// LISTENs on listenChannel and turns every notified id into a row handed to
+// publish.
 //
-// The connection is dedicated on purpose: LISTEN is connection-scoped state,
-// and a pooled connection that got handed back to the pool between the
-// LISTEN and the wait would lose the subscription with no error, just
-// permanent silence. Going through pgx.ConnectConfig (rather than
-// s.pool.Acquire, held for the loop's lifetime) sidesteps a subtler version
-// of the same problem: a connection released to the shared pool after a
-// LISTEN stays subscribed at the Postgres session level even while idle in
-// the pool, so it keeps silently accumulating notifications in its unread
-// socket buffer; if that exact connection is ever handed out again — to this
-// loop's own reconnect, or to an unrelated query elsewhere in the app — that
-// backlog surfaces as a stale notification with no connection to anything
-// currently happening. A connection dialed and Closed outright, never
-// touching the pool, cannot leak that way.
+// The connection is dialed standalone and never comes from the pool. LISTEN is
+// connection-scoped, so a pooled connection handed back between the LISTEN and
+// the wait loses the subscription silently — no error, just permanent silence.
+// Worse, a subscribed connection idling in the pool keeps accumulating
+// notifications in its socket buffer, which surface as stale events whenever it
+// is handed out again. A connection dialed and closed outright cannot leak that
+// way.
 //
-// publish takes a plain func rather than *activity.Hub so this package never
-// imports internal/activity: internal/postgres names a concrete database,
-// and the hub must stay database-agnostic (CONVENTIONS §2). The caller
-// (server.go) wires ListenActivity's publish to hub.Publish.
+// publish is a plain func rather than *activity.Hub so this package never
+// imports internal/activity, which must stay database-agnostic (CONVENTIONS §2).
 //
-// On any connection error — the dedicated connection dying, the Postgres
-// backend restarting — this logs, backs off (capped at listenMaxBackoff),
-// and reconnects, re-issuing LISTEN. Events that land during that gap are not
-// replayed: nothing here tracks a resume position, and the design deliberately
-// leans on clients repairing themselves via their next snapshot read (see
-// "Snapshot, then stream" in the phase 2 design doc) rather than the backend
-// trying to guarantee delivery.
-//
-// A notified id whose row is gone by the time it's read (deleted between the
-// NOTIFY and this loop's read — not possible for activity_events today, since
-// nothing deletes rows, but the loop doesn't assume that) is logged and
-// skipped, never fatal.
-//
-// Returns nil when ctx is cancelled, so a normal shutdown is not an error.
+// Connection errors log, back off (capped at listenMaxBackoff) and reconnect.
+// Events landing in that gap are NOT replayed: clients repair themselves on
+// their next snapshot read. A notified id whose row is gone is skipped, never
+// fatal. Returns nil when ctx is cancelled, so a normal shutdown is not an
+// error.
 func (s *Store) ListenActivity(ctx context.Context, publish func(models.ActivityEvent)) error {
 	// s.pool.Config() already returns a defensive copy (pgxpool.Pool.Config),
 	// and pgx.ConnectConfig copies it again internally before each dial, so
@@ -82,7 +64,7 @@ func (s *Store) ListenActivity(ctx context.Context, publish func(models.Activity
 			return nil
 		}
 
-		log.Printf("activity: LISTEN connection lost, reconnecting in %s: %v", backoff, err)
+		slog.Warn("activity LISTEN connection lost, reconnecting", "err", err, "backoff", backoff.String())
 
 		select {
 		case <-ctx.Done():
@@ -129,10 +111,10 @@ func (s *Store) listenOnce(ctx context.Context, connConfig *pgx.ConnConfig, publ
 		event, err := s.GetActivityEventById(ctx, n.Payload)
 		if err != nil {
 			if errors.Is(err, store.ErrRecordNotFound) {
-				log.Printf("activity: notified event %q has no matching row, skipping", n.Payload)
+				slog.Warn("notified activity event has no matching row, skipping", "event_id", n.Payload)
 				continue
 			}
-			log.Printf("activity: failed to read notified event %q, skipping: %v", n.Payload, err)
+			slog.Error("failed to read notified activity event, skipping", "err", err, "event_id", n.Payload)
 			continue
 		}
 		publish(event)

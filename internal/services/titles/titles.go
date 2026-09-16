@@ -62,7 +62,7 @@ func AddNewTitle(db store.Store, provider titleprovider.Provider, ctx context.Co
 		return Title{}, err
 	}
 	if providerTitle.Type == "tvSeries" || providerTitle.Type == "tvMiniSeries" {
-		logger.Printf("Title %s is a TV series with %d seasons", titleId, len(providerTitle.Seasons))
+		logger.DebugContext(ctx, "title is a series", "title_id", titleId, "seasons", len(providerTitle.Seasons))
 	}
 
 	title := MapProviderTitleToDb(*providerTitle)

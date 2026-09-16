@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -35,7 +35,7 @@ func NewServer(ctx context.Context, st store.Store, m *metrics.Metrics) (http.Ha
 	if secret == "" {
 		return nil, fmt.Errorf("JWT_SECRET must be set")
 	}
-	log.Printf("Using title provider: %s", provider.Name())
+	slog.Info("title provider selected", "provider", provider.Name())
 	return NewServerWithProvider(ctx, st, provider, secret, m), nil
 }
 
@@ -170,7 +170,7 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 // API from serving.
 func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
 	if !config.MetricsEnabled() {
-		log.Printf("Metrics listener disabled (METRICS_ENABLED=false)")
+		slog.Info("metrics listener disabled", "reason", "METRICS_ENABLED=false")
 		return
 	}
 
@@ -179,7 +179,7 @@ func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
 	// than from inside a goroutine where it can only be logged after the fact.
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Printf("WARN: metrics listener cannot bind %s: %v; continuing without metrics", addr, err)
+		slog.Warn("metrics listener cannot bind; continuing without metrics", "err", err, "addr", addr)
 		return
 	}
 
@@ -205,7 +205,7 @@ func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("WARN: metrics listener on %s stopped: %v; the API is unaffected", addr, err)
+			slog.Warn("metrics listener stopped; the API is unaffected", "err", err, "addr", addr)
 		}
 	}()
 	// Tie the listener's lifetime to the same context that governs the
@@ -215,7 +215,7 @@ func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
 		_ = srv.Close()
 	}()
 
-	log.Printf("Metrics available on %s/metrics", addr)
+	slog.Info("metrics available", "addr", addr, "path", "/metrics")
 }
 
 // startActivityListener starts the one LISTEN loop that feeds hub, if this
@@ -231,13 +231,13 @@ func startActivityListener(ctx context.Context, st store.Store, hub *activity.Hu
 		// Not a failure worth refusing to boot over: the feed and the stream
 		// both still work, the stream just stays silent until the client's
 		// next snapshot. Said once, loudly, rather than swallowed.
-		log.Printf("WARN: %T cannot push activity events; the stream will not deliver live updates", st)
+		slog.Warn("store cannot push activity events; the stream will not deliver live updates", "store", fmt.Sprintf("%T", st))
 		return
 	}
 
 	go func() {
 		if err := listener.ListenActivity(ctx, hub.Publish); err != nil {
-			log.Printf("ERROR: the activity listener stopped: %v", err)
+			slog.Error("the activity listener stopped", "err", err)
 		}
 	}()
 }
@@ -276,10 +276,10 @@ func ListenAndServe(st store.Store, m *metrics.Metrics) error {
 		// body is already bounded by MaxBytesReader in RequestIdMiddleware and
 		// each handler's context by RequestTimeoutMiddleware.
 	}
-	log.Println("Server running on :8080")
+	slog.Info("server running", "addr", ":8080")
 	if err := server.ListenAndServe(); err != nil {
 		return fmt.Errorf("error while starting server: %v", err)
 	}
-	log.Println("Server started listening on port 8080")
+	slog.Info("server listening", "port", 8080)
 	return nil
 }

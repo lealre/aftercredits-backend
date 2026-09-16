@@ -169,26 +169,20 @@ func GetTitlesFromGroup(
 		return generics.Page[GroupTitleDetail]{}, err
 	}
 
-	// Three distinct situations produce an empty page, and clients can tell
-	// two shapes apart (`"Content":[]` vs `"Content":null`, plus whether
-	// size/page are normalized), so the split is an observable API contract
-	// (CONVENTIONS §5) that this function must keep:
+	// Three situations produce an empty page, and clients can tell the shapes
+	// apart (`"Content":[]` vs `"Content":null`), so this is an observable API
+	// contract (CONVENTIONS §5), not an implementation detail:
 	//
-	//  1. the group holds no title entry matching the filters — an empty
-	//     group, or a watched/titleType filter that matches none of its
-	//     entries: `[]`, with the caller's raw size/page echoed back;
-	//  2. every matching entry points at a title that is gone from the
-	//     catalogue (group_titles has no FK to titles, so entries outlive
-	//     deleted titles): `null`, with normalized size/page;
-	//  3. the requested page is past the last one: `null`, with normalized
-	//     size/page and a non-zero total.
+	//  1. no title entry matches the filters: `[]`, caller's size/page echoed;
+	//  2. every match points at a title gone from the catalogue (group_titles
+	//     has no FK to titles, so entries outlive deleted titles): `null`,
+	//     normalized size/page;
+	//  3. the page is past the last one: `null`, normalized, non-zero total.
 	//
-	// GetGroupTitlesPage inner-joins titles, so its total is 0 for both (1)
-	// and (2) — hence the extra EXISTS, which counts orphaned entries and so
-	// separates them. It runs only on this already-empty path, never on the
-	// hot one. Cases (2) and (3) need no branch at all: falling through
-	// leaves allTitlesDetails nil, which is exactly the `null` those two
-	// return.
+	// GetGroupTitlesPage inner-joins titles, so its total is 0 for both (1) and
+	// (2) — hence the extra EXISTS to separate them, which runs only on this
+	// already-empty path. Cases (2) and (3) need no branch: falling through
+	// leaves the slice nil, which is the `null` they return.
 	if total == 0 {
 		hasEntries, err := db.GroupHasTitleEntries(ctx, groupId, watched, titleTypes)
 		if err != nil {

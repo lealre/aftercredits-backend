@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -133,14 +133,19 @@ func RequestIdMiddleware(next http.Handler) http.Handler {
 		method := sanitizeForLog(r.Method, 8)
 		path := sanitizeForLog(r.URL.EscapedPath(), 256)
 
-		logger := log.New(os.Stdout, "["+requestId+"] - ", log.LstdFlags)
-		logger.Printf("Request received: %s %s from %s", method, path, ip)
+		logger := slog.New(logx.NewHandler(os.Stdout, logx.LevelFromEnv()))
 
 		meta := &requestMeta{}
 		ctx := context.WithValue(r.Context(), requestIdKey, requestId)
 		ctx = context.WithValue(ctx, requestMetaKey, meta)
+		ctx = logx.WithRequest(ctx, requestId, ip, method, path)
 		ctx = logx.WithLogger(ctx, logger)
 		r = r.WithContext(ctx)
+
+		// Debug, not info: the completion line below is the one line per
+		// request. This one only matters when tracing a request that never
+		// finished, which is exactly when you would raise the level.
+		logger.DebugContext(ctx, "request received")
 
 		recorder := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
@@ -152,17 +157,25 @@ func RequestIdMiddleware(next http.Handler) http.Handler {
 			userId = "-"
 		}
 		// A single completion line per request, carrying who and from where, so
-		// a sweep is attributable. A forbidden/unauthorized outcome is logged at
-		// WARN so auth failures are greppable.
-		level := "INFO"
-		if recorder.statusCode == http.StatusUnauthorized || recorder.statusCode == http.StatusForbidden {
-			level = "WARN"
+		// a sweep is attributable. The level is now the outcome's severity
+		// rather than a string inside the message, which is what makes "show me
+		// the failures" a filter instead of a grep.
+		level := slog.LevelInfo
+		switch {
+		case recorder.statusCode >= 500:
+			level = slog.LevelError
+		case recorder.statusCode == http.StatusUnauthorized || recorder.statusCode == http.StatusForbidden:
+			level = slog.LevelWarn
 		}
-		if duration > time.Second {
-			logger.Printf("%s: %s %s -> %d in %.2fs (ip=%s user=%s)", level, method, path, recorder.statusCode, duration.Seconds(), ip, userId)
-		} else {
-			logger.Printf("%s: %s %s -> %d in %dms (ip=%s user=%s)", level, method, path, recorder.statusCode, duration.Milliseconds(), ip, userId)
-		}
+
+		// Also into the logging context, so this record renders the user in the
+		// common prefix like every other line rather than only as an attribute.
+		ctx = logx.WithUser(ctx, userId)
+
+		logger.LogAttrs(ctx, level, "request completed",
+			slog.Int("status", recorder.statusCode),
+			slog.Int64("dur_ms", duration.Milliseconds()),
+		)
 	})
 }
 
@@ -206,7 +219,6 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 				return
 			}
 
-			// Extract token
 			tokenString, err := auth.GetBearerToken(r.Header)
 			if err != nil {
 				if _, ok := auth.ErrorsMap[err]; ok {
@@ -217,7 +229,6 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 				return
 			}
 
-			// Validate token
 			userId, tokenVersion, err := auth.ValidateJWT(tokenString, tokenSecret)
 			if err != nil {
 				if _, ok := auth.ErrorsMap[err]; ok {
@@ -236,7 +247,7 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 			// unreachable.
 			userDb, err := db.GetUserById(r.Context(), userId)
 			if err != nil && !errors.Is(err, store.ErrRecordNotFound) {
-				logx.FromContext(r.Context()).Printf("ERROR: %v", err)
+				logx.FromContext(r.Context()).ErrorContext(r.Context(), "failed to authenticate request", "err", err)
 				http.Error(w, "Unexpected error occurred", http.StatusInternalServerError)
 				return
 			}
@@ -263,7 +274,10 @@ func AuthMiddleware(tokenSecret string, db store.Store) func(http.Handler) http.
 			}
 
 			// Put userId into context
-			ctx := auth.WithUser(r.Context(), userDb)
+			// Also into the LOGGING context, so every record written by the
+			// handlers downstream carries it. Without this the user id reaches
+			// only the completion line, via the meta pointer above.
+			ctx := logx.WithUser(auth.WithUser(r.Context(), userDb), userDb.Id)
 			r = r.WithContext(ctx)
 
 			next.ServeHTTP(w, r.WithContext(ctx))

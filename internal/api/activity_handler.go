@@ -32,7 +32,7 @@ func (api *API) GetActivityFeed(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, code, err.Error())
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get feed", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -45,7 +45,7 @@ func (api *API) GetActivityUnreadCount(w http.ResponseWriter, r *http.Request) {
 
 	count, err := activity.GetUnreadCount(api.Db, r.Context(), currentUser.Id)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get unread count", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -64,7 +64,7 @@ func (api *API) MarkActivityEventRead(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, code, err.Error())
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to mark event read", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -81,7 +81,7 @@ func (api *API) MarkAllActivityRead(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, code, err.Error())
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to mark all read", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
