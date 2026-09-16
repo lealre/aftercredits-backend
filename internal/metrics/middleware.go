@@ -14,6 +14,15 @@ import (
 // so a label carrying it would let anyone grow the series count without limit.
 const unmatchedRoute = "unmatched"
 
+// streamPath is the one route whose response is deliberately long-lived. It is
+// matched by path rather than by the recorded route label because the label is
+// only known after the handler runs, and the decision is needed before it.
+const streamPath = "/activity/stream"
+
+func isStream(r *http.Request) bool {
+	return r.Method == http.MethodGet && r.URL.Path == streamPath
+}
+
 // methodLabel bounds the method label to the standard set, reporting anything
 // else as "other".
 //
@@ -78,11 +87,25 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 
 			recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 
-			m.inFlight.Inc()
-			// Deferred, not sequential: a panicking handler unwinds past
-			// everything below this line, and the gauge must not be left
-			// stuck above zero by a request that will never finish.
-			defer m.inFlight.Dec()
+			// The SSE stream is a response held open for as long as a browser
+			// tab stays on the page, exempted from RequestTimeoutMiddleware for
+			// that reason. Timing it measures how long someone left the app
+			// open, which is not latency: every disconnect would land a
+			// multi-minute observation in the +Inf bucket (DefBuckets stop at
+			// 10s), and the in-flight gauge would count connected tabs rather
+			// than work in progress. Both would read as a server in trouble.
+			//
+			// It is still counted in requests_total, where one increment per
+			// connection is exactly right.
+			timed := !isStream(r)
+
+			if timed {
+				m.inFlight.Inc()
+				// Deferred, not sequential: a panicking handler unwinds past
+				// everything below this line, and the gauge must not be left
+				// stuck above zero by a request that will never finish.
+				defer m.inFlight.Dec()
+			}
 
 			start := time.Now()
 			next.ServeHTTP(recorder, r)
@@ -93,7 +116,9 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 			}
 			method := methodLabel(r.Method)
 			m.requests.WithLabelValues(method, route, strconv.Itoa(recorder.status)).Inc()
-			m.duration.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
+			if timed {
+				m.duration.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
+			}
 		})
 	}
 }

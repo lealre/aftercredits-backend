@@ -250,3 +250,36 @@ func TestMiddleware_WrappedWriterStillFlushes(t *testing.T) {
 		"the handler must still see an http.Flusher through the metrics wrapper; "+
 			"without Unwrap the activity SSE stream breaks silently")
 }
+
+// The SSE stream is a response held open for as long as a tab stays on the
+// page. Timing it measures how long someone left the app open, not latency —
+// every disconnect would land a multi-minute sample in the +Inf bucket and drag
+// the p99 panel with it, and the in-flight gauge would count idle tabs rather
+// than work in progress. This pins the exemption so a refactor cannot quietly
+// restore it.
+func TestStreamIsCountedButNotTimed(t *testing.T) {
+	srv, m := buildServer(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /activity/stream", func(w http.ResponseWriter, r *http.Request) {})
+		mux.HandleFunc("GET /groups", func(w http.ResponseWriter, r *http.Request) {})
+	})
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/activity/stream")
+	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
+
+	body := expose(t, m)
+	require.Contains(t, body, `aftercredits_http_requests_total{method="GET",route="GET /activity/stream"`,
+		"the stream must still be counted: one increment per connection is right")
+	require.NotContains(t, body, `aftercredits_http_request_duration_seconds_count{method="GET",route="GET /activity/stream"`,
+		"the stream must NOT be timed — its duration is how long a tab stayed open")
+
+	// The counterpart. Without it, this test passes just as happily if the
+	// histogram stopped recording anything at all.
+	res, err = http.Get(srv.URL + "/groups")
+	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
+
+	require.Contains(t, expose(t, m), `aftercredits_http_request_duration_seconds_count{method="GET",route="GET /groups"`,
+		"an ordinary request must still be timed")
+}

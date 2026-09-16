@@ -13,4 +13,16 @@ global:
 scrape_configs:
   - job_name: aftercredits-backend
     static_configs:
+      # COUPLED TO THE SERVICE NAME, deliberately and unavoidably: Prometheus
+      # does not interpolate environment variables into static_configs, so this
+      # cannot be a variable the way STACK_NETWORK is.
+      #
+      # That matters because on the Pi the shared network belongs to the
+      # FRONTEND repo's compose, not this one — so this name has to keep
+      # matching a service defined in another repository. It does today.
+      #
+      # If that service is ever renamed, nothing here errors. The target simply
+      # goes DOWN, up{job="aftercredits-backend"} reads 0, and every dashboard
+      # panel is empty — so check Prometheus's /targets first when the whole
+      # dashboard is blank rather than one panel.
       - targets: ['backend:9090']

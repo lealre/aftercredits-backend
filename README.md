@@ -107,6 +107,11 @@ docker compose up -d                                       # postgres, migration
 docker compose -f docker-compose.observability.yaml up -d  # prometheus, grafana
 ```
 
+> The first command runs the backend **as a container**, which replaces the
+> `go run .` from step 7 of Setup — it does not sit alongside it. Running both
+> gives whichever starts second `bind: address already in use` on 8080, and
+> leaves `curl` reading whichever listener won. Stop `go run .` first.
+
 **Raw metrics** (loopback only) — the port comes from `METRICS_PORT_HOST` in
 `.env`, which is 9090 unless you remapped it:
 

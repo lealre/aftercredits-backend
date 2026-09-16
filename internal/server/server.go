@@ -183,14 +183,23 @@ func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
 		return
 	}
 
+	// Only /metrics, not every path. Mounting m.Handler() at the root served the
+	// whole exposition to any probe or mistyped scrape path, which contradicted
+	// the log line below and gave a scanner the full dump for free.
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", m.Handler())
+
 	srv := &http.Server{
-		Handler: m.Handler(),
-		// These two bounds match the API server's. IdleTimeout deliberately
-		// does not: the API server sets 120s, this listener leaves it unset, so
-		// an idle keep-alive connection here is never reaped on a timer.
-		// ReadTimeout/WriteTimeout are absent for the same reason they are
-		// absent there.
+		Handler: mux,
+		// Fully bounded, unlike the API server. The API omits these because of
+		// the long-lived SSE response; this listener has none, so every timeout
+		// is free here and an idle keep-alive connection from anything on the
+		// compose network would otherwise accumulate sockets with nothing to
+		// reap them.
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 	}
 

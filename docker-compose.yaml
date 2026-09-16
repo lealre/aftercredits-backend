@@ -70,7 +70,12 @@ services:
       # Defaulted here as well as in .env so it can be overridden from the
       # shell for a one-off run — which is how Task 10 exercises the metrics
       # listener's bind-failure path.
-      - METRICS_ADDR=${METRICS_ADDR:-:9090}
+      # NOT passed from .env. The docs tell a developer to set
+      # METRICS_ADDR=127.0.0.1:9090 for `go run .`, and interpolating that same
+      # value here would make the container bind loopback inside its own
+      # netns — the published port and Prometheus's scrape would both start
+      # refusing connections, while the log still said the bind succeeded.
+      - METRICS_ADDR=:9090
     ports:
       # Host-side ports are overridable for the same reason POSTGRES_PORT_HOST
       # is: on a machine where 8080 or 9090 is already taken by an unrelated
