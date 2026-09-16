@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -56,7 +57,7 @@ func (api *API) StreamActivity(w http.ResponseWriter, r *http.Request) {
 	// it is called, which would take the 401 below off the table.
 	flusher, ok := flusherFor(w)
 	if !ok {
-		logger.Printf("ERROR: the activity stream needs a flushable ResponseWriter, got %T", w)
+		logger.ErrorContext(r.Context(), "activity stream needs a flushable ResponseWriter", "got", fmt.Sprintf("%T", w))
 		respondWithError(w, http.StatusInternalServerError, "Streaming is not supported")
 		return
 	}
@@ -67,7 +68,7 @@ func (api *API) StreamActivity(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, code, err.Error())
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to open stream", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -117,7 +118,7 @@ func (api *API) StreamActivity(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				// One unserializable event must not end a stream that is
 				// otherwise healthy; the client's next snapshot still has it.
-				logger.Printf("ERROR: dropping unserializable activity event %q: %v", event.Id, err)
+				logger.ErrorContext(r.Context(), "dropping unserializable activity event", "err", err, "event_id", event.Id)
 				continue
 			}
 			if _, err := w.Write(frame); err != nil {

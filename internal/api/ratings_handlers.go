@@ -30,7 +30,7 @@ func (api *API) GetRatingById(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get rating by id", "err", err, "rating_id", ratingId)
 		respondWithError(w, http.StatusInternalServerError, "database error while getting rating")
 		return
 	}
@@ -44,7 +44,7 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 
 	var req ratings.NewRating
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Error reading request Body")
 		return
 	}
@@ -52,7 +52,7 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 	// Establishes both that the group is real and that the caller is a member of
 	// it, so req.GroupId is safe to persist on the rating below.
 	if ok, err := groups.GroupContainsTitle(api.Db, r.Context(), req.GroupId, req.TitleId, currentuser.Id); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to check the group contains the title", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	} else if !ok {
@@ -69,7 +69,7 @@ func (api *API) AddRating(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to add rating", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -91,7 +91,7 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 
 	var updateReq ratings.UpdateRatingRequest
 	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
 		return
 	}
@@ -113,7 +113,7 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to update rating", "err", err, "rating_id", ratingId)
 		respondWithError(w, http.StatusInternalServerError, "Failed to update rating")
 		return
 	}
@@ -122,7 +122,7 @@ func (api *API) UpdateRating(w http.ResponseWriter, r *http.Request) {
 	// immutable), so a plain lookup by id is fine here.
 	title, err := titles.GetTitleById(api.Db, r.Context(), previousRating.TitleId)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get title by id", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -150,7 +150,7 @@ func (api *API) DeleteRating(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get rating by id", "err", err, "rating_id", ratingId)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting rating")
 		return
 	}
@@ -161,7 +161,7 @@ func (api *API) DeleteRating(w http.ResponseWriter, r *http.Request) {
 
 	title, err := titles.GetTitleById(api.Db, r.Context(), rating.TitleId)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get title by id", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -171,7 +171,7 @@ func (api *API) DeleteRating(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to delete rating", "err", err, "rating_id", ratingId)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting rating")
 		return
 	}
@@ -204,7 +204,7 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get rating by id", "err", err, "rating_id", ratingId)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -216,7 +216,7 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 	// Get the title to validate season
 	title, err := titles.GetTitleById(api.Db, r.Context(), rating.TitleId)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get title by id", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -226,7 +226,7 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to delete rating season", "err", err, "rating_id", ratingId, "season", seasonStr)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting season rating")
 		return
 	}
@@ -235,7 +235,7 @@ func (api *API) DeleteRatingSeason(w http.ResponseWriter, r *http.Request) {
 	// the identical conversion and would have failed already if it did not.
 	season, err := strconv.Atoi(seasonStr)
 	if err != nil {
-		logger.Printf("ERROR: unexpected invalid season %q after a successful delete: %v", seasonStr, err)
+		logger.ErrorContext(r.Context(), "invalid season after a successful delete", "err", err, "season", seasonStr)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
@@ -267,7 +267,7 @@ func (api *API) ratingMembershipOK(w http.ResponseWriter, r *http.Request, ratin
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return false
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get rating by id", "err", err, "user_id", userId, "rating_id", ratingId)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return false
 	}
@@ -281,7 +281,7 @@ func (api *API) ratingInGroupForUser(w http.ResponseWriter, r *http.Request, gro
 	logger := logx.FromContext(r.Context())
 	ok, err := groups.GroupContainsTitle(api.Db, r.Context(), groupId, titleId, userId)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to check the group contains the title", "err", err, "group_id", groupId, "title_id", titleId, "user_id", userId)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return false
 	}

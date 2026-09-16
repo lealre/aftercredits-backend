@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,7 +84,7 @@ func TestAuthMiddleware_UserLookup(t *testing.T) {
 		var logged bytes.Buffer
 		req := httptest.NewRequest(http.MethodGet, "/groups/some-group", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
-		req = req.WithContext(logx.WithLogger(req.Context(), log.New(&logged, "", 0)))
+		req = req.WithContext(logx.WithLogger(req.Context(), slog.New(logx.NewHandler(&logged, slog.LevelDebug))))
 
 		recorder := httptest.NewRecorder()
 		server.AuthMiddleware(secret, st)(next).ServeHTTP(recorder, req)

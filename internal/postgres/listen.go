@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -82,7 +82,7 @@ func (s *Store) ListenActivity(ctx context.Context, publish func(models.Activity
 			return nil
 		}
 
-		log.Printf("activity: LISTEN connection lost, reconnecting in %s: %v", backoff, err)
+		slog.Warn("activity LISTEN connection lost, reconnecting", "err", err, "backoff", backoff.String())
 
 		select {
 		case <-ctx.Done():
@@ -129,10 +129,10 @@ func (s *Store) listenOnce(ctx context.Context, connConfig *pgx.ConnConfig, publ
 		event, err := s.GetActivityEventById(ctx, n.Payload)
 		if err != nil {
 			if errors.Is(err, store.ErrRecordNotFound) {
-				log.Printf("activity: notified event %q has no matching row, skipping", n.Payload)
+				slog.Warn("notified activity event has no matching row, skipping", "event_id", n.Payload)
 				continue
 			}
-			log.Printf("activity: failed to read notified event %q, skipping: %v", n.Payload, err)
+			slog.Error("failed to read notified activity event, skipping", "err", err, "event_id", n.Payload)
 			continue
 		}
 		publish(event)

@@ -24,7 +24,7 @@ func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	var authReq auth.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&authReq); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON in request body")
 		return
 	}
@@ -51,7 +51,7 @@ func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusUnauthorized, invalidCredentialsMessage)
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to log in", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while looking for User")
 		return
 	}
@@ -71,14 +71,14 @@ func (api *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	token, err := auth.MakeJWT(userDb.Id, userDb.TokenVersion, *api.Secret, defaultExpiresAt)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to sign the session token", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}
 
 	userLoginResponse, err := users.BuildLoginResponse(api.Db, r.Context(), userDb, token)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to build login response", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error occurred")
 		return
 	}

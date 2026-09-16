@@ -56,11 +56,11 @@ func AddComment(db store.Store, ctx context.Context, newComment NewComment, user
 	}
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Adding comment for TV series %s", newComment.TitleId)
+		logger.DebugContext(ctx, "adding comment", "kind", "series", "title_id", newComment.TitleId)
 		return addCommentForTVSeries(db, ctx, newComment, userId, title)
 	}
 
-	logger.Printf("Adding comment for movie %s", newComment.TitleId)
+	logger.DebugContext(ctx, "adding comment", "kind", "movie", "title_id", newComment.TitleId)
 	return addCommentForMovie(db, ctx, newComment, userId)
 }
 
@@ -216,11 +216,11 @@ func UpdateComment(db store.Store, ctx context.Context, groupId, commentId, user
 	}
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Updating comment for TV series %s", commentId)
+		logger.DebugContext(ctx, "updating comment", "kind", "series", "comment_id", commentId)
 		return updateCommentForTVSeries(db, ctx, groupId, commentId, userId, updateReq, title)
 	}
 
-	logger.Printf("Updating comment for movie %s", commentId)
+	logger.DebugContext(ctx, "updating comment", "kind", "movie", "comment_id", commentId)
 	return updateCommentForMovie(db, ctx, groupId, commentId, userId, updateReq, title)
 
 }
