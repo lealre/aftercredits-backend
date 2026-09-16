@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -32,7 +32,7 @@ func NewServer(ctx context.Context, st store.Store) (http.Handler, error) {
 	if secret == "" {
 		return nil, fmt.Errorf("JWT_SECRET must be set")
 	}
-	log.Printf("Using title provider: %s", provider.Name())
+	slog.Info("title provider selected", "provider", provider.Name())
 	return NewServerWithProvider(ctx, st, provider, secret), nil
 }
 
@@ -155,13 +155,13 @@ func startActivityListener(ctx context.Context, st store.Store, hub *activity.Hu
 		// Not a failure worth refusing to boot over: the feed and the stream
 		// both still work, the stream just stays silent until the client's
 		// next snapshot. Said once, loudly, rather than swallowed.
-		log.Printf("WARN: %T cannot push activity events; the stream will not deliver live updates", st)
+		slog.Warn("store cannot push activity events; the stream will not deliver live updates", "store", fmt.Sprintf("%T", st))
 		return
 	}
 
 	go func() {
 		if err := listener.ListenActivity(ctx, hub.Publish); err != nil {
-			log.Printf("ERROR: the activity listener stopped: %v", err)
+			slog.Error("the activity listener stopped", "err", err)
 		}
 	}()
 }
@@ -197,10 +197,10 @@ func ListenAndServe(st store.Store) error {
 		// body is already bounded by MaxBytesReader in RequestIdMiddleware and
 		// each handler's context by RequestTimeoutMiddleware.
 	}
-	log.Println("Server running on :8080")
+	slog.Info("server running", "addr", ":8080")
 	if err := server.ListenAndServe(); err != nil {
 		return fmt.Errorf("error while starting server: %v", err)
 	}
-	log.Println("Server started listening on port 8080")
+	slog.Info("server listening", "port", 8080)
 	return nil
 }

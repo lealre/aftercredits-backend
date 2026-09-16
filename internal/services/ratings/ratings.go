@@ -165,10 +165,10 @@ func AddRating(db store.Store, ctx context.Context, rating NewRating, userId str
 
 	// Split logic for TV series and non-TV series
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Adding rating for TV series %s", rating.TitleId)
+		logger.DebugContext(ctx, "adding rating", "kind", "series", "title_id", rating.TitleId)
 		created, err = addRatingForTVSeries(db, ctx, rating, userId, title)
 	} else {
-		logger.Printf("Adding rating for movie %s", rating.TitleId)
+		logger.DebugContext(ctx, "adding rating", "kind", "movie", "title_id", rating.TitleId)
 		created, err = addRatingForMovie(db, ctx, rating, userId)
 	}
 	if err != nil {
@@ -383,10 +383,10 @@ func UpdateRating(db store.Store, ctx context.Context, ratingId, userId string, 
 	}
 
 	if title.Type == "tvSeries" || title.Type == "tvMiniSeries" {
-		logger.Printf("Updating rating for TV series %s", previous.TitleId)
+		logger.DebugContext(ctx, "updating rating", "kind", "series", "title_id", previous.TitleId)
 		updated, err = updateRatingForTVSeries(db, ctx, previous, userId, updateReq, title)
 	} else {
-		logger.Printf("Updating rating for movie %s", previous.TitleId)
+		logger.DebugContext(ctx, "updating rating", "kind", "movie", "title_id", previous.TitleId)
 		updated, err = updateRatingForMovie(db, ctx, ratingId, userId, updateReq)
 	}
 	if err != nil {

@@ -31,7 +31,7 @@ func (api *API) GetTitles(w http.ResponseWriter, r *http.Request) {
 
 	pageOfTitles, err := titles.GetPageOfTitles(api.Db, r.Context(), size, page, orderBy, ascending)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get page of titles", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch titles from database")
 		return
 	}
@@ -50,7 +50,7 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 
 	var req titles.AddTitleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
@@ -72,7 +72,7 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, titles.ErrorMap[titles.ErrTitleAlreadyExists], titles.ErrTitleAlreadyExists.Error())
 		return
 	} else if err != nil && err != store.ErrRecordNotFound {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to check the title exists", "err", err, "title_id", titleID)
 		respondWithError(w, http.StatusInternalServerError, "database lookup failed")
 		return
 	}
@@ -83,7 +83,7 @@ func (api *API) AddTitle(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, code, err.Error())
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to add new title", "err", err, "title_id", titleID)
 		respondWithError(w, http.StatusInternalServerError, "Error adding title")
 		return
 	}
@@ -107,7 +107,7 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ok, err := titles.TitleExists(api.Db, r.Context(), titleId); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to check the title exists", "err", err, "title_id", titleId)
 		respondWithError(w, http.StatusInternalServerError, "Database error while checking title")
 		return
 	} else if !ok {
@@ -117,7 +117,7 @@ func (api *API) DeleteTitle(w http.ResponseWriter, r *http.Request) {
 
 	err := titles.DeleteTitle(api.Db, r.Context(), titleId)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to delete title", "err", err, "title_id", titleId)
 		respondWithError(w, http.StatusInternalServerError, "Database error during cascade delete")
 		return
 	}
@@ -151,7 +151,7 @@ func (api *API) SearchTitles(w http.ResponseWriter, r *http.Request) {
 
 	titles, err := titles.SearchTitles(api.Provider, r.Context(), searchQuery, limit)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to search titles", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to search titles")
 		return
 	}
@@ -174,7 +174,7 @@ func (api *API) GetTitleEpisodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ok, err := titles.UserCanAccessTitle(api.Db, r.Context(), titleId, currentUser.Id); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to check the user can access the title", "err", err, "title_id", titleId)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch episodes")
 		return
 	} else if !ok {
@@ -188,7 +188,7 @@ func (api *API) GetTitleEpisodes(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("Title with id %s not found", titleId))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get episodes", "err", err, "title_id", titleId)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch episodes")
 		return
 	}

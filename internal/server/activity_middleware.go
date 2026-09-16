@@ -87,7 +87,7 @@ func flush(ctx context.Context, sink activity.Sink, events []activity.Event) {
 	if actor == nil {
 		// Only the two public routes have no actor, and neither records
 		// anything. An unattributable row would be worse than no row.
-		logger.Printf("WARN: %d activity event(s) dropped: no actor in context", len(events))
+		logger.WarnContext(ctx, "activity events dropped: no actor in context", "events", len(events))
 		return
 	}
 
@@ -102,7 +102,7 @@ func flush(ctx context.Context, sink activity.Sink, events []activity.Event) {
 	if err := sink.Append(flushCtx, stamped); err != nil {
 		// Deliberately not propagated: the business write is committed and the
 		// response is sent. Best-effort delivery, stated in the spec.
-		logger.Printf("ERROR: recording %d activity event(s) failed: %v", len(stamped), err)
+		logger.ErrorContext(ctx, "failed to record activity events", "err", err, "events", len(stamped))
 	}
 }
 

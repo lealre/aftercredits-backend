@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,7 +75,7 @@ func TestActivityMiddleware(t *testing.T) {
 		// the real one so the "logged, not propagated" half of the property
 		// is asserted rather than only readable by eye in `-v` output.
 		var logs bytes.Buffer
-		ctx := logx.WithLogger(auth.WithUser(context.Background(), actor), log.New(&logs, "", 0))
+		ctx := logx.WithLogger(auth.WithUser(context.Background(), actor), slog.New(logx.NewHandler(&logs, slog.LevelDebug)))
 		r := httptest.NewRequest(http.MethodPost, "/anything", nil).WithContext(ctx)
 
 		w := httptest.NewRecorder()

@@ -24,7 +24,7 @@ func (api *API) GetUsers(w http.ResponseWriter, r *http.Request) {
 
 	allUsers, err := users.GetAllUsers(api.Db, r.Context())
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get all users", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
 		return
 	}
@@ -49,7 +49,7 @@ func (api *API) GetUserById(w http.ResponseWriter, r *http.Request) {
 
 	user, err := users.GetUserById(api.Db, r.Context(), userId)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get user by id", "err", err, "user_id", userId)
 		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
 		return
 	}
@@ -63,7 +63,7 @@ func (api *API) GetUserMe(w http.ResponseWriter, r *http.Request) {
 
 	user, err := users.GetUserById(api.Db, r.Context(), currentUser.Id)
 	if err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to get user by id", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
 		return
 	}
@@ -88,7 +88,7 @@ func (api *API) UpdateUserInfo(w http.ResponseWriter, r *http.Request) {
 
 	var req users.UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
@@ -100,7 +100,7 @@ func (api *API) UpdateUserInfo(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to update user info", "err", err, "user_id", userId)
 		respondWithError(w, http.StatusInternalServerError, "Database lookup failed")
 		return
 	}
@@ -121,7 +121,7 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	var req users.NewUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
@@ -142,7 +142,7 @@ func (api *API) CreateUser(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to add user", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to add user")
 		return
 	}
@@ -167,11 +167,11 @@ func (api *API) DeleteUserById(w http.ResponseWriter, r *http.Request) {
 
 	if err := users.DeleteUserById(api.Db, r.Context(), userId); err != nil {
 		if errors.Is(err, users.ErrUserNotFound) {
-			logger.Printf("WARNING: Attempted deletion of own user ID failed because user was not found. ERROR: %v", err)
+			logger.WarnContext(r.Context(), "self-deletion failed: user not found", "err", err)
 			respondWithError(w, http.StatusNotFound, fmt.Sprintf("User with id %s not found", userId))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to delete user by id", "err", err, "user_id", userId)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while deleting user")
 		return
 	}
@@ -188,7 +188,7 @@ func (api *API) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	var req users.ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
@@ -202,7 +202,7 @@ func (api *API) ChangePassword(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to change password", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while changing password")
 		return
 	}
@@ -217,7 +217,7 @@ func (api *API) LogoutEverywhere(w http.ResponseWriter, r *http.Request) {
 	currentUser := auth.GetUserFromContext(r.Context())
 
 	if err := users.LogoutEverywhere(api.Db, r.Context(), currentUser.Id); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to logout everywhere", "err", err)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while signing out")
 		return
 	}
@@ -244,7 +244,7 @@ func (api *API) SetUserActive(w http.ResponseWriter, r *http.Request) {
 
 	var req users.SetActiveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to decode the request body", "err", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
@@ -258,7 +258,7 @@ func (api *API) SetUserActive(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, statusCode, formatErrorMessage(err))
 			return
 		}
-		logger.Printf("ERROR: %v", err)
+		logger.ErrorContext(r.Context(), "failed to set user active", "err", err, "user_id", userId)
 		respondWithError(w, http.StatusInternalServerError, "Unexpected error while updating user")
 		return
 	}
