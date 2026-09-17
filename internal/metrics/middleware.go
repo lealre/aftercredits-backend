@@ -105,6 +105,16 @@ func (m *Metrics) Middleware() func(http.Handler) http.Handler {
 				// everything below this line, and the gauge must not be left
 				// stuck above zero by a request that will never finish.
 				defer m.inFlight.Dec()
+			} else {
+				// Streams get their own gauge, counter and lifetime histogram:
+				// how many subscriptions are open, and how long they last, are
+				// real questions — they just are not latency.
+				m.streamsTotal.Inc()
+				m.streamsActive.Inc()
+				defer m.streamsActive.Dec()
+				defer func(started time.Time) {
+					m.streamLifetime.Observe(time.Since(started).Seconds())
+				}(time.Now())
 			}
 
 			start := time.Now()

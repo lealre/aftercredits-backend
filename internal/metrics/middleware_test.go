@@ -283,3 +283,26 @@ func TestStreamIsCountedButNotTimed(t *testing.T) {
 	require.Contains(t, expose(t, m), `aftercredits_http_request_duration_seconds_count{method="GET",route="GET /groups"`,
 		"an ordinary request must still be timed")
 }
+
+// A stream is not a slow request, it is a subscription. Counting it in the HTTP
+// instruments answered the wrong question; these answer the right one.
+func TestStreamGetsItsOwnInstruments(t *testing.T) {
+	srv, m := buildServer(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /activity/stream", func(w http.ResponseWriter, r *http.Request) {})
+	})
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/activity/stream")
+	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
+
+	body := expose(t, m)
+	require.Contains(t, body, "aftercredits_activity_streams_total 1",
+		"an opened stream must be counted")
+	require.Contains(t, body, "aftercredits_activity_stream_duration_seconds_count 1",
+		"a closed stream must have its lifetime recorded")
+	require.Contains(t, body, "aftercredits_activity_streams_active 0",
+		"the active gauge must return to zero once the stream closes")
+	require.NotContains(t, body, "aftercredits_http_requests_in_flight 1",
+		"a stream must never be left in the HTTP in-flight gauge")
+}

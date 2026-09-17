@@ -27,6 +27,14 @@ type Metrics struct {
 	requests *prometheus.CounterVec
 	duration *prometheus.HistogramVec
 	inFlight prometheus.Gauge
+
+	// Streams are deliberately their own instruments rather than labels on the
+	// HTTP ones. An SSE connection is not a request that takes a long time, it
+	// is a subscription — mixing it into requests_in_flight made that gauge
+	// read "how many tabs are open" instead of "how much work is in progress".
+	streamsActive  prometheus.Gauge
+	streamsTotal   prometheus.Counter
+	streamLifetime prometheus.Histogram
 }
 
 // New builds the registry this process serves: Go runtime metrics, process
@@ -66,8 +74,31 @@ func New(pool PoolStatsFunc) *Metrics {
 			Name:      "requests_in_flight",
 			Help:      "HTTP requests currently being served.",
 		}),
+		streamsActive: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: "activity",
+			Name:      "streams_active",
+			Help:      "Activity SSE connections currently open.",
+		}),
+		streamsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: "activity",
+			Name:      "streams_total",
+			Help:      "Activity SSE connections opened since start.",
+		}),
+		streamLifetime: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: "activity",
+			Name:      "stream_duration_seconds",
+			Help:      "How long each activity SSE connection stayed open.",
+			// Minutes to hours, not the millisecond-to-10s scale of a request.
+			// A stream lives as long as a browser tab, so the default buckets
+			// would put every single one in +Inf and tell you nothing.
+			Buckets: []float64{30, 60, 300, 900, 1800, 3600, 7200, 21600},
+		}),
 	}
-	registry.MustRegister(m.requests, m.duration, m.inFlight)
+	registry.MustRegister(m.requests, m.duration, m.inFlight,
+		m.streamsActive, m.streamsTotal, m.streamLifetime)
 
 	if pool != nil {
 		registerPool(registry, pool)
