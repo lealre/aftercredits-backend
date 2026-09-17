@@ -26,3 +26,11 @@ scrape_configs:
       # panel is empty — so check Prometheus's /targets first when the whole
       # dashboard is blank rather than one panel.
       - targets: ['backend:9090']
+
+  # Container-level CPU and memory for every container on this host, including
+  # postgres and the observability stack itself. Absent when cadvisor is not
+  # running, which is a supported configuration — the target simply goes DOWN
+  # and the container panels empty, while everything process-level keeps working.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']

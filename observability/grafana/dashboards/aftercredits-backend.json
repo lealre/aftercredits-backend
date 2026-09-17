@@ -6,7 +6,7 @@
     "aftercredits"
   ],
   "schemaVersion": 39,
-  "version": 5,
+  "version": 7,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -156,7 +156,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_resident_memory_bytes",
+          "expr": "process_resident_memory_bytes{job=\"aftercredits-backend\"}",
           "legendFormat": "RSS"
         }
       ]
@@ -211,7 +211,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(process_cpu_seconds_total[5m]) * 100",
+          "expr": "rate(process_cpu_seconds_total{job=\"aftercredits-backend\"}[5m]) * 100",
           "legendFormat": "of one core"
         }
       ]
@@ -376,7 +376,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "go_goroutines",
+          "expr": "go_goroutines{job=\"aftercredits-backend\"}",
           "legendFormat": "goroutines"
         }
       ]
@@ -417,8 +417,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "{{route}}",
-          "instant": true
+          "instant": true,
+          "format": "table"
         }
       ],
       "options": {
@@ -430,7 +430,8 @@
         },
         "tooltip": {
           "mode": "single"
-        }
+        },
+        "xField": "route"
       },
       "fieldConfig": {
         "defaults": {
@@ -439,7 +440,7 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisLabel": "calls",
+            "axisLabel": "",
             "fillOpacity": 85,
             "lineWidth": 0
           },
@@ -449,11 +450,24 @@
       },
       "transformations": [
         {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "route": "route",
+              "Value": "count"
+            }
+          }
+        },
+        {
           "id": "sortBy",
           "options": {
+            "fields": {},
             "sort": [
               {
-                "field": "Value",
+                "field": "count",
                 "desc": true
               }
             ]
@@ -484,8 +498,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "{{status}}",
-          "instant": true
+          "instant": true,
+          "format": "table"
         }
       ],
       "options": {
@@ -496,7 +510,8 @@
         },
         "tooltip": {
           "mode": "single"
-        }
+        },
+        "xField": "status"
       },
       "fieldConfig": {
         "defaults": {
@@ -505,7 +520,7 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisLabel": "responses",
+            "axisLabel": "",
             "fillOpacity": 85,
             "lineWidth": 0
           },
@@ -515,11 +530,24 @@
       },
       "transformations": [
         {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "status": "status",
+              "Value": "count"
+            }
+          }
+        },
+        {
           "id": "sortBy",
           "options": {
+            "fields": {},
             "sort": [
               {
-                "field": "Value",
+                "field": "count",
                 "desc": true
               }
             ]
@@ -888,8 +916,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "\u2264 {{le}}s",
-          "instant": true
+          "instant": true,
+          "format": "table"
         }
       ],
       "options": {
@@ -900,7 +928,8 @@
         },
         "tooltip": {
           "mode": "single"
-        }
+        },
+        "xField": "le"
       },
       "fieldConfig": {
         "defaults": {
@@ -909,14 +938,257 @@
             "mode": "continuous-BlPu"
           },
           "custom": {
-            "axisLabel": "streams closed",
+            "axisLabel": "",
             "fillOpacity": 85,
             "lineWidth": 0
           },
           "decimals": 0
         },
         "overrides": []
-      }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "le": "le",
+              "Value": "count"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "count",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Resources over time",
+      "id": 107,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU",
+      "id": 21,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(process_cpu_seconds_total{job=\"aftercredits-backend\"}[5m]) * 100",
+          "legendFormat": "app process",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "rate(container_cpu_usage_seconds_total{name=\"aftercredits-backend\"}[5m]) * 100",
+          "legendFormat": "whole container",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "rate(container_cpu_usage_seconds_total{name=\"aftercredits-postgres\"}[5m]) * 100",
+          "legendFormat": "postgres",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Percent of ONE core. The app process and its container track each other closely here because the container runs nothing else \u2014 postgres is shown for comparison."
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory",
+      "id": 22,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "container_memory_working_set_bytes{name=\"aftercredits-backend\"}",
+          "legendFormat": "container (working set)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "process_resident_memory_bytes{job=\"aftercredits-backend\"}",
+          "legendFormat": "app process (RSS)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "go_memstats_heap_inuse_bytes{job=\"aftercredits-backend\"}",
+          "legendFormat": "Go heap in use",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Three different questions. Working set is what the cgroup counts and what docker stats shows. RSS is what the process has resident. Heap is what Go is actually using \u2014 the gap between heap and RSS is the runtime holding freed memory back from the OS."
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests in flight",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "aftercredits_http_requests_in_flight",
+          "legendFormat": "in flight",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "aftercredits_activity_streams_active",
+          "legendFormat": "open streams",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Line this up against CPU and memory to the left: a spike here that does not move them is cheap work, one that does is not. Streams are drawn separately because they cost almost nothing while open."
     },
     {
       "type": "row",
@@ -927,7 +1199,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 51
       },
       "panels": []
     },
@@ -940,7 +1212,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 52
       },
       "datasource": {
         "type": "prometheus",
@@ -977,12 +1249,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "go_memstats_heap_inuse_bytes",
+          "expr": "go_memstats_heap_inuse_bytes{job=\"aftercredits-backend\"}",
           "legendFormat": "in use"
         },
         {
           "refId": "B",
-          "expr": "go_memstats_heap_alloc_bytes",
+          "expr": "go_memstats_heap_alloc_bytes{job=\"aftercredits-backend\"}",
           "legendFormat": "allocated"
         }
       ]
@@ -996,7 +1268,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 52
       },
       "datasource": {
         "type": "prometheus",
@@ -1030,7 +1302,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(go_gc_duration_seconds_sum[5m]) / rate(go_gc_duration_seconds_count[5m])",
+          "expr": "rate(go_gc_duration_seconds_sum{job=\"aftercredits-backend\"}[5m]) / rate(go_gc_duration_seconds_count{job=\"aftercredits-backend\"}[5m])",
           "legendFormat": "mean pause"
         }
       ]
@@ -1044,7 +1316,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 60
       },
       "panels": []
     },
@@ -1057,7 +1329,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 61
       },
       "datasource": {
         "type": "prometheus",
@@ -1108,7 +1380,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 61
       },
       "datasource": {
         "type": "prometheus",
