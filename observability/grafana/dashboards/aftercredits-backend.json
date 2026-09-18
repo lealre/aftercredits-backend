@@ -6,7 +6,7 @@
     "aftercredits"
   ],
   "schemaVersion": 39,
-  "version": 9,
+  "version": 10,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -1417,21 +1417,6 @@
           "legendFormat": "gave up waiting"
         }
       ]
-    },
-    {
-      "type": "text",
-      "title": "How to read the memory numbers",
-      "id": 24,
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 52
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "**The app's RSS is bigger than the whole container. That is not an error.**\n\nMeasured on this container: process RSS **22 MiB**, container total **10 MiB**.\n\nThe process's RSS splits into two parts (`/proc/1/status`):\n\n| | | |\n|---|---|---|\n| `RssAnon` | ~9 MiB | memory the app allocated \u2014 heap, stacks. **Charged to the container.** |\n| `RssFile` | ~14 MiB | pages of the 24 MB Go binary itself, mapped from the image layer. **Not charged to the container** \u2014 they live in the host's page cache and are shared with anything else using that layer. |\n\nSo RSS answers *\"how many pages does this process have resident\"*, and the\ncontainer total answers *\"how much memory is this container responsible for\"*.\nThe binary's own pages are resident but not owned \u2014 hence RSS > container.\n\n**Which line to watch:**\n\n* **container total** \u2014 the one that matters for capacity. This is what `docker stats` prints and what an OOM kill is measured against.\n* **app memory (anonymous)** \u2014 the container total minus page cache. On this container they are nearly identical, because it caches almost nothing.\n* **Go heap in use** \u2014 what the application is actually using right now. A leak shows here first, before it reaches the container total.\n\nA growing gap between *app memory* and *Go heap in use* is the runtime holding\nfreed memory back rather than returning it to the OS \u2014 normal, and it plateaus.\nA steadily growing *heap in use* is your own allocation, and is the one to worry\nabout.\n\n**Not shown on purpose:** Go's `sys_bytes` (\"memory obtained from the OS\") is\n*address space reserved*, not memory resident. It reads ~18 MiB here against a\n10 MiB container, which looks like a contradiction and is not \u2014 it is simply\nmeasuring something else. Every line on the chart is resident memory, so they\ncan be compared to each other."
-      }
     }
   ]
 }
