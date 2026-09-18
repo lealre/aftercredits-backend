@@ -102,13 +102,9 @@ set `METRICS_ADDR=127.0.0.1:9090`.
 Prometheus and Grafana run as their own stack, deliberately separate from the
 application one:
 
-The observability stack lives in the **pi-infra** repository, alongside
-postgres and the tunnel — it watches every container on the host, not just this
-one, so it is not this repo's to own.
-
-```bash
-cd ../pi-infra && docker compose --profile observability up -d
-```
+The backend exposes Prometheus metrics on a separate listener (`METRICS_ADDR`,
+default `:9090`). Scraping them and rendering a dashboard is handled by the
+host's own infrastructure setup, not by this repository.
 
 > The first command runs the backend **as a container**, which replaces the
 > `go run .` from step 7 of Setup — it does not sit alongside it. Running both
