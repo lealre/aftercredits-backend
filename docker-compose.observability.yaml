@@ -1,0 +1,132 @@
+# Observability stack: Prometheus scrapes the backend's metrics listener and
+# Grafana renders it.
+#
+# Separate from docker-compose.yaml on purpose. The application stack runs
+# whether or not this one is up, and taking the observability stack down for
+# maintenance must not touch the API. Locally:
+#
+#   docker compose up -d
+#   docker compose -f docker-compose.observability.yaml up -d
+#
+# On the Pi, set STACK_NETWORK=aftercredits_default so this joins the
+# application stack's network instead of the local one.
+name: aftercredits-observability
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.3
+    container_name: aftercredits-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Bounded on both axes: time alone does not bound disk if the series
+      # count grows, so the size cap is the backstop. 512 MB is conservative
+      # against the deploy target's 256 GB SSD and can be raised — the cost of
+      # doing so is Prometheus's memory, not disk.
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=512MB
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - stack
+    # Publishes nothing on purpose: Prometheus needs no host presence, and not
+    # publishing it removes the question entirely.
+
+  cadvisor:
+    # Container-level CPU and memory, which the application cannot report about
+    # itself. The Go runtime knows its heap and its own RSS; it does not know
+    # what the cgroup thinks the container is using, and those genuinely differ
+    # — measured here at 23 MB RSS against 10 MiB working set.
+    #
+    # It also covers postgres, grafana and prometheus, so "what is using the
+    # Pi's memory" becomes answerable rather than inferred.
+    #
+    # Costs roughly 30 MB itself and contributes the large majority of the
+    # series Prometheus holds, so it is the main driver of Prometheus's memory
+    # too. It lives in this opt-in stack so it can be left out: drop it and the
+    # backend's own process_* metrics still work, you just lose the
+    # container-versus-process comparison and the cgroup charge.
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: aftercredits-cadvisor
+    restart: unless-stopped
+    command:
+      # Only what the dashboard uses. cAdvisor's default set is very large, and
+      # series count is what drives Prometheus's memory — disk is not the
+      # constraint on this target.
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,cpu_topology,resctrl
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    privileged: true
+    networks:
+      - stack
+    # Publishes nothing: Prometheus reaches it over the shared network, same as
+    # the backend.
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    container_name: aftercredits-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      # No fallback, on purpose: a missing password must stop the stack rather
+      # than leave admin/admin on a reachable port. Same stance as
+      # POSTGRES_PASSWORD, which deliberately lost its published default.
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in the environment or .env}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Land on our dashboard instead of Grafana's default home. Without this,
+      # opening Grafana drops you into the built-in Metrics Drilldown app —
+      # /a/grafana-metricsdrilldown-app/drilldown — which renders one tiny chart
+      # per raw metric and looks nothing like a curated dashboard. The path is
+      # the file we already mount, so this works unchanged on the Pi.
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/aftercredits-backend.json
+    ports:
+      # The only published port in this stack, because this is the UI. LAN-only
+      # on the Pi; nothing here is reachable from the internet.
+      #
+      # Host side is overridable for the same reason the backend's ports are:
+      # on the machine this was built on, 3000 is already held by a DIFFERENT
+      # project's Grafana, so the fixed form would fail to start and any
+      # "open localhost:3000" instruction would show that project's dashboards
+      # instead of these. Set GRAFANA_PORT_HOST in .env to remap.
+      #
+      # GRAFANA_BIND_IP defaults to all interfaces because the Pi needs to be
+      # reachable from a laptop — that is the whole point there. Locally it
+      # should be 127.0.0.1: this is the one service in the stack whose login
+      # page a whole network could otherwise reach, and a development password
+      # is chosen for convenience, not for a network you do not control.
+      - "${GRAFANA_BIND_IP:-0.0.0.0}:${GRAFANA_PORT_HOST:-3000}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - stack
+
+networks:
+  # The application stack's network, created by whatever brings that stack up.
+  # Locally that is this repo's compose default; on the Pi it is
+  # aftercredits_default, owned by the frontend repo's stack — which is why the
+  # name is a variable rather than a constant. Containers on a shared network
+  # reach each other on any listening port whether or not it is published, so
+  # this is all the wiring Prometheus needs.
+  stack:
+    external: true
+    name: ${STACK_NETWORK:-aftercredits-backend_default}
+
+volumes:
+  prometheus_data:
+    name: aftercredits-prometheus-data
+  grafana_data:
+    name: aftercredits-grafana-data

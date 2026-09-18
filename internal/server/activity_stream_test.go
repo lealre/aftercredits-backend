@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lealre/movies-backend/internal/auth"
+	"github.com/lealre/movies-backend/internal/metrics"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/server"
 	"github.com/lealre/movies-backend/internal/store"
@@ -84,7 +85,7 @@ func newWiredServer(t *testing.T, enabled bool) (*httptest.Server, *listeningSto
 
 	// t.Context() is cancelled when the test ends, which stops the listener
 	// goroutine with it.
-	handler := server.NewServerWithProvider(t.Context(), st, titleprovider.Provider(nil), streamWireSecret)
+	handler := server.NewServerWithProvider(t.Context(), st, titleprovider.Provider(nil), streamWireSecret, metrics.New(nil))
 
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)

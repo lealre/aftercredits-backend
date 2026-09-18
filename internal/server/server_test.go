@@ -15,6 +15,7 @@ import (
 
 	"github.com/lealre/movies-backend/internal/auth"
 	"github.com/lealre/movies-backend/internal/logx"
+	"github.com/lealre/movies-backend/internal/metrics"
 	"github.com/lealre/movies-backend/internal/models"
 	"github.com/lealre/movies-backend/internal/server"
 	"github.com/lealre/movies-backend/internal/store"
@@ -27,7 +28,7 @@ func TestNewServer_RequiresJWTSecret(t *testing.T) {
 	t.Setenv("TITLE_PROVIDER", "imdbapi")
 	t.Setenv("JWT_SECRET", "")
 
-	_, err := server.NewServer(t.Context(), nil)
+	_, err := server.NewServer(t.Context(), nil, metrics.New(nil))
 	if err == nil {
 		t.Fatal("expected NewServer to error when JWT_SECRET is unset")
 	}

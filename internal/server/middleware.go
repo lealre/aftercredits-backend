@@ -174,7 +174,12 @@ func RequestIdMiddleware(next http.Handler) http.Handler {
 
 		logger.LogAttrs(ctx, level, "request completed",
 			slog.Int("status", recorder.statusCode),
-			slog.Int64("dur_ms", duration.Milliseconds()),
+			// Microseconds/1000 rather than Milliseconds(): the integer form
+			// truncated, and most requests here finish under a millisecond, so
+			// the field read 0 for the majority of traffic. That is fine for
+			// eyeballing a slow request and useless for anything that computes
+			// a percentile from these lines.
+			slog.Float64("dur_ms", float64(duration.Microseconds())/1000),
 		)
 	})
 }

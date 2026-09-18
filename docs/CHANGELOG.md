@@ -1,6 +1,62 @@
 <a name="unreleased"></a>
 ## Unreleased
 
+### Observability: Prometheus metrics and Grafana
+
+The backend now serves Prometheus metrics on a **new listener** at
+`METRICS_ADDR` (default `:9090`), separate from the API on `:8080`. Prometheus
+and Grafana run as their own compose stack
+(`docker-compose.observability.yaml`), deliberately separate from the
+application one.
+
+* **The metrics listener is on by default**, and the API does not depend on it.
+  Set `METRICS_ENABLED=false` to turn it off. Being network-internal either
+  way, enabling it changes nothing about what is reachable — the port is never
+  published on the Pi, so Prometheus scrapes the backend container-to-container
+  over `backend:9090`. It carries no authentication of its own: it is safe
+  because it is not published, which is also why publishing it would expose it
+* A failure to bind is logged and the process carries on without metrics, rather
+  than the API refusing to boot over an observability endpoint. The backend
+  never contacts Prometheus or Grafana — it only ever answers a scrape — so
+  taking the observability stack down cannot affect the API
+* Route labels are the registered route pattern (`POST /login`), never the
+  requested path, so a URL carrying an id cannot add time series without limit.
+  Requests rejected before the router are labelled `unmatched`
+* Grafana's UI port is the stack's only published port (default 3000). Its admin
+  password has no fallback: the stack refuses to start without
+  `GRAFANA_ADMIN_PASSWORD` rather than come up on `admin`/`admin`
+* No migration and no API change. The listener is a second `http.Server`, and no
+  existing route, response or status code changes — a dashboard is provisioned
+  into Grafana from the repository, with nothing to configure there by hand
+
+**Operator actions when deploying:**
+
+- The stock deploy needs no new variables. The listener is on by default on
+  `:9090`; `METRICS_ENABLED=false` turns it off. `METRICS_ADDR` does move it,
+  but not on its own: Prometheus's target is the fixed `backend:9090`, and the
+  local port publish maps to container port 9090 as well
+- **To run the dashboards**, copy `docker-compose.observability.yaml` and the
+  `observability/` directory to the machine, then set
+  `STACK_NETWORK=aftercredits_default` (the network the application stack
+  creates) and `GRAFANA_ADMIN_PASSWORD` in the deploy `.env` and bring that
+  file up. Without the password the stack refuses to start — that is deliberate
+- If a default host port is already taken, this repo's local compose lets you
+  remap it in `.env` with `API_PORT_HOST`, `METRICS_PORT_HOST` or
+  `GRAFANA_PORT_HOST` — the same escape hatch `POSTGRES_PORT_HOST` already
+  provides, and not hypothetical: 8080, 9090 and 3000 were all held by unrelated
+  projects on the machine this was built on. Only the host side moves; the
+  containers and Prometheus's scrape config are unaffected. **On the Pi, only
+  `GRAFANA_PORT_HOST` applies**: the application stack there is the frontend
+  repo's compose, which fixes 8080 and publishes no metrics port at all, so
+  setting the other two is a silent no-op
+- Grafana's published port now also honours `GRAFANA_BIND_IP`, which defaults to
+  all interfaces. Only set it to `127.0.0.1` on a development machine: on the Pi
+  the dashboards must stay reachable from another device. Grafana is the one
+  service in this stack with a login page, so it is the one worth deciding this
+  for — a password chosen for convenience should not sit on a network you do not
+  control. Unlike the password, this does not affect the Pi unless you set it
+
+There is no change to the frontend repository's compose file.
 
 <a name="v0.1.4"></a>
 ## [v0.1.4](https://github.com/lealre/aftercredits-backend/compare/v0.1.3...v0.1.4) (2026-09-15)

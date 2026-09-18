@@ -24,6 +24,72 @@ services:
       timeout: 5s
       retries: 5
 
+  # Applies the embedded goose migrations, then exits. Schema is a deploy step
+  # run before the server starts, never by the running application
+  # (CONVENTIONS §7) — a failed migration is a failed deploy rather than a
+  # crash-looping container.
+  db-setup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aftercredits-db-setup
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # .env carries host-oriented values: the hostname, and the port the
+      # database is published on. Inside the compose network neither holds —
+      # it answers to its service name on its own container port. Overriding
+      # the host alone leaves the published port in the URI and every
+      # connection is refused.
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+    command: ["/app/database", "-migrate"]
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aftercredits-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-setup:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      # Same host-oriented .env override as db-setup: the published port is not
+      # the port the database answers on inside the network.
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      # Defaulted here as well as in .env so it can be overridden from the
+      # shell for a one-off run — which is how Task 10 exercises the metrics
+      # listener's bind-failure path.
+      # NOT passed from .env. The docs tell a developer to set
+      # METRICS_ADDR=127.0.0.1:9090 for `go run .`, and interpolating that same
+      # value here would make the container bind loopback inside its own
+      # netns — the published port and Prometheus's scrape would both start
+      # refusing connections, while the log still said the bind succeeded.
+      - METRICS_ADDR=:9090
+    ports:
+      # Host-side ports are overridable for the same reason POSTGRES_PORT_HOST
+      # is: on a machine where 8080 or 9090 is already taken by an unrelated
+      # project, the container side never changes but the host side must.
+      # Set API_PORT_HOST / METRICS_PORT_HOST in .env to remap them.
+      - "${API_PORT_HOST:-8080}:8080"
+      # Loopback only. Prometheus scrapes the backend container directly over
+      # the compose network, so this binding exists solely so
+      # `curl localhost:$METRICS_PORT_HOST/metrics` works here. Bound to
+      # 127.0.0.1 so nothing on the LAN can reach it. (Checked 2026-09-10: the
+      # frontend repo's compose file does not publish this port at all — a
+      # dated observation about another repo, not something this file enforces.)
+      - "127.0.0.1:${METRICS_PORT_HOST:-9090}:9090"
+
 volumes:
   postgres_data:
     name: aftercredits-postgres-data

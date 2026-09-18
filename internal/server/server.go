@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/lealre/movies-backend/internal/activity"
 	"github.com/lealre/movies-backend/internal/api"
 	"github.com/lealre/movies-backend/internal/config"
+	"github.com/lealre/movies-backend/internal/metrics"
 	activityservice "github.com/lealre/movies-backend/internal/services/activity"
 	"github.com/lealre/movies-backend/internal/store"
 	"github.com/lealre/movies-backend/internal/titleprovider"
@@ -23,7 +26,7 @@ import (
 // ctx bounds the background work the server starts — today the activity
 // LISTEN loop. Cancelling it stops that loop and closes its database
 // connection; it is not the context of any request.
-func NewServer(ctx context.Context, st store.Store) (http.Handler, error) {
+func NewServer(ctx context.Context, st store.Store, m *metrics.Metrics) (http.Handler, error) {
 	provider, err := factory.NewFromEnv()
 	if err != nil {
 		return nil, err
@@ -33,14 +36,15 @@ func NewServer(ctx context.Context, st store.Store) (http.Handler, error) {
 		return nil, fmt.Errorf("JWT_SECRET must be set")
 	}
 	slog.Info("title provider selected", "provider", provider.Name())
-	return NewServerWithProvider(ctx, st, provider, secret), nil
+	return NewServerWithProvider(ctx, st, provider, secret, m), nil
 }
 
 // NewServerWithProvider builds the server with an explicit title provider and
 // JWT secret. Tests use this to inject a fixture-backed fake provider (no
 // network) and a test secret. ctx bounds the background work it starts — see
-// NewServer.
-func NewServerWithProvider(ctx context.Context, st store.Store, provider titleprovider.Provider, secret string) http.Handler {
+// NewServer. m is the metrics registry the chain reports into; it is never nil,
+// and callers with no pool pass metrics.New(nil).
+func NewServerWithProvider(ctx context.Context, st store.Store, provider titleprovider.Provider, secret string, m *metrics.Metrics) http.Handler {
 	mux := http.NewServeMux()
 
 	a := api.NewAPI(st, provider)
@@ -129,17 +133,89 @@ func NewServerWithProvider(ctx context.Context, st store.Store, provider titlepr
 	}
 
 	var handler http.Handler = mux
-	// Innermost: bound each handler's context so a slow query cannot pin a pool
-	// connection. Exempts GET /activity/stream by path. Sits inside the activity
-	// middleware so the post-response event flush is not cancelled by it.
+	// Innermost, directly around the mux: http.ServeMux sets Request.Pattern
+	// on the request object it is given, and every WithContext above replaces
+	// that object, so this is the only position that can read the pattern.
+	handler = metrics.RouteCaptureMiddleware(handler)
+	// Bound each handler's context so a slow query cannot pin a pool
+	// connection. Exempts GET /activity/stream by path. Sits inside the
+	// activity middleware so the post-response event flush is not cancelled
+	// by it.
 	handler = RequestTimeoutMiddleware(handler)
 	if activityFeedEnabled {
 		handler = ActivityMiddleware(activity.NewStoreSink(st))(handler)
 	}
 	handler = AuthMiddleware(*a.Secret, st)(handler)
+	// Inside the request-id middleware so it sees every request, including
+	// the ones auth rejects before the mux — a 401 rate is worth seeing.
+	handler = m.Middleware()(handler)
 	handler = RequestIdMiddleware(handler) // wrap LAST → runs FIRST
 
 	return handler
+}
+
+// startMetricsListener serves the metrics endpoint on its own listener.
+//
+// The separation is the point: :8080 sits behind nginx and an auth allowlist,
+// while this endpoint has no authentication at all. What keeps it out of reach
+// is that container deployments never publish the port — Prometheus scrapes
+// over the compose network — so the auth middleware needs no new exception.
+//
+// That safety is a property of the deployment, not the address. METRICS_ADDR
+// defaults to :9090, which binds EVERY interface, so a bare `go run .` on a
+// shared network exposes the whole exposition. Set METRICS_ADDR=127.0.0.1:9090
+// for non-container runs.
+//
+// Failing to bind is deliberately not fatal: observability must not stop the
+// API from serving.
+func startMetricsListener(ctx context.Context, m *metrics.Metrics) {
+	if !config.MetricsEnabled() {
+		slog.Info("metrics listener disabled", "reason", "METRICS_ENABLED=false")
+		return
+	}
+
+	addr := config.MetricsAddr()
+	// Bind before serving so a failure is reported here, synchronously, rather
+	// than from inside a goroutine where it can only be logged after the fact.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		slog.Warn("metrics listener cannot bind; continuing without metrics", "err", err, "addr", addr)
+		return
+	}
+
+	// Only /metrics, not every path. Mounting m.Handler() at the root served the
+	// whole exposition to any probe or mistyped scrape path, which contradicted
+	// the log line below and gave a scanner the full dump for free.
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", m.Handler())
+
+	srv := &http.Server{
+		Handler: mux,
+		// Fully bounded, unlike the API server. The API omits these because of
+		// the long-lived SSE response; this listener has none, so every timeout
+		// is free here and an idle keep-alive connection from anything on the
+		// compose network would otherwise accumulate sockets with nothing to
+		// reap them.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 16,
+	}
+
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Warn("metrics listener stopped; the API is unaffected", "err", err, "addr", addr)
+		}
+	}()
+	// Tie the listener's lifetime to the same context that governs the
+	// activity LISTEN loop, so it goes away with the server that started it.
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
+
+	slog.Info("metrics available", "addr", addr, "path", "/metrics")
 }
 
 // startActivityListener starts the one LISTEN loop that feeds hub, if this
@@ -166,17 +242,20 @@ func startActivityListener(ctx context.Context, st store.Store, hub *activity.Hu
 	}()
 }
 
-func ListenAndServe(st store.Store) error {
+func ListenAndServe(st store.Store, m *metrics.Metrics) error {
 	// Cancelled when this function returns — i.e. when the HTTP server has
 	// stopped — so the LISTEN loop and its connection go away with it instead
 	// of outliving the thing they were started for.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	handler, err := NewServer(ctx, st)
+	handler, err := NewServer(ctx, st, m)
 	if err != nil {
 		return fmt.Errorf("failed to build server: %w", err)
 	}
+
+	startMetricsListener(ctx, m)
+
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: handler,
