@@ -63,13 +63,15 @@ WHERE m.group_id = $1
 ORDER BY u.id;
 
 -- name: UpsertGroupTitle :one
-INSERT INTO group_titles (group_id, title_id, watched, watched_at, added_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO group_titles (group_id, title_id, watched, watched_at, added_at, updated_at, added_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (group_id, title_id) DO UPDATE
 SET watched = EXCLUDED.watched,
     watched_at = EXCLUDED.watched_at,
     added_at = EXCLUDED.added_at,
     updated_at = EXCLUDED.updated_at
+-- added_by is deliberately absent from the update set. It records who first
+-- put the title here, so a later watched-status change must not rewrite it.
 RETURNING *;
 
 -- name: GetGroupTitleRow :one
@@ -125,9 +127,13 @@ SELECT
     t.vote_count, t.added_at, t.updated_at, t.metadata,
     gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
     gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
+    gt.added_by AS gt_added_by, au.username AS gt_added_by_username,
     count(*) OVER () AS total_count
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
+-- LEFT, not an inner join: a title whose author is unknown (added before this
+-- was recorded) or since deleted must still appear in the list.
+LEFT JOIN users au ON au.id = gt.added_by
 WHERE gt.group_id = sqlc.arg('group_id')
   AND (sqlc.narg('watched')::boolean IS NULL OR gt.watched = sqlc.narg('watched'))
   AND (sqlc.narg('title_types')::text[] IS NULL OR t.type = ANY(sqlc.narg('title_types')::text[]))
@@ -174,9 +180,11 @@ SELECT
     t.id, t.primary_title, t.type, t.start_year, t.rating_aggregate,
     t.vote_count, t.added_at, t.updated_at, t.metadata,
     gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
-    gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at
+    gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
+    gt.added_by AS gt_added_by, au.username AS gt_added_by_username
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
+LEFT JOIN users au ON au.id = gt.added_by
 WHERE gt.group_id = sqlc.arg('group_id') AND gt.title_id = sqlc.arg('title_id');
 
 -- name: CountGroupTitles :one

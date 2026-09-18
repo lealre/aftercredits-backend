@@ -186,10 +186,13 @@ func (s *Store) GetUsersFromGroup(ctx context.Context, groupId, userId string) (
 	return users, nil
 }
 
-// AddNewGroupTitle adds titleId to the group as a movie with watched=false.
-// Adding a title that is already present overwrites the existing entry and
-// resets its addedAt.
-func (s *Store) AddNewGroupTitle(ctx context.Context, groupId string, titleId string) error {
+// AddNewGroupTitle adds titleId to the group as a movie with watched=false,
+// recording addedBy as the member who put it there. Adding a title that is
+// already present overwrites the existing entry and resets its addedAt.
+//
+// addedBy may be empty, which stores NULL: rows predating this column have no
+// author to name, and inventing one would be worse than admitting the gap.
+func (s *Store) AddNewGroupTitle(ctx context.Context, groupId, titleId, addedBy string) error {
 	return s.inTx(ctx, func(q *database.Queries) error {
 		now := timeToTimestamptz(time.Now())
 		if _, err := q.UpsertGroupTitle(ctx, database.UpsertGroupTitleParams{
@@ -199,6 +202,7 @@ func (s *Store) AddNewGroupTitle(ctx context.Context, groupId string, titleId st
 			WatchedAt: ptrToTimestamptz(nil),
 			AddedAt:   now,
 			UpdatedAt: now,
+			AddedBy:   emptyToNullText(addedBy),
 		}); err != nil {
 			return err
 		}
@@ -567,7 +571,8 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 			StartYear: r.StartYear, RatingAggregate: r.RatingAggregate,
 			VoteCount: r.VoteCount, AddedAt: r.AddedAt, UpdatedAt: r.UpdatedAt,
 			Metadata: r.Metadata,
-		}, r.GtWatched, r.GtWatchedAt, r.GtAddedAt, r.GtUpdatedAt, seasonsByTitle[r.ID])
+		}, r.GtWatched, r.GtWatchedAt, r.GtAddedAt, r.GtUpdatedAt,
+			r.GtAddedBy, r.GtAddedByUsername, seasonsByTitle[r.ID])
 		if err != nil {
 			return nil, 0, err
 		}
@@ -589,6 +594,7 @@ func groupPagedTitleFromRow(
 	t database.Title,
 	gtWatched bool,
 	gtWatchedAt, gtAddedAt, gtUpdatedAt pgtype.Timestamptz,
+	gtAddedBy, gtAddedByUsername pgtype.Text,
 	seasonRows []database.GroupTitleSeason,
 ) (models.GroupPagedTitle, error) {
 	title, err := rowToTitle(t)
@@ -604,6 +610,7 @@ func groupPagedTitleFromRow(
 			AddedAt:        gtAddedAt.Time,
 			UpdatedAt:      gtUpdatedAt.Time,
 			WatchedAt:      timestamptzToPtr(gtWatchedAt),
+			AddedBy:        titleAuthor(gtAddedBy, gtAddedByUsername),
 		},
 	}, nil
 }
@@ -645,7 +652,8 @@ func (s *Store) GetGroupTitle(ctx context.Context, groupId, titleId string) (mod
 		StartYear: row.StartYear, RatingAggregate: row.RatingAggregate,
 		VoteCount: row.VoteCount, AddedAt: row.AddedAt, UpdatedAt: row.UpdatedAt,
 		Metadata: row.Metadata,
-	}, row.GtWatched, row.GtWatchedAt, row.GtAddedAt, row.GtUpdatedAt, seasonRows)
+	}, row.GtWatched, row.GtWatchedAt, row.GtAddedAt, row.GtUpdatedAt,
+		row.GtAddedBy, row.GtAddedByUsername, seasonRows)
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its

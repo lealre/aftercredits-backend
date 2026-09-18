@@ -28,6 +28,18 @@ type GroupTitleItem struct {
 	AddedAt        time.Time
 	UpdatedAt      time.Time
 	WatchedAt      *time.Time
+	// AddedBy is nil when no author was recorded: the entry predates the column,
+	// or the member who added it has since been deleted.
+	AddedBy *TitleAuthor
+}
+
+// TitleAuthor identifies the member who added a title to a group. The username
+// is joined at read time rather than stored alongside the id, so a rename is
+// reflected everywhere instead of leaving old rows naming someone who no
+// longer goes by that.
+type TitleAuthor struct {
+	Id       string
+	Username string
 }
 
 // SeasonsWatched is a title's per-season watched state keyed by season number
