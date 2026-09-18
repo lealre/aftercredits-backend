@@ -4,15 +4,11 @@
 # host port: the metrics listener is never published on the Pi, so this is the
 # only route to it.
 #
-# 10s. The obvious instinct is to scrape slowly on a Pi to spare the SD card,
-# and 30s was the first choice for that reason — but it made the dashboard
-# unusable: Grafana's $__interval on a short range resolved below the scrape
-# interval, increase() saw fewer than two samples, and panels read "No data"
-# for the first minute after any traffic.
-#
-# The write cost is not what the instinct assumes. This target exposes a few
-# hundred series; at 10s that is still trivial against the 512 MB retention
-# cap, which is the thing that actually bounds disk.
+# 10s. 30s was the first choice, to spare what I assumed was an SD card — the
+# deploy target is in fact a Pi 5 with a 256 GB SSD, 11% full. The slower
+# interval bought nothing and cost a working dashboard: Grafana's $__interval
+# on a short range resolved below the scrape interval, increase() saw fewer
+# than two samples, and panels read "No data" after any traffic.
 global:
   scrape_interval: 10s
   scrape_timeout: 5s

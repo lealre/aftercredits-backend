@@ -20,9 +20,10 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      # Bounded on both axes. Time alone does not bound disk if the number of
-      # series grows; the size cap is the hard backstop. This matters because
-      # the Pi's disk is already a documented concern.
+      # Bounded on both axes: time alone does not bound disk if the series
+      # count grows, so the size cap is the backstop. 512 MB is conservative
+      # against the deploy target's 256 GB SSD and can be raised — the cost of
+      # doing so is Prometheus's memory, not disk.
       - --storage.tsdb.retention.time=15d
       - --storage.tsdb.retention.size=512MB
     volumes:
@@ -42,16 +43,18 @@ services:
     # It also covers postgres, grafana and prometheus, so "what is using the
     # Pi's memory" becomes answerable rather than inferred.
     #
-    # Costs roughly 50-100 MB of RAM itself, which is not free on a Pi. It lives
-    # in this opt-in stack precisely so it can be left out: drop this service
-    # and the backend's own process_* metrics still work, you just lose the
-    # container-versus-process comparison.
+    # Costs roughly 30 MB itself and contributes the large majority of the
+    # series Prometheus holds, so it is the main driver of Prometheus's memory
+    # too. It lives in this opt-in stack so it can be left out: drop it and the
+    # backend's own process_* metrics still work, you just lose the
+    # container-versus-process comparison and the cgroup charge.
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: aftercredits-cadvisor
     restart: unless-stopped
     command:
-      # Only what the dashboard uses. cAdvisor's default set is very large and
-      # every extra series is disk on an SD card.
+      # Only what the dashboard uses. cAdvisor's default set is very large, and
+      # series count is what drives Prometheus's memory — disk is not the
+      # constraint on this target.
       - --docker_only=true
       - --housekeeping_interval=30s
       - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,cpu_topology,resctrl
