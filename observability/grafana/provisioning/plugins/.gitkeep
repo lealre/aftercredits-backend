@@ -1,3 +1,0 @@
-# Kept only so Grafana finds this provisioning directory: a missing one logs
-# an error on every start. It holds no plugin configuration, and Grafana does
-# not scan this directory for files, so a plain placeholder is enough.

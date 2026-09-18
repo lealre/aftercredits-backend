@@ -1,8 +1,10 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -23,6 +25,19 @@ func Migrate() error {
 		return fmt.Errorf("open sql.DB: %w", err)
 	}
 	defer db.Close()
+
+	// The same retry the server does, and for the same reason: postgres is a
+	// separate stack, so nothing orders it before this runs. This path matters
+	// MORE than the server's — it is the first thing db-setup executes, so it
+	// is what actually meets a database that is still starting.
+	//
+	// sql.Open does not connect; PingContext is what dials.
+	ctx := context.Background()
+	if err := retryConnect(ctx, connectAttempts, func() error {
+		return db.PingContext(ctx)
+	}, time.Sleep); err != nil {
+		return err
+	}
 
 	goose.SetBaseFS(sqlassets.SchemaFS)
 	if err := goose.SetDialect("postgres"); err != nil {

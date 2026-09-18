@@ -42,9 +42,20 @@ func Connect(ctx context.Context) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres pool error: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
+
+	// Retried, not a single ping. Postgres is a separate compose stack now, so
+	// nothing orders it before this process: a reboot races the two, and the
+	// old behaviour turned that race into a crash loop. The window is bounded
+	// so a database that is genuinely gone is still reported — the caller
+	// exits, and the restart policy decides whether to try again.
+	//
+	// NewWithConfig does not connect; the pool dials lazily, so Ping is what
+	// actually establishes and tests a connection and is safe to repeat.
+	if err := retryConnect(ctx, connectAttempts, func() error {
+		return pool.Ping(ctx)
+	}, time.Sleep); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("postgres ping error: %w", err)
+		return nil, err
 	}
 	return pool, nil
 }
