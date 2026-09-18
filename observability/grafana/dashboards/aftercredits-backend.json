@@ -6,7 +6,7 @@
     "aftercredits"
   ],
   "schemaVersion": 39,
-  "version": 10,
+  "version": 14,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -396,13 +396,13 @@
     },
     {
       "type": "barchart",
-      "title": "Calls per endpoint",
+      "title": "Calls per endpoint, since restart",
       "id": 7,
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Number of calls in the selected time range. Not a rate \u2014 this is how many times each endpoint was actually called.",
+      "description": "Total calls since the backend last restarted \u2014 NOT limited to the time range above.\n\nDeliberately the raw counter rather than increase() over the range. increase() measures CHANGE, and Prometheus can only see a change it sampled: an endpoint called once, before its series was ever scraped, has a counter that has been flat ever since, so increase() reports 0 for it forever. On a low-traffic app that hides most endpoints \u2014 a title deleted once would never appear.\n\nThe cost is that the time picker does not affect this panel. Better a number that is always right about the wrong window than one that is silently missing your traffic.",
       "gridPos": {
         "h": 10,
         "w": 14,
@@ -412,7 +412,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (route) (increase(aftercredits_http_requests_total[$__range]))",
+          "expr": "sum by (route) (aftercredits_http_requests_total)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -477,13 +477,13 @@
     },
     {
       "type": "barchart",
-      "title": "Responses by status",
+      "title": "Responses by status, since restart",
       "id": 9,
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "How many responses of each status code in the selected range.",
+      "description": "Total responses of each status since the backend last restarted. Same reasoning as the calls panel.",
       "gridPos": {
         "h": 10,
         "w": 10,
@@ -493,7 +493,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (increase(aftercredits_http_requests_total[$__range]))",
+          "expr": "sum by (status) (aftercredits_http_requests_total)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -586,7 +586,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (le) (increase(aftercredits_http_request_duration_seconds_bucket[$__interval]))",
+          "expr": "sum by (le) (increase(aftercredits_http_request_duration_seconds_bucket[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -634,7 +634,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Median, p95 and p99 per endpoint over the selected range. p95 = 95% of calls were at least this fast. Blank means too few calls to say.",
+      "description": "Median, p95 and p99 per endpoint since the backend last restarted. Endpoints with no calls are omitted rather than shown as NaN.",
       "gridPos": {
         "h": 10,
         "w": 12,
@@ -644,7 +644,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.50, sum by (route, le) (increase(aftercredits_http_request_duration_seconds_bucket[$__range])))",
+          "expr": "histogram_quantile(0.50, sum by (route, le) (aftercredits_http_request_duration_seconds_bucket)) > 0",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -654,7 +654,7 @@
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (route, le) (increase(aftercredits_http_request_duration_seconds_bucket[$__range])))",
+          "expr": "histogram_quantile(0.95, sum by (route, le) (aftercredits_http_request_duration_seconds_bucket)) > 0",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -664,7 +664,7 @@
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum by (route, le) (increase(aftercredits_http_request_duration_seconds_bucket[$__range])))",
+          "expr": "histogram_quantile(0.99, sum by (route, le) (aftercredits_http_request_duration_seconds_bucket)) > 0",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1069,8 +1069,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "container total",
-          "expr": "container_memory_usage_bytes{name=\"aftercredits-backend\"}"
+          "expr": "process_resident_memory_bytes{job=\"aftercredits-backend\"}",
+          "legendFormat": "VmRSS \u2014 total in RAM"
         },
         {
           "refId": "B",
@@ -1078,8 +1078,17 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "app memory (anonymous)",
-          "expr": "container_memory_rss{name=\"aftercredits-backend\"}"
+          "expr": "process_resident_memory_bytes{job=\"aftercredits-backend\"} - on() container_memory_rss{name=\"aftercredits-backend\"}",
+          "legendFormat": "RssFile \u2014 binary pages"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "container_memory_rss{name=\"aftercredits-backend\"}",
+          "legendFormat": "RssAnon \u2014 app memory"
         },
         {
           "refId": "D",
@@ -1087,8 +1096,17 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "Go heap in use",
-          "expr": "go_memstats_heap_inuse_bytes{job=\"aftercredits-backend\"}"
+          "expr": "container_memory_usage_bytes{name=\"aftercredits-backend\"}",
+          "legendFormat": "cgroup charge \u2014 what the limit applies to"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "go_memstats_heap_inuse_bytes{job=\"aftercredits-backend\"}",
+          "legendFormat": "Go heap in use"
         }
       ],
       "fieldConfig": {
@@ -1104,7 +1122,50 @@
             "spanNulls": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VmRSS \u2014 total in RAM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RssFile \u2014 binary pages"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "semi-dark-blue"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -1117,7 +1178,7 @@
           "sort": "desc"
         }
       },
-      "description": "Container total is the cgroup's charge \u2014 the number that decides whether this fits on the Pi. See the note to the right for why the app's own RSS is larger than it."
+      "description": "VmRSS = RssAnon + RssFile \u2014 the kernel's own split, as in /proc/1/status.\n\n\u2022 VmRSS \u2014 every page this process holds resident.\n\u2022 RssFile \u2014 pages of the Go binary itself, mapped from the image. Clean, so the kernel can drop and re-read them, which is why the cgroup does NOT charge for them. Bounded at ~16 MiB (all that is mapped); only cold code paths are left to fault in.\n\u2022 RssAnon \u2014 memory with no file behind it: heap, stacks, runtime. Cannot be dropped.\n\u2022 cgroup charge \u2014 RssAnon plus kernel bookkeeping. What a memory limit applies to and what an OOM kill measures. This is why it sits BELOW VmRSS.\n\u2022 Go heap in use \u2014 live objects. A leak shows here first.\n\nRssFile is derived as VmRSS - RssAnon across two exporters, so it drifts by a few hundred KiB between cAdvisor's 30s samples. The identity is exact at the source."
     },
     {
       "type": "timeseries",

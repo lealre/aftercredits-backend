@@ -4,11 +4,18 @@
 # host port: the metrics listener is never published on the Pi, so this is the
 # only route to it.
 #
-# 30s rather than the 15s default: this runs on a Raspberry Pi's SD card, and
-# halving the write rate costs nothing for metrics that are read by a human.
+# 10s. The obvious instinct is to scrape slowly on a Pi to spare the SD card,
+# and 30s was the first choice for that reason — but it made the dashboard
+# unusable: Grafana's $__interval on a short range resolved below the scrape
+# interval, increase() saw fewer than two samples, and panels read "No data"
+# for the first minute after any traffic.
+#
+# The write cost is not what the instinct assumes. This target exposes a few
+# hundred series; at 10s that is still trivial against the 512 MB retention
+# cap, which is the thing that actually bounds disk.
 global:
-  scrape_interval: 30s
-  scrape_timeout: 10s
+  scrape_interval: 10s
+  scrape_timeout: 5s
 
 scrape_configs:
   - job_name: aftercredits-backend
