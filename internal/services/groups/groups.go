@@ -249,6 +249,7 @@ func buildGroupTitleDetails(db store.Store, ctx context.Context, groupId string,
 			WatchedAt:    row.Item.WatchedAt,
 			AddedAt:      row.Item.AddedAt,
 			UpdatedAt:    row.Item.UpdatedAt,
+			AddedBy:      toTitleAuthor(row.Item.AddedBy),
 		}
 
 		// Map seasons watched from database to API type
@@ -343,7 +344,7 @@ func AddTitleToGroup(db store.Store, ctx context.Context, groupId, titleId, user
 		return ErrGroupTitleQuotaExceeded
 	}
 
-	err = db.AddNewGroupTitle(ctx, groupId, titleId)
+	err = db.AddNewGroupTitle(ctx, groupId, titleId, userId)
 	if err != nil {
 		return err
 	}
@@ -658,4 +659,13 @@ func GroupExists(db store.Store, ctx context.Context, groupId, userId string) (b
 // contains the given title. Thin service passthrough.
 func GroupContainsTitle(db store.Store, ctx context.Context, groupId, titleId, userId string) (bool, error) {
 	return db.GroupContainsTitle(ctx, groupId, titleId, userId)
+}
+
+// toTitleAuthor maps the store's author onto the API's, preserving nil so an
+// unrecorded author serialises as null rather than an empty object.
+func toTitleAuthor(a *models.TitleAuthor) *TitleAuthor {
+	if a == nil {
+		return nil
+	}
+	return &TitleAuthor{Id: a.Id, Username: a.Username}
 }

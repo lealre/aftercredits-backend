@@ -72,6 +72,18 @@ type GroupTitleDetail struct {
 	AddedAt        time.Time        `json:"addedAt"`
 	UpdatedAt      time.Time        `json:"updatedAt"`
 	WatchedAt      *time.Time       `json:"watchedAt,omitempty"`
+	// Null when nobody is recorded: the entry predates this being stored, or
+	// the account was deleted outright. Not omitempty — a client rendering
+	// "added by" wants to distinguish "unknown" from "the field is missing".
+	AddedBy *TitleAuthor `json:"addedBy"`
+}
+
+// TitleAuthor is the member who added a title to the group. The username is
+// resolved at read time, so a rename shows everywhere rather than leaving old
+// entries crediting a name nobody uses now.
+type TitleAuthor struct {
+	Id       string `json:"id"`
+	Username string `json:"username"`
 }
 
 type AddTitleToGroupRequest struct {

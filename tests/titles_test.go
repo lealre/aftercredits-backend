@@ -285,7 +285,7 @@ func TestGetTitleEpisodes(t *testing.T) {
 		Titles:  models.GroupTitles{},
 	})
 	require.NoError(t, err)
-	require.NoError(t, testStore.AddNewGroupTitle(context.Background(), grp.Id, "tt3000001"))
+	require.NoError(t, testStore.AddNewGroupTitle(context.Background(), grp.Id, "tt3000001", ""))
 
 	req, _ := http.NewRequest(http.MethodGet, testServer.URL+"/titles/tt3000001/episodes", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

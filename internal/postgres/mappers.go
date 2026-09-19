@@ -69,6 +69,16 @@ func timestamptzToPtr(t pgtype.Timestamptz) *time.Time {
 
 // ptrToTimestamptz converts a *time.Time into a nullable pgtype.Timestamptz,
 // matching timestamptzToPtr's nil <-> unset convention.
+// emptyToNullText maps "" to SQL NULL. Used where an absent identifier is a
+// real state rather than an error — a title whose author was never recorded
+// stores NULL, not an empty string that would later read as a user id.
+func emptyToNullText(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
+}
+
 func ptrToTimestamptz(t *time.Time) pgtype.Timestamptz {
 	if t == nil {
 		return pgtype.Timestamptz{}
@@ -212,6 +222,19 @@ func groupTitleRowToModel(t database.GroupTitle, seasons *models.SeasonsWatched)
 		UpdatedAt:      t.UpdatedAt.Time,
 		WatchedAt:      timestamptzToPtr(t.WatchedAt),
 	}
+}
+
+// titleAuthor builds the author of a group title, or nil when none is recorded.
+//
+// Both halves must be present: an id with no username means the join found no
+// user, which happens when the account was deleted between the row being
+// written and being read. Reporting an id the caller cannot resolve to a name
+// is worse than reporting nothing.
+func titleAuthor(id, username pgtype.Text) *models.TitleAuthor {
+	if !id.Valid || !username.Valid {
+		return nil
+	}
+	return &models.TitleAuthor{Id: id.String, Username: username.String}
 }
 
 // groupTitleSeasonRowToItem converts a database.GroupTitleSeason row into a

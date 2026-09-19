@@ -218,7 +218,7 @@ func TestStore_AddNewGroupTitle(t *testing.T) {
 	require.NoError(t, err)
 
 	titleId := "tt-" + uuid.NewString()
-	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId))
+	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId, owner))
 
 	got, err := s.GetGroupById(ctx, created.Id, owner)
 	require.NoError(t, err)
@@ -247,7 +247,7 @@ func TestStore_UpdateGroupTitleWatchedForMovie(t *testing.T) {
 	created, err := s.CreateGroup(ctx, newTestGroup(t, "movies", owner))
 	require.NoError(t, err)
 	titleId := "tt-" + uuid.NewString()
-	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId))
+	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId, owner))
 
 	when := time.Now().UTC().Truncate(time.Second)
 	item, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, titleId, boolPtr(true), flexDate(when))
@@ -291,7 +291,7 @@ func TestStore_UpdateGroupTitleWatchedForTVSeries(t *testing.T) {
 	created, err := s.CreateGroup(ctx, newTestGroup(t, "series", owner))
 	require.NoError(t, err)
 	titleId := "tt-" + uuid.NewString()
-	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId))
+	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId, owner))
 
 	when1 := time.Now().UTC().Truncate(time.Second)
 
@@ -354,7 +354,7 @@ func TestStore_RemoveTitleFromGroup_CascadesSeasons(t *testing.T) {
 	created, err := s.CreateGroup(ctx, newTestGroup(t, "cascade", owner))
 	require.NoError(t, err)
 	titleId := "tt-" + uuid.NewString()
-	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId))
+	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId, owner))
 	_, err = s.UpdateGroupTitleWatchedForTVSeries(ctx, created.Id, titleId, boolPtr(true), nil, 1, owner)
 	require.NoError(t, err)
 
@@ -493,7 +493,7 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		charlie := newTestMovieTitle(t, "tt-happy-charlie", "Charlie", 7.0)
 		for _, ti := range []models.Title{bravo, alpha, charlie} {
 			require.NoError(t, s.AddTitle(ctx, ti))
-			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, ti.ID))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, ti.ID, owner))
 		}
 
 		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
@@ -817,7 +817,7 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		charlie := newTestMovieTitle(t, "tt-fb-charlie", "Charlie", 5.0)
 		for _, ti := range []models.Title{alpha, bravo, charlie} {
 			require.NoError(t, s.AddTitle(ctx, ti))
-			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, ti.ID))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, ti.ID, owner))
 		}
 
 		descending := false // ascending=false means descending, per the store's contract
@@ -841,7 +841,7 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		for i, name := range names {
 			title := newTestMovieTitle(t, fmt.Sprintf("tt-page-%d", i), name, 5.0)
 			require.NoError(t, s.AddTitle(ctx, title))
-			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, owner))
 		}
 
 		var got []string
@@ -874,7 +874,7 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		for i, name := range names {
 			title := newTestMovieTitle(t, fmt.Sprintf("tt-extreme-%d", i), name, 5.0)
 			require.NoError(t, s.AddTitle(ctx, title))
-			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, owner))
 		}
 
 		cases := []struct {
@@ -927,7 +927,7 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		for i, name := range names {
 			title := newTestMovieTitle(t, fmt.Sprintf("tt-size-%d", i), name, 5.0)
 			require.NoError(t, s.AddTitle(ctx, title))
-			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, owner))
 		}
 
 		for _, size := range []int{0, -1, math.MinInt64} {
@@ -971,7 +971,7 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		for i, name := range names {
 			title := newTestMovieTitle(t, fmt.Sprintf("tt-wide-%d", i), name, 5.0)
 			require.NoError(t, s.AddTitle(ctx, title))
-			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID))
+			require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, owner))
 		}
 
 		got, total, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, math.MaxInt32+1, 1)
@@ -991,7 +991,7 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 
 		present := newTestMovieTitle(t, "tt-present", "Present", 5.0)
 		require.NoError(t, s.AddTitle(ctx, present))
-		require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, present.ID))
+		require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, present.ID, owner))
 
 		// group_titles.title_id carries no FK to titles, so this row can exist
 		// with no backing titles row. The INNER JOIN in GetGroupTitlesPage must
@@ -1054,4 +1054,105 @@ func TestStore_GetGroupTitlesPage(t *testing.T) {
 		require.Equal(t, []models.GroupPagedTitle{}, got)
 		require.EqualValues(t, 0, total)
 	})
+}
+
+// The whole point of the column: the row remembers who put the title there.
+func TestStore_AddNewGroupTitle_RecordsTheAuthor(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	owner := addTestUser(t, s)
+	member := addTestUser(t, s)
+	group, err := s.CreateGroup(ctx, newTestGroup(t, "queue", owner))
+	require.NoError(t, err)
+	require.NoError(t, s.AddUserToGroup(ctx, group.Id, owner, member))
+
+	title := addTestTitleWithType(t, s, "tt-"+uuid.NewString(), "A Film", "movie")
+	// Added by the member, NOT the owner — so a mapper that reached for the
+	// group's owner instead of the caller would fail here.
+	require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, member))
+
+	page, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+	require.NoError(t, err)
+	require.Len(t, page, 1)
+
+	require.NotNil(t, page[0].Item.AddedBy, "the author must be recorded")
+	require.Equal(t, member, page[0].Item.AddedBy.Id)
+	require.NotEmpty(t, page[0].Item.AddedBy.Username,
+		"the username is joined at read time, so it must come back populated")
+}
+
+// An author that was never recorded is nil, not an empty author. Rows predating
+// the column are in exactly this state, so the read path has to tolerate it.
+func TestStore_GroupTitleWithoutAuthor_IsNil(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	owner := addTestUser(t, s)
+	group, err := s.CreateGroup(ctx, newTestGroup(t, "queue", owner))
+	require.NoError(t, err)
+
+	title := addTestTitleWithType(t, s, "tt-"+uuid.NewString(), "A Film", "movie")
+	require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, ""))
+
+	page, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+	require.NoError(t, err)
+	require.Len(t, page, 1)
+	require.Nil(t, page[0].Item.AddedBy, "no author recorded must read as nil, not an empty struct")
+}
+
+// Deactivating a member leaves the authorship intact: the row still exists and
+// "they added this" is still true of a deactivated account. This is the path
+// the application actually takes — DeleteUserById is a soft delete.
+func TestStore_DeactivatingTheAuthor_KeepsTheAuthorship(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	owner := addTestUser(t, s)
+	member := addTestUser(t, s)
+	group, err := s.CreateGroup(ctx, newTestGroup(t, "queue", owner))
+	require.NoError(t, err)
+	require.NoError(t, s.AddUserToGroup(ctx, group.Id, owner, member))
+
+	title := addTestTitleWithType(t, s, "tt-"+uuid.NewString(), "A Film", "movie")
+	require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, member))
+	require.NoError(t, s.DeleteUserById(ctx, member))
+
+	page, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+	require.NoError(t, err)
+	require.Len(t, page, 1)
+	require.NotNil(t, page[0].Item.AddedBy,
+		"a soft delete leaves the user row, so the authorship is still true")
+	require.Equal(t, member, page[0].Item.AddedBy.Id)
+}
+
+// A HARD delete is what the foreign key guards. The application never does one,
+// but an operator clearing out unused accounts with SQL does — and that must
+// not take a group's films with it.
+func TestStore_HardDeletingTheAuthor_KeepsTheTitle(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	owner := addTestUser(t, s)
+	member := addTestUser(t, s)
+	group, err := s.CreateGroup(ctx, newTestGroup(t, "queue", owner))
+	require.NoError(t, err)
+	require.NoError(t, s.AddUserToGroup(ctx, group.Id, owner, member))
+
+	title := addTestTitleWithType(t, s, "tt-"+uuid.NewString(), "A Film", "movie")
+	require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, member))
+
+	_, err = newTestPool(t).Exec(ctx, "DELETE FROM group_members WHERE user_id = $1", member)
+	require.NoError(t, err)
+	_, err = newTestPool(t).Exec(ctx, "DELETE FROM users WHERE id = $1", member)
+	require.NoError(t, err, "ON DELETE SET NULL must permit the delete, not block it")
+
+	page, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+	require.NoError(t, err)
+	require.Len(t, page, 1, "the title must survive its author being deleted outright")
+	require.Nil(t, page[0].Item.AddedBy, "the author becomes unknown, not a dangling id")
 }
