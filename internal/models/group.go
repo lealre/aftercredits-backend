@@ -35,6 +35,10 @@ type GroupTitleItem struct {
 	// watched is a fact about the group. Nil when unwatched, when the marking
 	// predates the column, or when that account was deleted.
 	WatchedMarkedBy *TitleAuthor
+	// WatchedMarkedAt is WHEN that marking happened, which is not WatchedAt.
+	// WatchedAt is the date the group says it saw the film, chosen by a member
+	// and often in the past; this is the system time of the action.
+	WatchedMarkedAt *time.Time
 }
 
 // TitleAuthor identifies the member who added a title to a group. The username

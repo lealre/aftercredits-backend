@@ -91,6 +91,7 @@ type GroupTitle struct {
 	UpdatedAt       pgtype.Timestamptz
 	AddedBy         pgtype.Text
 	WatchedMarkedBy pgtype.Text
+	WatchedMarkedAt pgtype.Timestamptz
 }
 
 type GroupTitleSeason struct {

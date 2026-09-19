@@ -6,6 +6,13 @@
 -- is a different and smaller question than "who watched it".
 ALTER TABLE group_titles ADD COLUMN watched_marked_by TEXT REFERENCES users(id) ON DELETE SET NULL;
 
+-- WHEN the marking happened, which is not watched_at. watched_at is the date
+-- the group says it saw the film — a date a member picks, often in the past.
+-- This is the system time of the action itself. Recording only watched_at
+-- would say "marked by X on 3 Sep" for a row created today, which is both
+-- wrong and redundant with the date already on screen.
+ALTER TABLE group_titles ADD COLUMN watched_marked_at TIMESTAMPTZ;
+
 -- Only the LAST marking, matching the single watched_at the row already keeps.
 -- The activity feed holds the full history; this is the current state's author.
 --
@@ -15,10 +22,11 @@ ALTER TABLE group_titles ADD COLUMN watched_marked_by TEXT REFERENCES users(id) 
 -- clears watched_at, so crediting that person would attach a name to a state
 -- that no longer exists.
 UPDATE group_titles gt
-SET watched_marked_by = latest.actor_id
+SET watched_marked_by = latest.actor_id,
+    watched_marked_at = latest.created_at
 FROM (
     SELECT DISTINCT ON (group_id, title_id)
-           group_id, title_id, actor_id
+           group_id, title_id, actor_id, created_at
     FROM activity_events
     WHERE kind = 'title_watched_changed'
       AND payload ->> 'watched' = 'true'
@@ -32,4 +40,5 @@ CREATE INDEX idx_group_titles_watched_marked_by ON group_titles(watched_marked_b
 
 -- +goose Down
 DROP INDEX IF EXISTS idx_group_titles_watched_marked_by;
+ALTER TABLE group_titles DROP COLUMN watched_marked_at;
 ALTER TABLE group_titles DROP COLUMN watched_marked_by;
