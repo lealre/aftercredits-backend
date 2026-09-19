@@ -250,7 +250,7 @@ func TestStore_UpdateGroupTitleWatchedForMovie(t *testing.T) {
 	require.NoError(t, s.AddNewGroupTitle(ctx, created.Id, titleId, owner))
 
 	when := time.Now().UTC().Truncate(time.Second)
-	item, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, titleId, boolPtr(true), flexDate(when))
+	item, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, titleId, boolPtr(true), flexDate(when), owner)
 	require.NoError(t, err)
 	require.NotNil(t, item)
 	require.True(t, item.Watched)
@@ -265,19 +265,19 @@ func TestStore_UpdateGroupTitleWatchedForMovie(t *testing.T) {
 
 	t.Run("watched=false clears watchedAt when cleared by caller", func(t *testing.T) {
 		// The service passes a nil-Time FlexibleDate to clear watchedAt.
-		item, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, titleId, boolPtr(false), &generics.FlexibleDate{Time: nil})
+		item, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, titleId, boolPtr(false), &generics.FlexibleDate{Time: nil}, owner)
 		require.NoError(t, err)
 		require.False(t, item.Watched)
 		require.Nil(t, item.WatchedAt, "watchedAt must be cleared to nil")
 	})
 
 	t.Run("no fields to update is an error", func(t *testing.T) {
-		_, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, titleId, nil, nil)
+		_, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, titleId, nil, nil, owner)
 		require.Error(t, err)
 	})
 
 	t.Run("missing title is not found", func(t *testing.T) {
-		_, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, "tt-missing", boolPtr(true), nil)
+		_, err := s.UpdateGroupTitleWatchedForMovie(ctx, created.Id, "tt-missing", boolPtr(true), nil, owner)
 		require.ErrorIs(t, err, store.ErrRecordNotFound)
 	})
 }
@@ -1155,4 +1155,46 @@ func TestStore_HardDeletingTheAuthor_KeepsTheTitle(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, page, 1, "the title must survive its author being deleted outright")
 	require.Nil(t, page[0].Item.AddedBy, "the author becomes unknown, not a dangling id")
+}
+
+// Who marked a title watched, and the property that makes the column honest:
+// unmarking clears it. A name attached to a state that no longer holds is
+// worse than no name.
+func TestStore_WatchedMarkedBy_FollowsTheState(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	owner := addTestUser(t, s)
+	member := addTestUser(t, s)
+	group, err := s.CreateGroup(ctx, newTestGroup(t, "queue", owner))
+	require.NoError(t, err)
+	require.NoError(t, s.AddUserToGroup(ctx, group.Id, owner, member))
+
+	title := addTestTitleWithType(t, s, "tt-"+uuid.NewString(), "A Film", "movie")
+	require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, owner))
+
+	read := func() *models.TitleAuthor {
+		page, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+		require.NoError(t, err)
+		require.Len(t, page, 1)
+		return page[0].Item.WatchedMarkedBy
+	}
+
+	require.Nil(t, read(), "an unwatched title has nobody who marked it")
+
+	// The MEMBER marks it, while the OWNER added it — so a mapper reaching for
+	// added_by, or for the group owner, fails here.
+	_, err = s.UpdateGroupTitleWatchedForMovie(ctx, group.Id, title.ID, boolPtr(true), nil, member)
+	require.NoError(t, err)
+
+	marked := read()
+	require.NotNil(t, marked, "marking watched must record who did it")
+	require.Equal(t, member, marked.Id)
+	require.NotEmpty(t, marked.Username)
+
+	// Unmarking clears it: the state it described is gone.
+	_, err = s.UpdateGroupTitleWatchedForMovie(ctx, group.Id, title.ID, boolPtr(false), nil, owner)
+	require.NoError(t, err)
+	require.Nil(t, read(), "marking unwatched must clear the marker, not keep a stale name")
 }

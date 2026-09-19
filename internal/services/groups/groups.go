@@ -244,12 +244,13 @@ func buildGroupTitleDetails(db store.Store, ctx context.Context, groupId string,
 	var details []GroupTitleDetail
 	for _, row := range rows {
 		detail := GroupTitleDetail{
-			GroupRatings: groupRatings.Titles[row.Title.ID],
-			Watched:      row.Item.Watched,
-			WatchedAt:    row.Item.WatchedAt,
-			AddedAt:      row.Item.AddedAt,
-			UpdatedAt:    row.Item.UpdatedAt,
-			AddedBy:      toTitleAuthor(row.Item.AddedBy),
+			GroupRatings:    groupRatings.Titles[row.Title.ID],
+			Watched:         row.Item.Watched,
+			WatchedAt:       row.Item.WatchedAt,
+			AddedAt:         row.Item.AddedAt,
+			UpdatedAt:       row.Item.UpdatedAt,
+			AddedBy:         toTitleAuthor(row.Item.AddedBy),
+			WatchedMarkedBy: toTitleAuthor(row.Item.WatchedMarkedBy),
 		}
 
 		// Map seasons watched from database to API type
@@ -436,7 +437,7 @@ func updateGroupTitleWatchedForMovie(
 		watchedAt = &generics.FlexibleDate{Time: nil}
 	}
 
-	groupTitleItem, err := db.UpdateGroupTitleWatchedForMovie(ctx, groupId, title.Id, watched, watchedAt)
+	groupTitleItem, err := db.UpdateGroupTitleWatchedForMovie(ctx, groupId, title.Id, watched, watchedAt, userId)
 	if err != nil {
 		if errors.Is(err, store.ErrRecordNotFound) {
 			return GroupTitle{}, WatchedChange{}, ErrTitleNotInGroup

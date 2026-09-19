@@ -31,6 +31,10 @@ type GroupTitleItem struct {
 	// AddedBy is nil when no author was recorded: the entry predates the column,
 	// or the member who added it has since been deleted.
 	AddedBy *TitleAuthor
+	// WatchedMarkedBy is who set the CURRENT watched state, not who watched it —
+	// watched is a fact about the group. Nil when unwatched, when the marking
+	// predates the column, or when that account was deleted.
+	WatchedMarkedBy *TitleAuthor
 }
 
 // TitleAuthor identifies the member who added a title to a group. The username

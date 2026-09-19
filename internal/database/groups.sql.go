@@ -193,7 +193,7 @@ func (q *Queries) GetGroupRowAnyById(ctx context.Context, id string) (Group, err
 }
 
 const getGroupTitleRow = `-- name: GetGroupTitleRow :one
-SELECT group_id, title_id, watched, watched_at, added_at, updated_at, added_by FROM group_titles WHERE group_id = $1 AND title_id = $2
+SELECT group_id, title_id, watched, watched_at, added_at, updated_at, added_by, watched_marked_by FROM group_titles WHERE group_id = $1 AND title_id = $2
 `
 
 type GetGroupTitleRowParams struct {
@@ -212,12 +212,13 @@ func (q *Queries) GetGroupTitleRow(ctx context.Context, arg GetGroupTitleRowPara
 		&i.AddedAt,
 		&i.UpdatedAt,
 		&i.AddedBy,
+		&i.WatchedMarkedBy,
 	)
 	return i, err
 }
 
 const getGroupTitleRows = `-- name: GetGroupTitleRows :many
-SELECT group_id, title_id, watched, watched_at, added_at, updated_at, added_by FROM group_titles WHERE group_id = $1 ORDER BY title_id
+SELECT group_id, title_id, watched, watched_at, added_at, updated_at, added_by, watched_marked_by FROM group_titles WHERE group_id = $1 ORDER BY title_id
 `
 
 func (q *Queries) GetGroupTitleRows(ctx context.Context, groupID string) ([]GroupTitle, error) {
@@ -237,6 +238,7 @@ func (q *Queries) GetGroupTitleRows(ctx context.Context, groupID string) ([]Grou
 			&i.AddedAt,
 			&i.UpdatedAt,
 			&i.AddedBy,
+			&i.WatchedMarkedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -387,10 +389,12 @@ SELECT
     t.vote_count, t.added_at, t.updated_at, t.metadata,
     gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
     gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
-    gt.added_by AS gt_added_by, au.username AS gt_added_by_username
+    gt.added_by AS gt_added_by, au.username AS gt_added_by_username,
+    gt.watched_marked_by AS gt_watched_marked_by, wu.username AS gt_watched_marked_by_username
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
 LEFT JOIN users au ON au.id = gt.added_by
+LEFT JOIN users wu ON wu.id = gt.watched_marked_by
 WHERE gt.group_id = $1 AND gt.title_id = $2
 `
 
@@ -400,21 +404,23 @@ type GetGroupTitleWithTitleParams struct {
 }
 
 type GetGroupTitleWithTitleRow struct {
-	ID                string
-	PrimaryTitle      string
-	Type              string
-	StartYear         int32
-	RatingAggregate   float64
-	VoteCount         int32
-	AddedAt           pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	Metadata          []byte
-	GtWatched         bool
-	GtWatchedAt       pgtype.Timestamptz
-	GtAddedAt         pgtype.Timestamptz
-	GtUpdatedAt       pgtype.Timestamptz
-	GtAddedBy         pgtype.Text
-	GtAddedByUsername pgtype.Text
+	ID                        string
+	PrimaryTitle              string
+	Type                      string
+	StartYear                 int32
+	RatingAggregate           float64
+	VoteCount                 int32
+	AddedAt                   pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+	Metadata                  []byte
+	GtWatched                 bool
+	GtWatchedAt               pgtype.Timestamptz
+	GtAddedAt                 pgtype.Timestamptz
+	GtUpdatedAt               pgtype.Timestamptz
+	GtAddedBy                 pgtype.Text
+	GtAddedByUsername         pgtype.Text
+	GtWatchedMarkedBy         pgtype.Text
+	GtWatchedMarkedByUsername pgtype.Text
 }
 
 // One group title addressed by (group, title): the same join and the same
@@ -452,6 +458,8 @@ func (q *Queries) GetGroupTitleWithTitle(ctx context.Context, arg GetGroupTitleW
 		&i.GtUpdatedAt,
 		&i.GtAddedBy,
 		&i.GtAddedByUsername,
+		&i.GtWatchedMarkedBy,
+		&i.GtWatchedMarkedByUsername,
 	)
 	return i, err
 }
@@ -463,10 +471,12 @@ SELECT
     gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
     gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
     gt.added_by AS gt_added_by, au.username AS gt_added_by_username,
+    gt.watched_marked_by AS gt_watched_marked_by, wu.username AS gt_watched_marked_by_username,
     count(*) OVER () AS total_count
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
 LEFT JOIN users au ON au.id = gt.added_by
+LEFT JOIN users wu ON wu.id = gt.watched_marked_by
 WHERE gt.group_id = $1
   AND ($2::boolean IS NULL OR gt.watched = $2)
   AND ($3::text[] IS NULL OR t.type = ANY($3::text[]))
@@ -504,22 +514,24 @@ type GetGroupTitlesPageParams struct {
 }
 
 type GetGroupTitlesPageRow struct {
-	ID                string
-	PrimaryTitle      string
-	Type              string
-	StartYear         int32
-	RatingAggregate   float64
-	VoteCount         int32
-	AddedAt           pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	Metadata          []byte
-	GtWatched         bool
-	GtWatchedAt       pgtype.Timestamptz
-	GtAddedAt         pgtype.Timestamptz
-	GtUpdatedAt       pgtype.Timestamptz
-	GtAddedBy         pgtype.Text
-	GtAddedByUsername pgtype.Text
-	TotalCount        int64
+	ID                        string
+	PrimaryTitle              string
+	Type                      string
+	StartYear                 int32
+	RatingAggregate           float64
+	VoteCount                 int32
+	AddedAt                   pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+	Metadata                  []byte
+	GtWatched                 bool
+	GtWatchedAt               pgtype.Timestamptz
+	GtAddedAt                 pgtype.Timestamptz
+	GtUpdatedAt               pgtype.Timestamptz
+	GtAddedBy                 pgtype.Text
+	GtAddedByUsername         pgtype.Text
+	GtWatchedMarkedBy         pgtype.Text
+	GtWatchedMarkedByUsername pgtype.Text
+	TotalCount                int64
 }
 
 // One-round-trip page of a group's titles: join, NULL-defaulted filters,
@@ -566,6 +578,8 @@ func (q *Queries) GetGroupTitlesPage(ctx context.Context, arg GetGroupTitlesPage
 			&i.GtUpdatedAt,
 			&i.GtAddedBy,
 			&i.GtAddedByUsername,
+			&i.GtWatchedMarkedBy,
+			&i.GtWatchedMarkedByUsername,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err
@@ -767,19 +781,26 @@ func (q *Queries) UpdateGroupInfoRow(ctx context.Context, arg UpdateGroupInfoRow
 
 const updateGroupTitleWatchedRow = `-- name: UpdateGroupTitleWatchedRow :one
 UPDATE group_titles
-SET watched = $3, watched_at = $4, updated_at = $5
+SET watched = $3,
+    watched_at = $4,
+    updated_at = $5,
+    watched_marked_by = CASE WHEN $3::boolean THEN $6 ELSE NULL END
 WHERE group_id = $1 AND title_id = $2
-RETURNING group_id, title_id, watched, watched_at, added_at, updated_at, added_by
+RETURNING group_id, title_id, watched, watched_at, added_at, updated_at, added_by, watched_marked_by
 `
 
 type UpdateGroupTitleWatchedRowParams struct {
-	GroupID   string
-	TitleID   string
-	Watched   bool
-	WatchedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	GroupID         string
+	TitleID         string
+	Watched         bool
+	WatchedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	WatchedMarkedBy pgtype.Text
 }
 
+// watched_marked_by records who set the CURRENT state, so it follows watched
+// rather than being written once: marking unwatched clears it, because a name
+// attached to a state that no longer holds is worse than no name.
 func (q *Queries) UpdateGroupTitleWatchedRow(ctx context.Context, arg UpdateGroupTitleWatchedRowParams) (GroupTitle, error) {
 	row := q.db.QueryRow(ctx, updateGroupTitleWatchedRow,
 		arg.GroupID,
@@ -787,6 +808,7 @@ func (q *Queries) UpdateGroupTitleWatchedRow(ctx context.Context, arg UpdateGrou
 		arg.Watched,
 		arg.WatchedAt,
 		arg.UpdatedAt,
+		arg.WatchedMarkedBy,
 	)
 	var i GroupTitle
 	err := row.Scan(
@@ -797,6 +819,7 @@ func (q *Queries) UpdateGroupTitleWatchedRow(ctx context.Context, arg UpdateGrou
 		&i.AddedAt,
 		&i.UpdatedAt,
 		&i.AddedBy,
+		&i.WatchedMarkedBy,
 	)
 	return i, err
 }
@@ -809,7 +832,7 @@ SET watched = EXCLUDED.watched,
     watched_at = EXCLUDED.watched_at,
     added_at = EXCLUDED.added_at,
     updated_at = EXCLUDED.updated_at
-RETURNING group_id, title_id, watched, watched_at, added_at, updated_at, added_by
+RETURNING group_id, title_id, watched, watched_at, added_at, updated_at, added_by, watched_marked_by
 `
 
 type UpsertGroupTitleParams struct {
@@ -843,6 +866,7 @@ func (q *Queries) UpsertGroupTitle(ctx context.Context, arg UpsertGroupTitlePara
 		&i.AddedAt,
 		&i.UpdatedAt,
 		&i.AddedBy,
+		&i.WatchedMarkedBy,
 	)
 	return i, err
 }

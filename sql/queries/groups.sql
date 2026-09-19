@@ -81,8 +81,14 @@ SELECT * FROM group_titles WHERE group_id = $1 AND title_id = $2;
 SELECT * FROM group_titles WHERE group_id = $1 ORDER BY title_id;
 
 -- name: UpdateGroupTitleWatchedRow :one
+-- watched_marked_by records who set the CURRENT state, so it follows watched
+-- rather than being written once: marking unwatched clears it, because a name
+-- attached to a state that no longer holds is worse than no name.
 UPDATE group_titles
-SET watched = $3, watched_at = $4, updated_at = $5
+SET watched = $3,
+    watched_at = $4,
+    updated_at = $5,
+    watched_marked_by = CASE WHEN $3::boolean THEN $6 ELSE NULL END
 WHERE group_id = $1 AND title_id = $2
 RETURNING *;
 
@@ -128,12 +134,14 @@ SELECT
     gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
     gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
     gt.added_by AS gt_added_by, au.username AS gt_added_by_username,
+    gt.watched_marked_by AS gt_watched_marked_by, wu.username AS gt_watched_marked_by_username,
     count(*) OVER () AS total_count
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
 -- LEFT, not an inner join: a title whose author is unknown (added before this
 -- was recorded) or since deleted must still appear in the list.
 LEFT JOIN users au ON au.id = gt.added_by
+LEFT JOIN users wu ON wu.id = gt.watched_marked_by
 WHERE gt.group_id = sqlc.arg('group_id')
   AND (sqlc.narg('watched')::boolean IS NULL OR gt.watched = sqlc.narg('watched'))
   AND (sqlc.narg('title_types')::text[] IS NULL OR t.type = ANY(sqlc.narg('title_types')::text[]))
@@ -181,10 +189,12 @@ SELECT
     t.vote_count, t.added_at, t.updated_at, t.metadata,
     gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
     gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
-    gt.added_by AS gt_added_by, au.username AS gt_added_by_username
+    gt.added_by AS gt_added_by, au.username AS gt_added_by_username,
+    gt.watched_marked_by AS gt_watched_marked_by, wu.username AS gt_watched_marked_by_username
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
 LEFT JOIN users au ON au.id = gt.added_by
+LEFT JOIN users wu ON wu.id = gt.watched_marked_by
 WHERE gt.group_id = sqlc.arg('group_id') AND gt.title_id = sqlc.arg('title_id');
 
 -- name: CountGroupTitles :one
