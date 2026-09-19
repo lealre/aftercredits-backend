@@ -79,7 +79,7 @@ type Store interface {
 	AddUserToGroup(ctx context.Context, groupId, ownerId, userToAddId string) error
 	GetUsersFromGroup(ctx context.Context, groupId, userId string) ([]models.User, error)
 	AddNewGroupTitle(ctx context.Context, groupId, titleId, addedBy string) error
-	UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*models.GroupTitleItem, error)
+	UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, userId string) (*models.GroupTitleItem, error)
 	UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, season int, userId string) (*models.GroupTitleItem, error)
 	UpdateGroupInfo(ctx context.Context, groupId, name, description string) error
 	SoftDeleteGroup(ctx context.Context, groupId string) error

@@ -83,13 +83,14 @@ type GroupMember struct {
 }
 
 type GroupTitle struct {
-	GroupID   string
-	TitleID   string
-	Watched   bool
-	WatchedAt pgtype.Timestamptz
-	AddedAt   pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
-	AddedBy   pgtype.Text
+	GroupID         string
+	TitleID         string
+	Watched         bool
+	WatchedAt       pgtype.Timestamptz
+	AddedAt         pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	AddedBy         pgtype.Text
+	WatchedMarkedBy pgtype.Text
 }
 
 type GroupTitleSeason struct {

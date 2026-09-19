@@ -217,7 +217,7 @@ func (s *Store) AddNewGroupTitle(ctx context.Context, groupId, titleId, addedBy 
 // watchedAt argument whose Time is nil clears the column to NULL. Returns the
 // updated item. A missing title is reported as store.ErrRecordNotFound, and no
 // updatable fields at all as an error.
-func (s *Store) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate) (*models.GroupTitleItem, error) {
+func (s *Store) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId string, titleId string, watched *bool, watchedAt *generics.FlexibleDate, userId string) (*models.GroupTitleItem, error) {
 	if watched == nil && watchedAt == nil {
 		return nil, fmt.Errorf("no fields to update")
 	}
@@ -240,11 +240,12 @@ func (s *Store) UpdateGroupTitleWatchedForMovie(ctx context.Context, groupId str
 		}
 
 		row, err := q.UpdateGroupTitleWatchedRow(ctx, database.UpdateGroupTitleWatchedRowParams{
-			GroupID:   groupId,
-			TitleID:   titleId,
-			Watched:   newWatched,
-			WatchedAt: newWatchedAt,
-			UpdatedAt: timeToTimestamptz(time.Now()),
+			GroupID:         groupId,
+			TitleID:         titleId,
+			Watched:         newWatched,
+			WatchedAt:       newWatchedAt,
+			UpdatedAt:       timeToTimestamptz(time.Now()),
+			WatchedMarkedBy: emptyToNullText(userId),
 		})
 		if err != nil {
 			return notFound(err)
@@ -361,11 +362,12 @@ func (s *Store) UpdateGroupTitleWatchedForTVSeries(ctx context.Context, groupId 
 		}
 
 		row, err := q.UpdateGroupTitleWatchedRow(ctx, database.UpdateGroupTitleWatchedRowParams{
-			GroupID:   groupId,
-			TitleID:   titleId,
-			Watched:   topWatched,
-			WatchedAt: ptrToTimestamptz(topWatchedAt),
-			UpdatedAt: timeToTimestamptz(now),
+			GroupID:         groupId,
+			TitleID:         titleId,
+			Watched:         topWatched,
+			WatchedAt:       ptrToTimestamptz(topWatchedAt),
+			UpdatedAt:       timeToTimestamptz(now),
+			WatchedMarkedBy: emptyToNullText(userId),
 		})
 		if err != nil {
 			return notFound(err)
@@ -572,7 +574,8 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 			VoteCount: r.VoteCount, AddedAt: r.AddedAt, UpdatedAt: r.UpdatedAt,
 			Metadata: r.Metadata,
 		}, r.GtWatched, r.GtWatchedAt, r.GtAddedAt, r.GtUpdatedAt,
-			r.GtAddedBy, r.GtAddedByUsername, seasonsByTitle[r.ID])
+			r.GtAddedBy, r.GtAddedByUsername,
+			r.GtWatchedMarkedBy, r.GtWatchedMarkedByUsername, seasonsByTitle[r.ID])
 		if err != nil {
 			return nil, 0, err
 		}
@@ -595,6 +598,7 @@ func groupPagedTitleFromRow(
 	gtWatched bool,
 	gtWatchedAt, gtAddedAt, gtUpdatedAt pgtype.Timestamptz,
 	gtAddedBy, gtAddedByUsername pgtype.Text,
+	gtWatchedMarkedBy, gtWatchedMarkedByUsername pgtype.Text,
 	seasonRows []database.GroupTitleSeason,
 ) (models.GroupPagedTitle, error) {
 	title, err := rowToTitle(t)
@@ -604,13 +608,14 @@ func groupPagedTitleFromRow(
 	return models.GroupPagedTitle{
 		Title: title,
 		Item: models.GroupTitleItem{
-			TitleId:        t.ID,
-			SeasonsWatched: assembleSeasonsWatched(seasonRows),
-			Watched:        gtWatched,
-			AddedAt:        gtAddedAt.Time,
-			UpdatedAt:      gtUpdatedAt.Time,
-			WatchedAt:      timestamptzToPtr(gtWatchedAt),
-			AddedBy:        titleAuthor(gtAddedBy, gtAddedByUsername),
+			TitleId:         t.ID,
+			SeasonsWatched:  assembleSeasonsWatched(seasonRows),
+			Watched:         gtWatched,
+			AddedAt:         gtAddedAt.Time,
+			UpdatedAt:       gtUpdatedAt.Time,
+			WatchedAt:       timestamptzToPtr(gtWatchedAt),
+			AddedBy:         titleAuthor(gtAddedBy, gtAddedByUsername),
+			WatchedMarkedBy: titleAuthor(gtWatchedMarkedBy, gtWatchedMarkedByUsername),
 		},
 	}, nil
 }
@@ -653,7 +658,8 @@ func (s *Store) GetGroupTitle(ctx context.Context, groupId, titleId string) (mod
 		VoteCount: row.VoteCount, AddedAt: row.AddedAt, UpdatedAt: row.UpdatedAt,
 		Metadata: row.Metadata,
 	}, row.GtWatched, row.GtWatchedAt, row.GtAddedAt, row.GtUpdatedAt,
-		row.GtAddedBy, row.GtAddedByUsername, seasonRows)
+		row.GtAddedBy, row.GtAddedByUsername,
+		row.GtWatchedMarkedBy, row.GtWatchedMarkedByUsername, seasonRows)
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its

@@ -76,6 +76,9 @@ type GroupTitleDetail struct {
 	// the account was deleted outright. Not omitempty — a client rendering
 	// "added by" wants to distinguish "unknown" from "the field is missing".
 	AddedBy *TitleAuthor `json:"addedBy"`
+	// Who set the current watched state — not who watched it. Null when the
+	// title is unwatched, or when nobody was recorded.
+	WatchedMarkedBy *TitleAuthor `json:"watchedMarkedBy"`
 }
 
 // TitleAuthor is the member who added a title to the group. The username is
