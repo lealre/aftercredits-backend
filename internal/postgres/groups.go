@@ -575,7 +575,8 @@ func (s *Store) GetGroupTitlesPage(ctx context.Context, groupId string, watched 
 			Metadata: r.Metadata,
 		}, r.GtWatched, r.GtWatchedAt, r.GtAddedAt, r.GtUpdatedAt,
 			r.GtAddedBy, r.GtAddedByUsername,
-			r.GtWatchedMarkedBy, r.GtWatchedMarkedByUsername, seasonsByTitle[r.ID])
+			r.GtWatchedMarkedBy, r.GtWatchedMarkedByUsername, r.GtWatchedMarkedAt,
+			seasonsByTitle[r.ID])
 		if err != nil {
 			return nil, 0, err
 		}
@@ -599,6 +600,7 @@ func groupPagedTitleFromRow(
 	gtWatchedAt, gtAddedAt, gtUpdatedAt pgtype.Timestamptz,
 	gtAddedBy, gtAddedByUsername pgtype.Text,
 	gtWatchedMarkedBy, gtWatchedMarkedByUsername pgtype.Text,
+	gtWatchedMarkedAt pgtype.Timestamptz,
 	seasonRows []database.GroupTitleSeason,
 ) (models.GroupPagedTitle, error) {
 	title, err := rowToTitle(t)
@@ -616,6 +618,7 @@ func groupPagedTitleFromRow(
 			WatchedAt:       timestamptzToPtr(gtWatchedAt),
 			AddedBy:         titleAuthor(gtAddedBy, gtAddedByUsername),
 			WatchedMarkedBy: titleAuthor(gtWatchedMarkedBy, gtWatchedMarkedByUsername),
+			WatchedMarkedAt: timestamptzToPtr(gtWatchedMarkedAt),
 		},
 	}, nil
 }
@@ -659,7 +662,8 @@ func (s *Store) GetGroupTitle(ctx context.Context, groupId, titleId string) (mod
 		Metadata: row.Metadata,
 	}, row.GtWatched, row.GtWatchedAt, row.GtAddedAt, row.GtUpdatedAt,
 		row.GtAddedBy, row.GtAddedByUsername,
-		row.GtWatchedMarkedBy, row.GtWatchedMarkedByUsername, seasonRows)
+		row.GtWatchedMarkedBy, row.GtWatchedMarkedByUsername, row.GtWatchedMarkedAt,
+		seasonRows)
 }
 
 // RemoveTitleFromGroup removes titleId from a group userId is a member of (its

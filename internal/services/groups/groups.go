@@ -251,6 +251,7 @@ func buildGroupTitleDetails(db store.Store, ctx context.Context, groupId string,
 			UpdatedAt:       row.Item.UpdatedAt,
 			AddedBy:         toTitleAuthor(row.Item.AddedBy),
 			WatchedMarkedBy: toTitleAuthor(row.Item.WatchedMarkedBy),
+			WatchedMarkedAt: row.Item.WatchedMarkedAt,
 		}
 
 		// Map seasons watched from database to API type
