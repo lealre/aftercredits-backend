@@ -79,6 +79,9 @@ type GroupTitleDetail struct {
 	// Who set the current watched state — not who watched it. Null when the
 	// title is unwatched, or when nobody was recorded.
 	WatchedMarkedBy *TitleAuthor `json:"watchedMarkedBy"`
+	// When that marking happened — NOT watchedAt, which is the date the group
+	// says it saw the film.
+	WatchedMarkedAt *time.Time `json:"watchedMarkedAt"`
 }
 
 // TitleAuthor is the member who added a title to the group. The username is

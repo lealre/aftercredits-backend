@@ -88,7 +88,11 @@ UPDATE group_titles
 SET watched = $3,
     watched_at = $4,
     updated_at = $5,
-    watched_marked_by = CASE WHEN $3::boolean THEN $6 ELSE NULL END
+    watched_marked_by = CASE WHEN $3::boolean THEN $6 ELSE NULL END,
+    -- $5 is the statement's "now", so the marking time is the moment of the
+    -- change. Moving the watched date is itself a new marking by whoever moved
+    -- it, which is why this follows every update rather than being set once.
+    watched_marked_at = CASE WHEN $3::boolean THEN $5::timestamptz ELSE NULL END
 WHERE group_id = $1 AND title_id = $2
 RETURNING *;
 
@@ -135,6 +139,7 @@ SELECT
     gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
     gt.added_by AS gt_added_by, au.username AS gt_added_by_username,
     gt.watched_marked_by AS gt_watched_marked_by, wu.username AS gt_watched_marked_by_username,
+    gt.watched_marked_at AS gt_watched_marked_at,
     count(*) OVER () AS total_count
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
@@ -190,7 +195,8 @@ SELECT
     gt.watched AS gt_watched, gt.watched_at AS gt_watched_at,
     gt.added_at AS gt_added_at, gt.updated_at AS gt_updated_at,
     gt.added_by AS gt_added_by, au.username AS gt_added_by_username,
-    gt.watched_marked_by AS gt_watched_marked_by, wu.username AS gt_watched_marked_by_username
+    gt.watched_marked_by AS gt_watched_marked_by, wu.username AS gt_watched_marked_by_username,
+    gt.watched_marked_at AS gt_watched_marked_at
 FROM group_titles gt
 JOIN titles t ON t.id = gt.title_id
 LEFT JOIN users au ON au.id = gt.added_by

@@ -1198,3 +1198,50 @@ func TestStore_WatchedMarkedBy_FollowsTheState(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, read(), "marking unwatched must clear the marker, not keep a stale name")
 }
+
+// The marking TIME is the moment of the action, not the date the group says it
+// watched the film. Those are different and conflating them was a real bug: a
+// row marked today with a watched date of three weeks ago reported "marked on"
+// the older date, which was both wrong and a duplicate of the date already on
+// screen beside it.
+func TestStore_WatchedMarkedAt_IsTheActionNotTheWatchedDate(t *testing.T) {
+	resetDB(t)
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	owner := addTestUser(t, s)
+	group, err := s.CreateGroup(ctx, newTestGroup(t, "queue", owner))
+	require.NoError(t, err)
+	title := addTestTitleWithType(t, s, "tt-"+uuid.NewString(), "A Film", "movie")
+	require.NoError(t, s.AddNewGroupTitle(ctx, group.Id, title.ID, owner))
+
+	// A watched date well in the past, set right now.
+	past := time.Now().AddDate(0, 0, -21)
+	before := time.Now().Add(-time.Second)
+	_, err = s.UpdateGroupTitleWatchedForMovie(ctx, group.Id, title.ID, boolPtr(true), flexDate(past), owner)
+	require.NoError(t, err)
+
+	page, _, err := s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+	require.NoError(t, err)
+	require.Len(t, page, 1)
+	item := page[0].Item
+
+	require.NotNil(t, item.WatchedMarkedAt)
+	require.True(t, item.WatchedMarkedAt.After(before),
+		"the marking time must be now, not the watched date three weeks ago")
+	require.NotNil(t, item.WatchedAt)
+	require.WithinDuration(t, past, *item.WatchedAt, 24*time.Hour,
+		"the watched date must still be the past date the member chose")
+
+	// Moving only the date is itself a new marking, so the time advances.
+	firstMark := *item.WatchedMarkedAt
+	time.Sleep(10 * time.Millisecond)
+	other := time.Now().AddDate(0, 0, -5)
+	_, err = s.UpdateGroupTitleWatchedForMovie(ctx, group.Id, title.ID, boolPtr(true), flexDate(other), owner)
+	require.NoError(t, err)
+
+	page, _, err = s.GetGroupTitlesPage(ctx, group.Id, nil, nil, "", nil, 10, 1)
+	require.NoError(t, err)
+	require.True(t, page[0].Item.WatchedMarkedAt.After(firstMark),
+		"changing the watched date is a new marking, so its time must move")
+}
