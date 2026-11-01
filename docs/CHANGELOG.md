@@ -1,6 +1,40 @@
 <a name="unreleased"></a>
 ## Unreleased
 
+### Pi: backups move to pi-watcher, and nothing rewrites the crontab
+
+* The Drive backup (`pi/Dockerfile.backup`, `pi/backup_to_drive.sh`) is removed. pi-watcher
+  now dumps the database as a read-only role, verifies the dump, uploads it and reports
+  every run to its notifier
+* `pi/setup-cron.sh` only builds the movies-update image and **prints** the crontab line
+  (wrapped by pi-watcher's `notifier-run` when pi-watcher is checked out). It no longer
+  deletes and rewrites crontab lines, which silently dropped that wrapper
+* The job's default network is pi-infra's `infra`
+
+<a name="v0.1.5"></a>
+## [v0.1.5](https://github.com/lealre/aftercredits-backend/compare/v0.1.4...v0.1.5) (2026-11-01)
+
+### Who added a title, and who marked it watched (migrations 011 and 012)
+
+* `group_titles.added_by` records which member put a title into a group. Migration 011
+  backfills it from `title_added` activity events; titles added before the feed shipped have
+  no record anywhere and stay `NULL` rather than getting an invented author
+* `group_titles.watched_marked_by` records who marked the title watched. It follows the state:
+  marking unwatched clears it. Migration 012 backfills the **latest** marking per title from
+  `title_watched_changed` events, only for rows currently watched
+* Both reference `users(id)` with `ON DELETE SET NULL`: deleting a user never deletes a
+  group's films. `added_by` is not rewritten by later watched-status changes
+* Migrations 011 and 012 only add columns and an index. Stop the backend before running
+  `database -migrate`
+
+### Structured logging with log/slog
+
+* Every log line has a level: narration is `DEBUG` (off by default), 401/403 are `WARN`,
+  failures and 5xx are `ERROR`. `LOG_LEVEL` sets the threshold without a redeploy
+* Error logs name the operation and the ids involved instead of a bare `err`, and request
+  records carry the trace id, user and IP as fields
+
+
 ### Observability: Prometheus metrics and Grafana
 
 The backend now serves Prometheus metrics on a **new listener** at
