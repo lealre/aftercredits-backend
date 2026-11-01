@@ -1,6 +1,16 @@
 <a name="unreleased"></a>
 ## Unreleased
 
+### Pi: backups move to pi-watcher, and nothing rewrites the crontab
+
+* The Drive backup (`pi/Dockerfile.backup`, `pi/backup_to_drive.sh`) is removed. pi-watcher
+  now dumps the database as a read-only role, verifies the dump, uploads it and reports
+  every run to its notifier
+* `pi/setup-cron.sh` only builds the movies-update image and **prints** the crontab line
+  (wrapped by pi-watcher's `notifier-run` when pi-watcher is checked out). It no longer
+  deletes and rewrites crontab lines, which silently dropped that wrapper
+* The job's default network is pi-infra's `infra`
+
 <a name="v0.1.5"></a>
 ## [v0.1.5](https://github.com/lealre/aftercredits-backend/compare/v0.1.4...v0.1.5) (2026-11-01)
 
