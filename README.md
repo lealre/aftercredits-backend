@@ -212,35 +212,19 @@ rclone config
 
 For automated scheduled tasks (backups to Google Drive and movie information updates), see the `pi/` directory.
 
-**Features:**
-- **Automated Postgres backups** to Google Drive using rclone
-- **Automated movie information updates** from IMDb API
-- Uses OS-level cron jobs for scheduling
-- Runs in Docker containers with automatic cleanup
-
-**Requirements:**
-- rclone configured with Google Drive remote (see `pi/README.md` for details)
-- Docker and Docker Compose
-- Postgres running in docker-compose network
+**What runs:**
+- **Movies update** (built here): refreshes title metadata from the title provider,
+  Monday at midnight by default (`0 0 * * 1`)
+- **Backups** are not done by this repository: pi-watcher dumps the database with a
+  read-only role and uploads it to Drive, reporting every run to its notifier
 
 **Setup:**
-1. Configure rclone with your Google Drive:
-   ```bash
-   rclone config
-   # Create a remote named "drive-pi"
-   ```
-
-2. Set up scheduled tasks:
-   ```bash
-   cd pi
-   cp .env.example .env
-   # Edit .env with your configuration
-   ./setup-cron.sh
-   ```
-
-**Schedules (configurable in `pi/.env`):**
-- **Backup**: Saturday at midnight (midnight after Friday) - `0 0 * * 6`
-- **Movies Update**: Monday at midnight (midnight after Sunday) - `0 0 * * 1`
+```bash
+cd pi
+cp .env.example .env
+./setup-cron.sh   # builds the image and prints the crontab line; never edits the crontab
+```
+Install the printed line with `crontab -e`.
 
 For detailed documentation, see [pi/README.md](pi/README.md).
 
